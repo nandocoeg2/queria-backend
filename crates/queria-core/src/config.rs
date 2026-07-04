@@ -25,6 +25,7 @@ pub struct AppConfig {
     pub embedding_batch_size: u32,
     pub embedding_timeout_seconds: u64,
     pub embedding_max_retries: u32,
+    pub embedding_request_interval_ms: u64,
     pub embedding_retry_backoff_base_seconds: u64,
     pub embedding_retry_backoff_max_seconds: u64,
     pub retrieval_rrf_k: u32,
@@ -69,6 +70,10 @@ impl fmt::Debug for AppConfig {
             .field("embedding_dimension", &self.embedding_dimension)
             .field("embedding_profile_version", &self.embedding_profile_version)
             .field("embedding_batch_size", &self.embedding_batch_size)
+            .field(
+                "embedding_request_interval_ms",
+                &self.embedding_request_interval_ms,
+            )
             .field(
                 "embedding_retry_backoff_base_seconds",
                 &self.embedding_retry_backoff_base_seconds,
@@ -124,6 +129,10 @@ impl AppConfig {
             embedding_max_retries: read_number_env(
                 "QUERIA_EMBEDDING_MAX_RETRIES",
                 defaults.embedding_max_retries,
+            )?,
+            embedding_request_interval_ms: read_number_env(
+                "QUERIA_EMBEDDING_REQUEST_INTERVAL_MS",
+                defaults.embedding_request_interval_ms,
             )?,
             embedding_retry_backoff_base_seconds: read_number_env(
                 "QUERIA_EMBEDDING_RETRY_BACKOFF_BASE_SECONDS",
@@ -227,6 +236,7 @@ impl AppConfig {
             embedding_batch_size: 64,
             embedding_timeout_seconds: 30,
             embedding_max_retries: 3,
+            embedding_request_interval_ms: 0,
             embedding_retry_backoff_base_seconds: 30,
             embedding_retry_backoff_max_seconds: 600,
             retrieval_rrf_k: 60,
@@ -298,6 +308,7 @@ impl AppConfig {
             || self.embedding_batch_size > 128
             || self.embedding_timeout_seconds == 0
             || self.embedding_max_retries > 10
+            || self.embedding_request_interval_ms > 3_600_000
             || self.embedding_retry_backoff_base_seconds == 0
             || self.embedding_retry_backoff_max_seconds < self.embedding_retry_backoff_base_seconds
             || self.embedding_retry_backoff_max_seconds > 3_600
@@ -451,6 +462,7 @@ mod tests {
         assert_eq!(config.embedding_dimension, 1024);
         assert_eq!(config.embedding_profile_version, "voyage-4-1024-v1");
         assert_eq!(config.embedding_batch_size, 64);
+        assert_eq!(config.embedding_request_interval_ms, 0);
         assert_eq!(config.embedding_retry_backoff_base_seconds, 30);
         assert_eq!(config.embedding_retry_backoff_max_seconds, 600);
         assert_eq!(config.qdrant_collection, "queria_local_chunks_v1");
@@ -537,6 +549,19 @@ mod tests {
         let err = config
             .validate()
             .expect_err("max retry backoff below base must be rejected");
+
+        assert!(matches!(err, QueriaError::Config(_)));
+    }
+
+    #[test]
+    fn validation_rejects_excessive_embedding_request_interval() {
+        let mut config = AppConfig::default_local();
+        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
+        config.embedding_request_interval_ms = 3_600_001;
+
+        let err = config
+            .validate()
+            .expect_err("excessive embedding request interval must be rejected");
 
         assert!(matches!(err, QueriaError::Config(_)));
     }

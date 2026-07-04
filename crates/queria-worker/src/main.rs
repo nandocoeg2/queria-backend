@@ -70,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
         dimension: usize::try_from(config.embedding_dimension)?,
         profile_version: config.embedding_profile_version.clone(),
         batch_size: i64::from(config.embedding_batch_size),
+        request_interval_ms: config.embedding_request_interval_ms,
         retry_backoff_base_seconds: i64::try_from(config.embedding_retry_backoff_base_seconds)?,
         retry_backoff_max_seconds: i64::try_from(config.embedding_retry_backoff_max_seconds)?,
     };
@@ -92,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         worker_id = %config.worker_identity,
         embedding_profile = %config.embedding_profile_version,
         qdrant_collection = %config.qdrant_collection,
+        embedding_request_interval_ms = config.embedding_request_interval_ms,
         "ingestion and embedding worker started"
     );
 

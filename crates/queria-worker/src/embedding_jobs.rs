@@ -21,6 +21,7 @@ pub struct EmbeddingWorkerConfig {
     pub dimension: usize,
     pub profile_version: String,
     pub batch_size: i64,
+    pub request_interval_ms: u64,
     pub retry_backoff_base_seconds: i64,
     pub retry_backoff_max_seconds: i64,
 }
@@ -33,6 +34,7 @@ impl Default for EmbeddingWorkerConfig {
             dimension: 1024,
             profile_version: "voyage-4-1024-v1".to_owned(),
             batch_size: 64,
+            request_interval_ms: 0,
             retry_backoff_base_seconds: 30,
             retry_backoff_max_seconds: 600,
         }
@@ -238,6 +240,9 @@ where
         processed += u64::try_from(chunks.len()).map_err(|_| {
             QueriaError::Infrastructure("embedding batch count overflow".to_owned())
         })?;
+        if let Some(interval) = request_interval(config) {
+            tokio::time::sleep(interval).await;
+        }
     }
 }
 
@@ -332,6 +337,10 @@ fn retry_after_at(now: SystemTime, backoff_seconds: i64) -> u64 {
     retry_time
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs())
+}
+
+fn request_interval(config: &EmbeddingWorkerConfig) -> Option<Duration> {
+    (config.request_interval_ms > 0).then(|| Duration::from_millis(config.request_interval_ms))
 }
 
 fn sanitized_error(error: &QueriaError) -> String {
@@ -610,6 +619,21 @@ mod tests {
 
         assert_eq!(retry_after_at(now, 30), 130);
         assert_eq!(retry_after_at(now, 0), 101);
+    }
+
+    #[test]
+    fn request_interval_uses_configured_pacing() {
+        let disabled = EmbeddingWorkerConfig {
+            request_interval_ms: 0,
+            ..EmbeddingWorkerConfig::default()
+        };
+        let paced = EmbeddingWorkerConfig {
+            request_interval_ms: 250,
+            ..EmbeddingWorkerConfig::default()
+        };
+
+        assert_eq!(request_interval(&disabled), None);
+        assert_eq!(request_interval(&paced), Some(Duration::from_millis(250)));
     }
 
     fn embedding_job() -> IngestionJobRecord {
