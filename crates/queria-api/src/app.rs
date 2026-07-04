@@ -111,6 +111,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn token_listing_fails_closed_without_authenticated_admin() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agent-tokens")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn token_revoke_fails_closed_without_authenticated_admin() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/v1/agent-tokens/019083a0-0000-7000-8000-000000000002")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
     async fn projects_endpoint_requires_session_cookie() {
         let app = build_app(AppConfig::default_local());
 

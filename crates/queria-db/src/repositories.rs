@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use mockall::automock;
+use queria_auth::permissions::AgentTokenPermissions;
 use queria_core::QueriaError;
 use queria_core::QueriaResult;
 use queria_core::contracts::{Citation, RetrievedContextItem};
-use queria_core::ids::{ChunkId, ProjectId, SourceDocumentId};
+use queria_core::ids::{AgentTokenId, ChunkId, ProjectId, SourceDocumentId};
 use queria_core::model::KnowledgeScope;
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -72,6 +73,53 @@ pub struct RegisterSourceDocumentParams {
     pub commit_sha: Option<String>,
     pub content_hash: String,
     pub metadata: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentTokenRecord {
+    pub id: Uuid,
+    pub name: String,
+    pub token_prefix: String,
+    pub allow_global_knowledge: bool,
+    pub permissions: AgentTokenPermissions,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreateAgentTokenParams {
+    pub name: String,
+    pub token_prefix: String,
+    pub token_hash: String,
+    pub permissions: AgentTokenPermissions,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuthenticatedAgentToken {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub name: String,
+    pub token_prefix: String,
+    pub permissions: AgentTokenPermissions,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProposedMemoryRecord {
+    pub knowledge_item_id: Uuid,
+    pub status: String,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProposeMemoryParams {
+    pub project_slug: String,
+    pub title: String,
+    pub body: String,
+    pub category: String,
+    pub tags: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -363,6 +411,357 @@ impl PgProjectRepository {
         .collect()
     }
 
+    pub async fn create_agent_token(
+        &self,
+        user_id: Uuid,
+        params: CreateAgentTokenParams,
+    ) -> QueriaResult<AgentTokenRecord> {
+        if params.permissions.project_slugs.is_empty() {
+            return Err(QueriaError::Validation(
+                "agent token must allow at least one project".to_owned(),
+            ));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+        let organization_id = organization_id_for_user(&mut transaction, user_id).await?;
+        let allowed_project_count = count_accessible_project_slugs(
+            &mut transaction,
+            organization_id,
+            &params.permissions.project_slugs,
+        )
+        .await?;
+
+        if allowed_project_count != params.permissions.project_slugs.len() as i64 {
+            return Err(QueriaError::Validation(
+                "agent token contains an inaccessible project slug".to_owned(),
+            ));
+        }
+
+        let primary_project_id = if params.permissions.project_slugs.len() == 1 {
+            project_id_for_slug(
+                &mut transaction,
+                organization_id,
+                &params.permissions.project_slugs[0],
+            )
+            .await?
+        } else {
+            None
+        };
+
+        let permissions_json = serde_json::to_value(&params.permissions).map_err(|error| {
+            QueriaError::Validation(format!("invalid agent token permissions: {error}"))
+        })?;
+
+        let row = sqlx::query(
+            "insert into agent_token(
+               organization_id, project_id, name, token_prefix, token_hash,
+               allow_global_knowledge, permissions, expires_at
+             )
+             values ($1, $2, $3, $4, $5, $6, $7, $8)
+             returning id, name, token_prefix, allow_global_knowledge, permissions,
+                       expires_at, revoked_at, last_used_at, created_at",
+        )
+        .bind(organization_id)
+        .bind(primary_project_id)
+        .bind(&params.name)
+        .bind(&params.token_prefix)
+        .bind(&params.token_hash)
+        .bind(params.permissions.allow_global_knowledge)
+        .bind(&permissions_json)
+        .bind(params.expires_at)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        agent_token_from_row(row)
+    }
+
+    pub async fn list_agent_tokens(&self, user_id: Uuid) -> QueriaResult<Vec<AgentTokenRecord>> {
+        sqlx::query(
+            "select at.id, at.name, at.token_prefix, at.allow_global_knowledge,
+                    at.permissions, at.expires_at, at.revoked_at,
+                    at.last_used_at, at.created_at
+             from agent_token at
+             join user_account u on u.organization_id = at.organization_id
+             where u.id = $1
+             order by at.created_at desc",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .into_iter()
+        .map(agent_token_from_row)
+        .collect()
+    }
+
+    pub async fn get_agent_token(
+        &self,
+        user_id: Uuid,
+        agent_token_id: AgentTokenId,
+    ) -> QueriaResult<Option<AgentTokenRecord>> {
+        sqlx::query(
+            "select at.id, at.name, at.token_prefix, at.allow_global_knowledge,
+                    at.permissions, at.expires_at, at.revoked_at,
+                    at.last_used_at, at.created_at
+             from agent_token at
+             join user_account u on u.organization_id = at.organization_id
+             where u.id = $1
+               and at.id = $2",
+        )
+        .bind(user_id)
+        .bind(agent_token_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .map(agent_token_from_row)
+        .transpose()
+    }
+
+    pub async fn revoke_agent_token(
+        &self,
+        user_id: Uuid,
+        agent_token_id: AgentTokenId,
+    ) -> QueriaResult<Option<AgentTokenRecord>> {
+        sqlx::query(
+            "update agent_token at
+             set revoked_at = coalesce(at.revoked_at, now())
+             from user_account u
+             where u.organization_id = at.organization_id
+               and u.id = $1
+               and at.id = $2
+             returning at.id, at.name, at.token_prefix, at.allow_global_knowledge,
+                       at.permissions, at.expires_at, at.revoked_at,
+                       at.last_used_at, at.created_at",
+        )
+        .bind(user_id)
+        .bind(agent_token_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .map(agent_token_from_row)
+        .transpose()
+    }
+
+    pub async fn authenticate_agent_token(
+        &self,
+        token_hash: &str,
+    ) -> QueriaResult<Option<AuthenticatedAgentToken>> {
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+        let row = sqlx::query(
+            "select id, organization_id, name, token_prefix, permissions
+             from agent_token
+             where token_hash = $1
+               and revoked_at is null
+               and (expires_at is null or expires_at > now())",
+        )
+        .bind(token_hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let token_id: Uuid = row.try_get("id").map_err(to_infrastructure_error)?;
+        sqlx::query("update agent_token set last_used_at = now() where id = $1")
+            .bind(token_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        authenticated_agent_token_from_row(row).map(Some)
+    }
+
+    pub async fn list_projects_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+    ) -> QueriaResult<Vec<ProjectRecord>> {
+        sqlx::query(
+            "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
+                    p.include_global_default, p.created_at, p.updated_at
+             from project p
+             where p.organization_id = $1
+               and p.slug = any($2)
+             order by p.slug",
+        )
+        .bind(agent.organization_id)
+        .bind(&agent.permissions.project_slugs)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .into_iter()
+        .map(project_from_row)
+        .collect()
+    }
+
+    pub async fn get_source_document_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        source_document_id: SourceDocumentId,
+    ) -> QueriaResult<Option<SourceDocumentRecord>> {
+        sqlx::query(
+            "select sd.id, sd.project_id, sd.kind::text as kind, sd.uri, sd.title,
+                    sd.source_path, sd.branch, sd.commit_sha, sd.content_hash,
+                    sd.metadata, sd.created_at, sd.updated_at
+             from source_document sd
+             join project p on p.id = sd.project_id
+             where sd.organization_id = $1
+               and sd.id = $2
+               and p.slug = any($3)",
+        )
+        .bind(agent.organization_id)
+        .bind(source_document_id.as_uuid())
+        .bind(&agent.permissions.project_slugs)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .map(source_from_row)
+        .transpose()
+    }
+
+    pub async fn search_approved_chunks_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        project_id: ProjectId,
+        query: &str,
+        include_global: bool,
+        limit: u32,
+    ) -> QueriaResult<Vec<RetrievedContextItem>> {
+        let pattern = format!("%{}%", query.trim());
+        let allow_global = include_global && agent.permissions.allow_global_knowledge;
+        sqlx::query(
+            "select c.id as chunk_id,
+                    coalesce(c.source_document_id, ki.source_document_id) as source_document_id,
+                    ki.scope::text as scope,
+                    ki.title,
+                    c.body,
+                    coalesce(sd.uri, '') as source_uri,
+                    sd.source_path,
+                    c.metadata->>'line_start' as line_start,
+                    c.metadata->>'line_end' as line_end,
+                    case
+                      when c.body ilike $5 then 1.0::real
+                      when ki.title ilike $5 then 0.8::real
+                      else 0.5::real
+                    end as score
+             from chunk c
+             join knowledge_item ki on ki.id = c.knowledge_item_id
+             left join source_document sd on sd.id = coalesce(c.source_document_id, ki.source_document_id)
+             where ki.organization_id = $1
+               and ki.status = 'approved'
+               and coalesce(c.source_document_id, ki.source_document_id) is not null
+               and exists (
+                 select 1
+                 from project p
+                 where p.organization_id = $1
+                   and p.id = $2
+                   and p.slug = any($3)
+               )
+               and (
+                 (ki.scope = 'project' and ki.project_id = $2)
+                 or (ki.scope = 'global' and $4 and ki.project_id is null)
+               )
+               and (
+                 c.body ilike $5
+                 or ki.title ilike $5
+                 or ki.category ilike $5
+               )
+             order by
+               case when ki.scope = 'project' then 0 else 1 end,
+               score desc,
+               c.created_at desc
+             limit $6",
+        )
+        .bind(agent.organization_id)
+        .bind(project_id.as_uuid())
+        .bind(&agent.permissions.project_slugs)
+        .bind(allow_global)
+        .bind(&pattern)
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .into_iter()
+        .map(retrieved_item_from_row)
+        .collect()
+    }
+
+    pub async fn propose_memory_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        params: ProposeMemoryParams,
+    ) -> QueriaResult<ProposedMemoryRecord> {
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+        let project_id = sqlx::query_scalar::<_, Uuid>(
+            "select id
+             from project
+             where organization_id = $1
+               and slug = $2
+               and slug = any($3)",
+        )
+        .bind(agent.organization_id)
+        .bind(&params.project_slug)
+        .bind(&agent.permissions.project_slugs)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let Some(project_id) = project_id else {
+            return Err(QueriaError::PermissionDenied);
+        };
+
+        let knowledge_item_id = sqlx::query(
+            "insert into knowledge_item(
+               organization_id, project_id, scope, status, title, body, category, tags
+             )
+             values ($1, $2, 'project', 'proposed', $3, $4, $5, $6)
+             returning id",
+        )
+        .bind(agent.organization_id)
+        .bind(project_id)
+        .bind(&params.title)
+        .bind(&params.body)
+        .bind(&params.category)
+        .bind(&params.tags)
+        .fetch_one(&mut *transaction)
+        .await
+        .and_then(|row| row.try_get::<Uuid, _>("id"))
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "insert into approval(knowledge_item_id, requested_by, status)
+             values ($1, $2, 'pending')",
+        )
+        .bind(knowledge_item_id)
+        .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        Ok(ProposedMemoryRecord {
+            knowledge_item_id,
+            status: "proposed".to_owned(),
+            title: params.title,
+        })
+    }
+
     pub async fn seed_fjulian_me_registry(&self) -> QueriaResult<()> {
         sqlx::query(
             "with first_org as (
@@ -606,6 +1005,48 @@ fn source_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<SourceDocumentRec
     })
 }
 
+fn agent_token_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<AgentTokenRecord> {
+    let permissions: Value = row
+        .try_get("permissions")
+        .map_err(to_infrastructure_error)?;
+    Ok(AgentTokenRecord {
+        id: row.try_get("id").map_err(to_infrastructure_error)?,
+        name: row.try_get("name").map_err(to_infrastructure_error)?,
+        token_prefix: row
+            .try_get("token_prefix")
+            .map_err(to_infrastructure_error)?,
+        allow_global_knowledge: row
+            .try_get("allow_global_knowledge")
+            .map_err(to_infrastructure_error)?,
+        permissions: parse_agent_permissions(permissions)?,
+        expires_at: row.try_get("expires_at").map_err(to_infrastructure_error)?,
+        revoked_at: row.try_get("revoked_at").map_err(to_infrastructure_error)?,
+        last_used_at: row
+            .try_get("last_used_at")
+            .map_err(to_infrastructure_error)?,
+        created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
+    })
+}
+
+fn authenticated_agent_token_from_row(
+    row: sqlx::postgres::PgRow,
+) -> QueriaResult<AuthenticatedAgentToken> {
+    let permissions: Value = row
+        .try_get("permissions")
+        .map_err(to_infrastructure_error)?;
+    Ok(AuthenticatedAgentToken {
+        id: row.try_get("id").map_err(to_infrastructure_error)?,
+        organization_id: row
+            .try_get("organization_id")
+            .map_err(to_infrastructure_error)?,
+        name: row.try_get("name").map_err(to_infrastructure_error)?,
+        token_prefix: row
+            .try_get("token_prefix")
+            .map_err(to_infrastructure_error)?,
+        permissions: parse_agent_permissions(permissions)?,
+    })
+}
+
 fn retrieved_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<RetrievedContextItem> {
     let scope: String = row.try_get("scope").map_err(to_infrastructure_error)?;
     let source_document_id: Uuid = row
@@ -636,6 +1077,14 @@ fn retrieved_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<Retrieved
     })
 }
 
+fn parse_agent_permissions(value: Value) -> QueriaResult<AgentTokenPermissions> {
+    serde_json::from_value(value).map_err(|error| {
+        QueriaError::Infrastructure(format!(
+            "database returned invalid agent token permissions: {error}"
+        ))
+    })
+}
+
 fn parse_knowledge_scope(value: &str) -> QueriaResult<KnowledgeScope> {
     match value {
         "global" => Ok(KnowledgeScope::Global),
@@ -654,6 +1103,53 @@ fn parse_optional_u32(value: Option<String>) -> QueriaResult<Option<u32>> {
             })
         })
         .transpose()
+}
+
+async fn organization_id_for_user(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+) -> QueriaResult<Uuid> {
+    sqlx::query_scalar::<_, Uuid>("select organization_id from user_account where id = $1")
+        .bind(user_id)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(to_infrastructure_error)
+}
+
+async fn count_accessible_project_slugs(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    organization_id: Uuid,
+    project_slugs: &[String],
+) -> QueriaResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        "select count(*)
+         from project
+         where organization_id = $1
+           and slug = any($2)",
+    )
+    .bind(organization_id)
+    .bind(project_slugs)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(to_infrastructure_error)
+}
+
+async fn project_id_for_slug(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    organization_id: Uuid,
+    project_slug: &str,
+) -> QueriaResult<Option<Uuid>> {
+    sqlx::query_scalar::<_, Uuid>(
+        "select id
+         from project
+         where organization_id = $1
+           and slug = $2",
+    )
+    .bind(organization_id)
+    .bind(project_slug)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(to_infrastructure_error)
 }
 
 fn to_infrastructure_error(error: sqlx::Error) -> QueriaError {
