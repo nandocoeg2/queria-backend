@@ -4,9 +4,11 @@ use queria_auth::permissions::AgentTokenPermissions;
 use queria_core::QueriaError;
 use queria_core::QueriaResult;
 use queria_core::contracts::{Citation, RetrievedContextItem};
-use queria_core::ids::{AgentTokenId, ChunkId, ProjectId, SourceDocumentId};
+use queria_core::ids::{
+    AgentTokenId, ApprovalId, ChunkId, KnowledgeItemId, ProjectId, SourceDocumentId,
+};
 use queria_core::model::KnowledgeScope;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -120,6 +122,50 @@ pub struct ProposeMemoryParams {
     pub body: String,
     pub category: String,
     pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApprovalRecord {
+    pub id: Uuid,
+    pub knowledge_item_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub source_document_id: Option<Uuid>,
+    pub scope: String,
+    pub knowledge_status: String,
+    pub title: String,
+    pub body: String,
+    pub category: String,
+    pub tags: Vec<String>,
+    pub requested_by: String,
+    pub reviewer_user_id: Option<Uuid>,
+    pub approval_status: String,
+    pub reason: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+    pub approved_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct KnowledgeItemRecord {
+    pub id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub source_document_id: Option<Uuid>,
+    pub scope: String,
+    pub status: String,
+    pub title: String,
+    pub body: String,
+    pub category: String,
+    pub tags: Vec<String>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApprovedKnowledgeRecord {
+    pub approval: ApprovalRecord,
+    pub chunk_id: Uuid,
+    pub source_document_id: Uuid,
 }
 
 #[derive(Clone, Debug)]
@@ -762,6 +808,264 @@ impl PgProjectRepository {
         })
     }
 
+    pub async fn list_approvals(
+        &self,
+        user_id: Uuid,
+        status: Option<&str>,
+    ) -> QueriaResult<Vec<ApprovalRecord>> {
+        sqlx::query(
+            "select a.id, a.knowledge_item_id, ki.project_id, ki.source_document_id,
+                    ki.scope::text as scope, ki.status::text as knowledge_status,
+                    ki.title, ki.body, ki.category, ki.tags,
+                    a.requested_by, a.reviewer_user_id, a.status::text as approval_status,
+                    a.reason, a.created_at, a.decided_at, ki.approved_at
+             from approval a
+             join knowledge_item ki on ki.id = a.knowledge_item_id
+             join user_account u on u.organization_id = ki.organization_id
+             where u.id = $1
+               and ($2::text is null or a.status::text = $2)
+             order by a.created_at desc",
+        )
+        .bind(user_id)
+        .bind(status)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .into_iter()
+        .map(approval_from_row)
+        .collect()
+    }
+
+    pub async fn get_approval(
+        &self,
+        user_id: Uuid,
+        approval_id: ApprovalId,
+    ) -> QueriaResult<Option<ApprovalRecord>> {
+        sqlx::query(
+            "select a.id, a.knowledge_item_id, ki.project_id, ki.source_document_id,
+                    ki.scope::text as scope, ki.status::text as knowledge_status,
+                    ki.title, ki.body, ki.category, ki.tags,
+                    a.requested_by, a.reviewer_user_id, a.status::text as approval_status,
+                    a.reason, a.created_at, a.decided_at, ki.approved_at
+             from approval a
+             join knowledge_item ki on ki.id = a.knowledge_item_id
+             join user_account u on u.organization_id = ki.organization_id
+             where u.id = $1
+               and a.id = $2",
+        )
+        .bind(user_id)
+        .bind(approval_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .map(approval_from_row)
+        .transpose()
+    }
+
+    pub async fn get_knowledge_item(
+        &self,
+        user_id: Uuid,
+        knowledge_item_id: KnowledgeItemId,
+    ) -> QueriaResult<Option<KnowledgeItemRecord>> {
+        sqlx::query(
+            "select ki.id, ki.project_id, ki.source_document_id, ki.scope::text as scope,
+                    ki.status::text as status, ki.title, ki.body, ki.category,
+                    ki.tags, ki.approved_at, ki.created_at, ki.updated_at
+             from knowledge_item ki
+             join user_account u on u.organization_id = ki.organization_id
+             where u.id = $1
+               and ki.id = $2",
+        )
+        .bind(user_id)
+        .bind(knowledge_item_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .map(knowledge_item_from_row)
+        .transpose()
+    }
+
+    pub async fn approve_approval(
+        &self,
+        user_id: Uuid,
+        approval_id: ApprovalId,
+    ) -> QueriaResult<Option<ApprovedKnowledgeRecord>> {
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+        let approval = approval_for_update(&mut transaction, user_id, approval_id).await?;
+        let Some(mut approval) = approval else {
+            return Ok(None);
+        };
+
+        if approval.approval_status != "pending" || approval.knowledge_status != "proposed" {
+            return Err(QueriaError::Validation(
+                "approval is not pending for a proposed knowledge item".to_owned(),
+            ));
+        }
+
+        let source_document_id =
+            ensure_approval_source_document(&mut transaction, user_id, &approval).await?;
+
+        sqlx::query(
+            "update knowledge_item
+             set status = 'approved',
+                 source_document_id = $2,
+                 approved_at = now(),
+                 updated_at = now()
+             where id = $1",
+        )
+        .bind(approval.knowledge_item_id)
+        .bind(source_document_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "update approval
+             set status = 'approved',
+                 reviewer_user_id = $2,
+                 decided_at = now()
+             where id = $1",
+        )
+        .bind(approval.id)
+        .bind(user_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let chunk_id = sqlx::query(
+            "insert into chunk(
+               knowledge_item_id, source_document_id, chunk_index, body,
+               token_count, content_hash, metadata
+             )
+             values ($1, $2, 0, $3, 0, $4, $5)
+             on conflict (knowledge_item_id, chunk_index) do update
+             set source_document_id = excluded.source_document_id,
+                 body = excluded.body,
+                 content_hash = excluded.content_hash,
+                 metadata = excluded.metadata
+             returning id",
+        )
+        .bind(approval.knowledge_item_id)
+        .bind(source_document_id)
+        .bind(&approval.body)
+        .bind(format!(
+            "knowledge_item:{}:approved:v1",
+            approval.knowledge_item_id
+        ))
+        .bind(json!({
+            "approval_id": approval.id,
+            "line_start": 1,
+            "line_end": approval.body.lines().count().max(1)
+        }))
+        .fetch_one(&mut *transaction)
+        .await
+        .and_then(|row| row.try_get::<Uuid, _>("id"))
+        .map_err(to_infrastructure_error)?;
+
+        insert_approval_audit_log(
+            &mut transaction,
+            user_id,
+            "approval.approved",
+            approval.id,
+            approval.knowledge_item_id,
+            json!({
+                "chunk_id": chunk_id,
+                "source_document_id": source_document_id
+            }),
+        )
+        .await?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        approval.source_document_id = Some(source_document_id);
+        approval.approval_status = "approved".to_owned();
+        approval.knowledge_status = "approved".to_owned();
+        approval.reviewer_user_id = Some(user_id);
+
+        Ok(Some(ApprovedKnowledgeRecord {
+            approval,
+            chunk_id,
+            source_document_id,
+        }))
+    }
+
+    pub async fn reject_approval(
+        &self,
+        user_id: Uuid,
+        approval_id: ApprovalId,
+        reason: String,
+    ) -> QueriaResult<Option<ApprovalRecord>> {
+        let reason = reason.trim().to_owned();
+        if reason.is_empty() || reason.len() > 2_000 {
+            return Err(QueriaError::Validation(
+                "rejection reason must be between 1 and 2000 bytes".to_owned(),
+            ));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+        let approval = approval_for_update(&mut transaction, user_id, approval_id).await?;
+        let Some(mut approval) = approval else {
+            return Ok(None);
+        };
+
+        if approval.approval_status != "pending" || approval.knowledge_status != "proposed" {
+            return Err(QueriaError::Validation(
+                "approval is not pending for a proposed knowledge item".to_owned(),
+            ));
+        }
+
+        sqlx::query(
+            "update knowledge_item
+             set status = 'rejected',
+                 updated_at = now()
+             where id = $1",
+        )
+        .bind(approval.knowledge_item_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "update approval
+             set status = 'rejected',
+                 reviewer_user_id = $2,
+                 reason = $3,
+                 decided_at = now()
+             where id = $1",
+        )
+        .bind(approval.id)
+        .bind(user_id)
+        .bind(&reason)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        insert_approval_audit_log(
+            &mut transaction,
+            user_id,
+            "approval.rejected",
+            approval.id,
+            approval.knowledge_item_id,
+            json!({ "reason": reason }),
+        )
+        .await?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        approval.approval_status = "rejected".to_owned();
+        approval.knowledge_status = "rejected".to_owned();
+        approval.reviewer_user_id = Some(user_id);
+        approval.reason = Some(reason);
+
+        Ok(Some(approval))
+    }
+
     pub async fn seed_fjulian_me_registry(&self) -> QueriaResult<()> {
         sqlx::query(
             "with first_org as (
@@ -1005,6 +1309,63 @@ fn source_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<SourceDocumentRec
     })
 }
 
+fn approval_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<ApprovalRecord> {
+    Ok(ApprovalRecord {
+        id: row.try_get("id").map_err(to_infrastructure_error)?,
+        knowledge_item_id: row
+            .try_get("knowledge_item_id")
+            .map_err(to_infrastructure_error)?,
+        project_id: row.try_get("project_id").map_err(to_infrastructure_error)?,
+        source_document_id: row
+            .try_get("source_document_id")
+            .map_err(to_infrastructure_error)?,
+        scope: row.try_get("scope").map_err(to_infrastructure_error)?,
+        knowledge_status: row
+            .try_get("knowledge_status")
+            .map_err(to_infrastructure_error)?,
+        title: row.try_get("title").map_err(to_infrastructure_error)?,
+        body: row.try_get("body").map_err(to_infrastructure_error)?,
+        category: row.try_get("category").map_err(to_infrastructure_error)?,
+        tags: row.try_get("tags").map_err(to_infrastructure_error)?,
+        requested_by: row
+            .try_get("requested_by")
+            .map_err(to_infrastructure_error)?,
+        reviewer_user_id: row
+            .try_get("reviewer_user_id")
+            .map_err(to_infrastructure_error)?,
+        approval_status: row
+            .try_get("approval_status")
+            .map_err(to_infrastructure_error)?,
+        reason: row.try_get("reason").map_err(to_infrastructure_error)?,
+        created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
+        decided_at: row.try_get("decided_at").map_err(to_infrastructure_error)?,
+        approved_at: row
+            .try_get("approved_at")
+            .map_err(to_infrastructure_error)?,
+    })
+}
+
+fn knowledge_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<KnowledgeItemRecord> {
+    Ok(KnowledgeItemRecord {
+        id: row.try_get("id").map_err(to_infrastructure_error)?,
+        project_id: row.try_get("project_id").map_err(to_infrastructure_error)?,
+        source_document_id: row
+            .try_get("source_document_id")
+            .map_err(to_infrastructure_error)?,
+        scope: row.try_get("scope").map_err(to_infrastructure_error)?,
+        status: row.try_get("status").map_err(to_infrastructure_error)?,
+        title: row.try_get("title").map_err(to_infrastructure_error)?,
+        body: row.try_get("body").map_err(to_infrastructure_error)?,
+        category: row.try_get("category").map_err(to_infrastructure_error)?,
+        tags: row.try_get("tags").map_err(to_infrastructure_error)?,
+        approved_at: row
+            .try_get("approved_at")
+            .map_err(to_infrastructure_error)?,
+        created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
+        updated_at: row.try_get("updated_at").map_err(to_infrastructure_error)?,
+    })
+}
+
 fn agent_token_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<AgentTokenRecord> {
     let permissions: Value = row
         .try_get("permissions")
@@ -1149,6 +1510,110 @@ async fn project_id_for_slug(
     .bind(project_slug)
     .fetch_optional(&mut **transaction)
     .await
+    .map_err(to_infrastructure_error)
+}
+
+async fn approval_for_update(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    approval_id: ApprovalId,
+) -> QueriaResult<Option<ApprovalRecord>> {
+    sqlx::query(
+        "select a.id, a.knowledge_item_id, ki.project_id, ki.source_document_id,
+                ki.scope::text as scope, ki.status::text as knowledge_status,
+                ki.title, ki.body, ki.category, ki.tags,
+                a.requested_by, a.reviewer_user_id, a.status::text as approval_status,
+                a.reason, a.created_at, a.decided_at, ki.approved_at
+         from approval a
+         join knowledge_item ki on ki.id = a.knowledge_item_id
+         join user_account u on u.organization_id = ki.organization_id
+         where u.id = $1
+           and a.id = $2
+         for update of a, ki",
+    )
+    .bind(user_id)
+    .bind(approval_id.as_uuid())
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(to_infrastructure_error)?
+    .map(approval_from_row)
+    .transpose()
+}
+
+async fn ensure_approval_source_document(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    approval: &ApprovalRecord,
+) -> QueriaResult<Uuid> {
+    if let Some(source_document_id) = approval.source_document_id {
+        return Ok(source_document_id);
+    }
+
+    let organization_id = organization_id_for_user(transaction, user_id).await?;
+    let uri = format!("queria://knowledge-items/{}", approval.knowledge_item_id);
+    let content_hash = format!("knowledge_item:{}:source:v1", approval.knowledge_item_id);
+    let metadata = json!({
+        "generated_from": "approval",
+        "approval_id": approval.id,
+        "knowledge_item_id": approval.knowledge_item_id
+    });
+
+    sqlx::query(
+        "insert into source_document(
+           organization_id, project_id, kind, uri, title, source_path,
+           content_hash, metadata
+         )
+         values ($1, $2, 'manual_note', $3, $4, $5, $6, $7)
+         on conflict (organization_id, project_id, uri, content_hash) do update
+         set updated_at = source_document.updated_at
+         returning id",
+    )
+    .bind(organization_id)
+    .bind(approval.project_id)
+    .bind(uri)
+    .bind(&approval.title)
+    .bind(format!(
+        "queria://knowledge-items/{}",
+        approval.knowledge_item_id
+    ))
+    .bind(content_hash)
+    .bind(metadata)
+    .fetch_one(&mut **transaction)
+    .await
+    .and_then(|row| row.try_get::<Uuid, _>("id"))
+    .map_err(to_infrastructure_error)
+}
+
+async fn insert_approval_audit_log(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    action: &str,
+    approval_id: Uuid,
+    knowledge_item_id: Uuid,
+    metadata: Value,
+) -> QueriaResult<()> {
+    let organization_id = organization_id_for_user(transaction, user_id).await?;
+    let metadata = json!({
+        "approval_id": approval_id,
+        "knowledge_item_id": knowledge_item_id,
+        "details": metadata
+    });
+
+    sqlx::query(
+        "insert into audit_log(
+           organization_id, actor_type, actor_id, action,
+           resource_type, resource_id, metadata
+         )
+         values ($1, 'user', $2, $3, 'approval', $4, $5)",
+    )
+    .bind(organization_id)
+    .bind(user_id.to_string())
+    .bind(action)
+    .bind(approval_id.to_string())
+    .bind(metadata)
+    .execute(&mut **transaction)
+    .await
+    .map(|_| ())
     .map_err(to_infrastructure_error)
 }
 

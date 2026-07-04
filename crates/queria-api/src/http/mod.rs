@@ -1,5 +1,7 @@
+pub mod approvals;
 pub mod auth;
 pub mod health;
+pub mod knowledge_items;
 pub mod projects;
 pub mod retrieval;
 pub mod setup;

@@ -43,5 +43,6 @@ id_type!(ProjectId);
 id_type!(KnowledgeItemId);
 id_type!(ChunkId);
 id_type!(SourceDocumentId);
+id_type!(ApprovalId);
 id_type!(AgentTokenId);
 id_type!(IngestionJobId);

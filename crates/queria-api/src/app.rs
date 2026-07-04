@@ -1,4 +1,6 @@
-use crate::http::{auth, health, projects, retrieval, setup, sources, tokens};
+use crate::http::{
+    approvals, auth, health, knowledge_items, projects, retrieval, setup, sources, tokens,
+};
 use axum::Router;
 use queria_core::AppConfig;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
@@ -41,6 +43,8 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/projects", projects::router())
         .nest("/api/v1/sources", sources::router())
+        .nest("/api/v1/approvals", approvals::router())
+        .nest("/api/v1/knowledge-items", knowledge_items::router())
         .nest("/api/v1/retrieval", retrieval::router())
         .nest("/api/v1/agent-tokens", tokens::router())
         .layer(TraceLayer::new_for_http())
@@ -197,6 +201,93 @@ mod tests {
                             "limit": 5
                         }"#,
                     ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn approvals_list_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/approvals?status=pending")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn approval_detail_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/approvals/019083a0-0000-7000-8000-000000000003")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn approval_approve_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/approvals/019083a0-0000-7000-8000-000000000003/approve")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn approval_reject_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/approvals/019083a0-0000-7000-8000-000000000003/reject")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn knowledge_item_detail_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/knowledge-items/019083a0-0000-7000-8000-000000000004")
+                    .body(Body::empty())
                     .expect("request should build"),
             )
             .await
