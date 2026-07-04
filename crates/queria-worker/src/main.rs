@@ -64,15 +64,14 @@ async fn main() -> anyhow::Result<()> {
         usize::try_from(config.git_chunk_overlap_lines)?,
     );
     let poll_interval = Duration::from_millis(config.worker_poll_interval_ms);
-    let embedding_defaults = embedding_jobs::EmbeddingWorkerConfig::default();
     let embedding_config = embedding_jobs::EmbeddingWorkerConfig {
         provider: "voyage".to_owned(),
         model: config.embedding_model.clone(),
         dimension: usize::try_from(config.embedding_dimension)?,
         profile_version: config.embedding_profile_version.clone(),
         batch_size: i64::from(config.embedding_batch_size),
-        retry_backoff_base_seconds: embedding_defaults.retry_backoff_base_seconds,
-        retry_backoff_max_seconds: embedding_defaults.retry_backoff_max_seconds,
+        retry_backoff_base_seconds: i64::try_from(config.embedding_retry_backoff_base_seconds)?,
+        retry_backoff_max_seconds: i64::try_from(config.embedding_retry_backoff_max_seconds)?,
     };
     let voyage = VoyageClient::new(
         config.voyage_api_key.clone(),

@@ -2,6 +2,7 @@ mod bootstrap;
 mod database;
 mod doctor_mcp;
 mod embeddings;
+mod evaluation;
 mod retrieval;
 
 use clap::{Parser, Subcommand};
@@ -32,6 +33,10 @@ enum Command {
     Retrieval {
         #[command(subcommand)]
         command: RetrievalCommand,
+    },
+    Eval {
+        #[command(subcommand)]
+        command: EvalCommand,
     },
 }
 
@@ -74,6 +79,14 @@ enum RetrievalCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum EvalCommand {
+    Run {
+        #[arg(long)]
+        project: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -101,6 +114,9 @@ async fn main() -> anyhow::Result<()> {
                     limit,
                 },
         } => retrieval::probe(&project, &query, include_global, limit).await,
+        Command::Eval {
+            command: EvalCommand::Run { project },
+        } => evaluation::run(&project).await,
     }
 }
 
@@ -123,6 +139,19 @@ mod tests {
             cli.command,
             Command::Embeddings {
                 command: EmbeddingsCommand::Backfill { project }
+            } if project == "fjulian-me"
+        ));
+    }
+
+    #[test]
+    fn parses_eval_run_command() {
+        let cli = Cli::try_parse_from(["queria-cli", "eval", "run", "--project", "fjulian-me"])
+            .expect("eval command should parse");
+
+        assert!(matches!(
+            cli.command,
+            Command::Eval {
+                command: EvalCommand::Run { project }
             } if project == "fjulian-me"
         ));
     }

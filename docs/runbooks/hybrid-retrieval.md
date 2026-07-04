@@ -76,6 +76,7 @@ Manual checks:
 ```bash
 rtk infisical run --env=dev -- cargo run -p queria-cli -- embeddings status --project fjulian-me
 rtk infisical run --env=dev -- cargo run -p queria-cli -- retrieval probe --project fjulian-me --query "Astro markdown content flow" --limit 5
+rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
 ```
 
 Pass criteria:
@@ -85,3 +86,33 @@ Pass criteria:
 - at least one chunk is `ready`
 - retrieval probe returns at least one cited item
 - retrieval diagnostics include lexical and semantic candidate counts
+- evaluation report has `passed=true` for the project baseline
+
+## Evaluation Baseline
+
+Golden questions live in:
+
+```text
+tests/golden_questions/<project-slug>.jsonl
+```
+
+Each line describes one query:
+
+```json
+{"id":"fjulian-me-astro-content","project_slug":"fjulian-me","query":"Astro markdown content flow","include_global":true,"expected_scope":["project"],"expected_citations":[],"minimum_items":1}
+```
+
+Run:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
+```
+
+The report includes:
+
+- pass/fail per question
+- returned item count
+- expected scope hits
+- expected citation hits
+- retrieval mode and candidate counts
+- regression score from 0.0 to 1.0

@@ -1430,11 +1430,13 @@ name = "queria-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "queria-core",
  "queria-db",
  "queria-search",
  "reqwest",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

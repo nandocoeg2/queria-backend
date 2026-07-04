@@ -59,6 +59,12 @@ rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=8 cargo 
 
 `failed` chunks are retryable for embedding backfill. A `429 Too Many Requests` response should requeue the job with `retry_after_at`, not leave the newest job terminal failed.
 
+When the provider keeps returning `429`, reduce the batch and cap the retry window while developing locally:
+
+```bash
+rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=4 QUERIA_EMBEDDING_RETRY_BACKOFF_BASE_SECONDS=15 QUERIA_EMBEDDING_RETRY_BACKOFF_MAX_SECONDS=60 cargo run -p queria-worker
+```
+
 ## Retrieval Probe
 
 ```bash
@@ -70,3 +76,13 @@ Expected result:
 - `items` contains cited chunks with source path and chunk id.
 - `retrieval.mode` is `hybrid` when Voyage and Qdrant are available.
 - `retrieval.mode` is `lexical_fallback` only when semantic retrieval is temporarily unavailable.
+
+## Evaluation
+
+Run the retrieval baseline:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
+```
+
+The baseline reads `tests/golden_questions/fjulian-me.jsonl` and reports pass/fail, expected scope hits, expected citation hits, and a regression score.

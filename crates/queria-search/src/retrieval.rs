@@ -415,6 +415,98 @@ mod tests {
         assert_eq!(response.items[0].score, 1.0);
     }
 
+    #[tokio::test]
+    async fn agent_without_global_permission_searches_project_scope_only() {
+        let project_id = ProjectId::new();
+        let organization_id = Uuid::now_v7();
+        let chunk_id = ChunkId::new();
+        let source_document_id = SourceDocumentId::new();
+        let mut store = MockHybridRetrievalStore::new();
+        store
+            .expect_authorize()
+            .once()
+            .withf(move |principal, seen_project_id, include_global| {
+                matches!(
+                    principal,
+                    RetrievalPrincipal::Agent {
+                        organization_id: seen_organization_id,
+                        project_slugs,
+                        allow_global_knowledge: false,
+                    } if *seen_organization_id == organization_id
+                        && project_slugs == &vec!["fjulian-me".to_owned()]
+                ) && *seen_project_id == project_id
+                    && *include_global
+            })
+            .return_once(move |_, _, _| {
+                Ok(RetrievalAccess {
+                    organization_id,
+                    project_id,
+                    include_global: false,
+                })
+            });
+        store
+            .expect_lexical_search()
+            .once()
+            .returning(|_, _, _| Ok(Vec::new()));
+        store.expect_hydrate().once().return_once(move |_, _| {
+            Ok(vec![RetrievedContextItem {
+                chunk_id,
+                source_document_id,
+                scope: KnowledgeScope::Project,
+                title: "Project integration".to_owned(),
+                body: "Only project knowledge.".to_owned(),
+                citation: Citation {
+                    source_uri: "git://repo/docs/integration.md".to_owned(),
+                    source_path: Some("docs/integration.md".to_owned()),
+                    line_start: Some(4),
+                    line_end: Some(8),
+                },
+                score: 0.0,
+            }])
+        });
+        let mut provider = MockEmbeddingProvider::new();
+        provider
+            .expect_embed_query()
+            .once()
+            .returning(|_| EmbeddingVector::new(vec![0.1, 0.2], 2));
+        let mut index = MockVectorIndex::new();
+        index
+            .expect_search()
+            .once()
+            .withf(move |request| {
+                request.organization_id == organization_id
+                    && request.project_id == project_id.as_uuid()
+                    && !request.include_global
+            })
+            .return_once(move |_| {
+                Ok(vec![VectorCandidate {
+                    chunk_id,
+                    score: 0.9,
+                }])
+            });
+        let service = RetrievalService::new(store, provider, index, config());
+
+        let response = service
+            .retrieve_context(
+                &RetrievalPrincipal::Agent {
+                    organization_id,
+                    project_slugs: vec!["fjulian-me".to_owned()],
+                    allow_global_knowledge: false,
+                },
+                RetrieveContextRequest {
+                    project_id,
+                    query: "integration".to_owned(),
+                    include_global: true,
+                    limit: 5,
+                },
+            )
+            .await
+            .expect("agent retrieval should succeed");
+
+        assert_eq!(response.retrieval.mode, RetrievalMode::Hybrid);
+        assert_eq!(response.items[0].scope, KnowledgeScope::Project);
+    }
+
     fn config() -> RetrievalConfig {
         RetrievalConfig {
             embedding_profile_version: "test-v1".to_owned(),

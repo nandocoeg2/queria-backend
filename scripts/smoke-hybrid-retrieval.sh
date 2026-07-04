@@ -14,3 +14,4 @@ run_with_secrets cargo run -p queria-cli -- retrieval probe \
   --project "${PROJECT_SLUG}" \
   --query "${QUERY}" \
   --limit 5
+run_with_secrets cargo run -p queria-cli -- eval run --project "${PROJECT_SLUG}"

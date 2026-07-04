@@ -113,3 +113,43 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
         ),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retrieve_context_is_available_only_when_token_allows_it() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::RetrieveContext],
+        };
+
+        let tools = tool_definitions(&permissions);
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "retrieve_context");
+        assert_eq!(
+            permission_for_tool("retrieve_context"),
+            Some(AgentToolPermission::RetrieveContext)
+        );
+    }
+
+    #[test]
+    fn retrieve_context_is_hidden_when_token_lacks_permission() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::ListProjects],
+        };
+
+        let tools = tool_definitions(&permissions);
+
+        assert!(
+            tools
+                .iter()
+                .all(|definition| definition["name"] != "retrieve_context")
+        );
+    }
+}

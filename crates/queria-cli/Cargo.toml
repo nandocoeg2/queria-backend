@@ -8,11 +8,13 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
 queria-search = { path = "../queria-search" }
 reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true

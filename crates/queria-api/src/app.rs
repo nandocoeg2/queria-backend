@@ -243,6 +243,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn retrieval_short_alias_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/retrieve-context")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "project_id": "019083a0-0000-7000-8000-000000000001",
+                            "query": "deployment notes",
+                            "include_global": true,
+                            "limit": 5
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
     async fn approvals_list_requires_session_cookie() {
         let app = build_app(AppConfig::default_local());
 

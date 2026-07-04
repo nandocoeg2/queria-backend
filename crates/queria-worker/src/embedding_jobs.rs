@@ -486,6 +486,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn retry_backoff_uses_configured_cap() {
+        let config = EmbeddingWorkerConfig {
+            retry_backoff_base_seconds: 15,
+            retry_backoff_max_seconds: 60,
+            ..EmbeddingWorkerConfig::default()
+        };
+
+        assert_eq!(retry_backoff_seconds(&config, 1), 15);
+        assert_eq!(retry_backoff_seconds(&config, 2), 30);
+        assert_eq!(retry_backoff_seconds(&config, 7), 60);
+    }
+
     fn embedding_job() -> IngestionJobRecord {
         IngestionJobRecord {
             id: Uuid::now_v7(),
