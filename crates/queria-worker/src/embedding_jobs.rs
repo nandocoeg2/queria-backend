@@ -69,6 +69,12 @@ pub trait EmbeddingJobStore: Send + Sync {
         error: &str,
         backoff_seconds: i64,
     ) -> QueriaResult<bool>;
+    async fn pause_job_for_request_interval(
+        &self,
+        job_id: IngestionJobId,
+        delay_millis: i64,
+        processed_chunks: u64,
+    ) -> QueriaResult<bool>;
     async fn cancellation_requested(&self, job_id: IngestionJobId) -> QueriaResult<bool>;
 }
 
@@ -240,8 +246,11 @@ where
         processed += u64::try_from(chunks.len()).map_err(|_| {
             QueriaError::Infrastructure("embedding batch count overflow".to_owned())
         })?;
-        if let Some(interval) = request_interval(config) {
-            tokio::time::sleep(interval).await;
+        if let Some(delay_millis) = request_interval_millis(config) {
+            store
+                .pause_job_for_request_interval(job_id, delay_millis, processed)
+                .await?;
+            return Ok(());
         }
     }
 }
@@ -339,8 +348,9 @@ fn retry_after_at(now: SystemTime, backoff_seconds: i64) -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-fn request_interval(config: &EmbeddingWorkerConfig) -> Option<Duration> {
-    (config.request_interval_ms > 0).then(|| Duration::from_millis(config.request_interval_ms))
+fn request_interval_millis(config: &EmbeddingWorkerConfig) -> Option<i64> {
+    (config.request_interval_ms > 0)
+        .then(|| i64::try_from(config.request_interval_ms).unwrap_or(i64::MAX))
 }
 
 fn sanitized_error(error: &QueriaError) -> String {
@@ -422,6 +432,21 @@ impl EmbeddingJobStore for PgEmbeddingRepository {
         backoff_seconds: i64,
     ) -> QueriaResult<bool> {
         PgEmbeddingRepository::release_job_for_retry(self, job_id, error, backoff_seconds).await
+    }
+
+    async fn pause_job_for_request_interval(
+        &self,
+        job_id: IngestionJobId,
+        delay_millis: i64,
+        processed_chunks: u64,
+    ) -> QueriaResult<bool> {
+        PgEmbeddingRepository::pause_job_for_request_interval(
+            self,
+            job_id,
+            delay_millis,
+            processed_chunks,
+        )
+        .await
     }
 
     async fn cancellation_requested(&self, job_id: IngestionJobId) -> QueriaResult<bool> {
@@ -520,6 +545,63 @@ mod tests {
                 .await
                 .expect("backfill should succeed")
         );
+    }
+
+    #[tokio::test]
+    async fn paced_backfill_iteration_returns_without_waiting_for_interval() {
+        let job = embedding_job();
+        let job_id = IngestionJobId::from_uuid(job.id);
+        let chunk = embedding_chunk();
+        let chunk_id = chunk.chunk_id;
+        let mut store = MockEmbeddingJobStore::new();
+        store
+            .expect_claim_next()
+            .once()
+            .return_once(move |_| Ok(Some(job)));
+        store
+            .expect_cancellation_requested()
+            .once()
+            .returning(|_| Ok(false));
+        store
+            .expect_claim_chunk_batch()
+            .once()
+            .return_once(move |_, _, _| Ok(vec![chunk]));
+        store
+            .expect_mark_batch_ready()
+            .once()
+            .withf(move |completions, _, _, dimension, _| {
+                completions.len() == 1 && completions[0].chunk_id == chunk_id && *dimension == 2
+            })
+            .returning(|_, _, _, _, _| Ok(()));
+        store
+            .expect_pause_job_for_request_interval()
+            .once()
+            .withf(move |seen_job_id, delay_millis, processed_chunks| {
+                *seen_job_id == job_id && *delay_millis == 60_000 && *processed_chunks == 1
+            })
+            .returning(|_, _, _| Ok(true));
+        store.expect_complete_job().never();
+        let mut provider = queria_search::embedding::MockEmbeddingProvider::new();
+        provider
+            .expect_embed_documents()
+            .once()
+            .returning(|_| Ok(vec![EmbeddingVector::new(vec![0.1, 0.2], 2)?]));
+        let mut index = queria_search::embedding::MockVectorIndex::new();
+        index.expect_upsert().once().returning(|_| Ok(()));
+        let config = EmbeddingWorkerConfig {
+            dimension: 2,
+            profile_version: "test-v1".to_owned(),
+            request_interval_ms: 60_000,
+            ..EmbeddingWorkerConfig::default()
+        };
+
+        tokio::time::timeout(
+            Duration::from_millis(25),
+            run_one(&store, &provider, &index, &config, "worker-1"),
+        )
+        .await
+        .expect("paced worker should not sleep while holding a running job")
+        .expect("backfill should release iteration cleanly");
     }
 
     #[tokio::test]
@@ -632,8 +714,8 @@ mod tests {
             ..EmbeddingWorkerConfig::default()
         };
 
-        assert_eq!(request_interval(&disabled), None);
-        assert_eq!(request_interval(&paced), Some(Duration::from_millis(250)));
+        assert_eq!(request_interval_millis(&disabled), None);
+        assert_eq!(request_interval_millis(&paced), Some(250));
     }
 
     fn embedding_job() -> IngestionJobRecord {

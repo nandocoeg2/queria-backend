@@ -2,7 +2,7 @@ use crate::ingestion::IngestionJobRecord;
 use queria_core::ids::{IngestionJobId, ProjectId};
 use queria_core::model::KnowledgeScope;
 use queria_core::{QueriaError, QueriaResult};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -371,6 +371,40 @@ impl PgEmbeddingRepository {
         .bind(job_id.as_uuid())
         .bind(sanitized)
         .bind(backoff_seconds)
+        .execute(&self.pool)
+        .await
+        .map(|result| result.rows_affected() == 1)
+        .map_err(to_infrastructure_error)
+    }
+
+    pub async fn pause_job_for_request_interval(
+        &self,
+        job_id: IngestionJobId,
+        delay_millis: i64,
+        processed_chunks: u64,
+    ) -> QueriaResult<bool> {
+        let result = json!({
+            "processed_chunks": processed_chunks,
+            "paused_for_request_interval_ms": delay_millis.max(1),
+        });
+        sqlx::query(
+            "update ingestion_job
+             set status = 'queued',
+                 result = $2,
+                 error_message = null,
+                 retry_after_at = now()
+                   + make_interval(secs => greatest($3::bigint, 1)::double precision / 1000.0),
+                 attempts = greatest(attempts - 1, 0),
+                 locked_by = null,
+                 locked_at = null,
+                 updated_at = now()
+             where id = $1
+               and status = 'running'
+               and job_type = 'embedding_backfill'",
+        )
+        .bind(job_id.as_uuid())
+        .bind(result)
+        .bind(delay_millis)
         .execute(&self.pool)
         .await
         .map(|result| result.rows_affected() == 1)
