@@ -1,0 +1,11 @@
+/target/
+/.env
+/.env.*
+!/\.env.example
+/data/
+/volumes/
+*.log
+*.pem
+*.key
+*.p12
+
