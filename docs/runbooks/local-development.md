@@ -65,6 +65,12 @@ When the provider keeps returning `429`, reduce the batch and cap the retry wind
 rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=4 QUERIA_EMBEDDING_RETRY_BACKOFF_BASE_SECONDS=15 QUERIA_EMBEDDING_RETRY_BACKOFF_MAX_SECONDS=60 cargo run -p queria-worker
 ```
 
+For the `fjulian-me` backfill readiness pass, use the approved MVP batch size:
+
+```bash
+rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=8 cargo run -p queria-worker
+```
+
 ## Retrieval Probe
 
 ```bash
@@ -86,3 +92,10 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fju
 ```
 
 The baseline reads `tests/golden_questions/fjulian-me.jsonl` and reports pass/fail, expected scope hits, expected citation hits, and a regression score.
+
+The admin API can run and persist the same baseline:
+
+```bash
+rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/run \
+  -H 'cookie: queria_session=<session-token>'
+```

@@ -79,6 +79,21 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- retrieval probe --proj
 rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
 ```
 
+Admin API checks use the same retrieval path and require a valid `queria_session` cookie:
+
+```bash
+rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/retrieval/probe \
+  -H 'content-type: application/json' \
+  -H 'cookie: queria_session=<session-token>' \
+  -d '{"query":"Astro markdown content flow","include_global":true,"limit":5}'
+
+rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/run \
+  -H 'cookie: queria_session=<session-token>'
+
+rtk curl -sS http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/latest \
+  -H 'cookie: queria_session=<session-token>'
+```
+
 Pass criteria:
 
 - migrations are applied
@@ -87,6 +102,7 @@ Pass criteria:
 - retrieval probe returns at least one cited item
 - retrieval diagnostics include lexical and semantic candidate counts
 - evaluation report has `passed=true` for the project baseline
+- evaluation API persists an `evaluation_report` row with the full JSON report
 
 ## Evaluation Baseline
 
@@ -116,3 +132,9 @@ The report includes:
 - expected citation hits
 - retrieval mode and candidate counts
 - regression score from 0.0 to 1.0
+
+Admin UI reads persisted reports from:
+
+- `POST /api/v1/projects/:slug/evaluations/run`
+- `GET /api/v1/projects/:slug/evaluations`
+- `GET /api/v1/projects/:slug/evaluations/latest`

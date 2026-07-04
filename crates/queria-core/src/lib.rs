@@ -1,6 +1,7 @@
 pub mod config;
 pub mod contracts;
 pub mod error;
+pub mod evaluation;
 pub mod ids;
 pub mod model;
 

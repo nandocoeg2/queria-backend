@@ -1,9 +1,10 @@
 use crate::http::{
-    approvals, auth, embedding_jobs, health, ingestion_jobs, knowledge_items, projects, retrieval,
-    setup, sources, tokens,
+    approvals, auth, embedding_jobs, evaluations, health, ingestion_jobs, knowledge_items,
+    projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
+use queria_db::evaluation::PgEvaluationRepository;
 use queria_db::ingestion::PgIngestionRepository;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
 use sqlx::PgPool;
@@ -30,6 +31,11 @@ impl ApiState {
     pub fn ingestion_repository(&self) -> Option<PgIngestionRepository> {
         self.pool.clone().map(PgIngestionRepository::new)
     }
+
+    #[must_use]
+    pub fn evaluation_repository(&self) -> Option<PgEvaluationRepository> {
+        self.pool.clone().map(PgEvaluationRepository::new)
+    }
 }
 
 pub fn build_app(config: AppConfig) -> Router {
@@ -50,7 +56,10 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/auth", auth::router())
         .nest(
             "/api/v1/projects",
-            projects::router().merge(embedding_jobs::project_router()),
+            projects::router()
+                .merge(embedding_jobs::project_router())
+                .merge(retrieval::project_router())
+                .merge(evaluations::project_router()),
         )
         .nest(
             "/api/v1/sources",
@@ -197,6 +206,60 @@ mod tests {
             .expect("request should complete");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn retrieval_probe_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/projects/fjulian-me/retrieval/probe")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "query": "Astro markdown content flow",
+                            "include_global": true,
+                            "limit": 5
+                        }"#,
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn evaluation_endpoints_require_session_cookie() {
+        let requests = [
+            ("POST", "/api/v1/projects/fjulian-me/evaluations/run"),
+            ("GET", "/api/v1/projects/fjulian-me/evaluations"),
+            ("GET", "/api/v1/projects/fjulian-me/evaluations/latest"),
+        ];
+
+        for (method, uri) in requests {
+            let response = build_app(AppConfig::default_local())
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(uri)
+                        .header("content-type", "application/json")
+                        .body(Body::empty())
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should complete");
+
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {uri}"
+            );
+        }
     }
 
     #[tokio::test]

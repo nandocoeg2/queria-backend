@@ -117,6 +117,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "embedding_retry_backoff",
             sql: include_str!("../../../migrations/20260704000600_embedding_retry_backoff.sql"),
         },
+        Migration {
+            version: "20260704000700",
+            name: "evaluation_reports",
+            sql: include_str!("../../../migrations/20260704000700_evaluation_reports.sql"),
+        },
     ]
 }
 
@@ -233,6 +238,26 @@ mod tests {
             assert!(
                 migration.sql.contains(required_sql),
                 "embedding retry migration is missing {required_sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_migrations_include_evaluation_reports() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260704000700")
+            .expect("missing evaluation report migration");
+
+        for required_sql in [
+            "create table if not exists evaluation_report",
+            "report_json jsonb not null",
+            "create index if not exists idx_evaluation_report_project_created",
+        ] {
+            assert!(
+                migration.sql.contains(required_sql),
+                "evaluation report migration is missing {required_sql}"
             );
         }
     }
