@@ -95,6 +95,13 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "sessions_and_setup",
             sql: include_str!("../../../migrations/20260704000200_sessions_and_setup.sql"),
         },
+        Migration {
+            version: "20260704000300",
+            name: "source_branch_and_retrieval_indexes",
+            sql: include_str!(
+                "../../../migrations/20260704000300_source_branch_and_retrieval_indexes.sql"
+            ),
+        },
     ]
 }
 
@@ -129,5 +136,20 @@ mod tests {
                 "missing {table}"
             );
         }
+    }
+
+    #[test]
+    fn bundled_migrations_include_source_branch_upgrade() {
+        let migrations = bundled_migrations();
+
+        assert!(
+            migrations
+                .iter()
+                .any(|migration| migration.version == "20260704000300"
+                    && migration
+                        .sql
+                        .contains("add column if not exists branch text")),
+            "missing source branch migration"
+        );
     }
 }

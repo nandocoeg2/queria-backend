@@ -1,7 +1,7 @@
 use crate::http::{auth, health, projects, retrieval, setup, sources, tokens};
 use axum::Router;
 use queria_core::AppConfig;
-use queria_db::repositories::PgAuthRepository;
+use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
@@ -15,6 +15,11 @@ impl ApiState {
     #[must_use]
     pub fn auth_repository(&self) -> Option<PgAuthRepository> {
         self.pool.clone().map(PgAuthRepository::new)
+    }
+
+    #[must_use]
+    pub fn project_repository(&self) -> Option<PgProjectRepository> {
+        self.pool.clone().map(PgProjectRepository::new)
     }
 }
 
@@ -97,6 +102,66 @@ mod tests {
                     .method("POST")
                     .uri("/api/v1/agent-tokens")
                     .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn projects_endpoint_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/projects")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn sources_endpoint_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/sources?project_slug=fjulian-me")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn retrieval_endpoint_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/retrieval/retrieve-context")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "project_id": "019083a0-0000-7000-8000-000000000001",
+                            "query": "deployment notes",
+                            "include_global": true,
+                            "limit": 5
+                        }"#,
+                    ))
                     .expect("request should build"),
             )
             .await

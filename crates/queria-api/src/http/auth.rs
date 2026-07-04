@@ -8,6 +8,7 @@ use axum::{
 use chrono::{Duration, Utc};
 use queria_auth::password::PasswordHasher;
 use queria_auth::session::SessionIssuer;
+use queria_db::repositories::AuthenticatedSession;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -109,17 +110,9 @@ async fn login(
 }
 
 async fn me(State(state): State<ApiState>, headers: HeaderMap) -> (StatusCode, Json<MeResponse>) {
-    let Some(repository) = state.auth_repository() else {
-        return me_error("user_store_not_configured");
-    };
-
-    let Some(raw_token) = session_cookie(&headers) else {
-        return me_error("session_required");
-    };
-
-    let token_hash = SessionIssuer::hash_session_token(raw_token);
-    let Ok(Some(session)) = repository.find_session_by_hash(&token_hash).await else {
-        return me_error("invalid_session");
+    let session = match require_session(&state, &headers).await {
+        Ok(session) => session,
+        Err(error) => return me_error(error),
     };
 
     (
@@ -131,6 +124,26 @@ async fn me(State(state): State<ApiState>, headers: HeaderMap) -> (StatusCode, J
             error: None,
         }),
     )
+}
+
+pub async fn require_session(
+    state: &ApiState,
+    headers: &HeaderMap,
+) -> Result<AuthenticatedSession, &'static str> {
+    let Some(repository) = state.auth_repository() else {
+        return Err("user_store_not_configured");
+    };
+
+    let Some(raw_token) = session_cookie(headers) else {
+        return Err("session_required");
+    };
+
+    let token_hash = SessionIssuer::hash_session_token(raw_token);
+    let Ok(Some(session)) = repository.find_session_by_hash(&token_hash).await else {
+        return Err("invalid_session");
+    };
+
+    Ok(session)
 }
 
 fn login_error(

@@ -10,5 +10,6 @@ rust-version.workspace = true
 chrono.workspace = true
 mockall.workspace = true
 queria-core = { path = "../queria-core" }
+serde_json.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
