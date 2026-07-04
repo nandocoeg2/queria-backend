@@ -25,7 +25,7 @@ Reranking and Qdrant sparse vectors are outside this phase.
 | Output dimension | 1024 |
 | Input type while indexing | `document` |
 | Input type while searching | `query` |
-| Qdrant collection | `queria_chunks_v1` |
+| Qdrant collection | `queria_{environment}_chunks_v1` |
 | Named vector | `dense_v1` |
 | Distance | Cosine |
 | Text retrieval | PostgreSQL FTS using `simple` |
@@ -95,7 +95,16 @@ supersedes source knowledge.
 
 ## Qdrant Schema
 
-Collection `queria_chunks_v1` contains named vector `dense_v1`:
+Each environment has a separate collection because dev, staging, and
+production currently share one Qdrant cluster:
+
+```text
+queria_dev_chunks_v1
+queria_staging_chunks_v1
+queria_prod_chunks_v1
+```
+
+Each collection contains named vector `dense_v1`:
 
 ```text
 size: 1024
@@ -122,7 +131,8 @@ Payload contains identifiers and filter fields only:
 The full chunk body is not duplicated into Qdrant. Payload indexes are created
 for organization, project, scope, status, category, and embedding version.
 
-One collection is shared across organizations and projects. Authorization and
+Within an environment, one collection is shared across organizations and
+projects. Collections are never shared across environments. Authorization and
 scope are enforced by Qdrant filters and then verified again during Postgres
 hydration.
 
@@ -257,7 +267,7 @@ QUERIA_EMBEDDING_VERSION=v1
 QUERIA_EMBEDDING_BATCH_SIZE=128
 QUERIA_EMBEDDING_TIMEOUT_SECONDS=30
 QUERIA_EMBEDDING_MAX_RETRIES=4
-QUERIA_QDRANT_COLLECTION=queria_chunks_v1
+QUERIA_QDRANT_COLLECTION=queria_{environment}_chunks_v1
 QUERIA_QDRANT_VECTOR_NAME=dense_v1
 QUERIA_HYBRID_RRF_K=60
 QUERIA_RETRIEVAL_CANDIDATE_MULTIPLIER=3
