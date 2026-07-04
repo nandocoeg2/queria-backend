@@ -1,8 +1,10 @@
 use crate::http::{
-    approvals, auth, health, knowledge_items, projects, retrieval, setup, sources, tokens,
+    approvals, auth, health, ingestion_jobs, knowledge_items, projects, retrieval, setup, sources,
+    tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
+use queria_db::ingestion::PgIngestionRepository;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
@@ -23,6 +25,11 @@ impl ApiState {
     pub fn project_repository(&self) -> Option<PgProjectRepository> {
         self.pool.clone().map(PgProjectRepository::new)
     }
+
+    #[must_use]
+    pub fn ingestion_repository(&self) -> Option<PgIngestionRepository> {
+        self.pool.clone().map(PgIngestionRepository::new)
+    }
 }
 
 pub fn build_app(config: AppConfig) -> Router {
@@ -42,7 +49,11 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/setup", setup::router())
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/projects", projects::router())
-        .nest("/api/v1/sources", sources::router())
+        .nest(
+            "/api/v1/sources",
+            sources::router().merge(ingestion_jobs::source_router()),
+        )
+        .nest("/api/v1/ingestion-jobs", ingestion_jobs::job_router())
         .nest("/api/v1/approvals", approvals::router())
         .nest("/api/v1/knowledge-items", knowledge_items::router())
         .nest("/api/v1/retrieval", retrieval::router())
@@ -294,5 +305,47 @@ mod tests {
             .expect("request should complete");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn ingestion_endpoints_require_session_cookie() {
+        let requests = [
+            (
+                "POST",
+                "/api/v1/sources/019083a0-0000-7000-8000-000000000005/ingest",
+            ),
+            ("GET", "/api/v1/ingestion-jobs"),
+            (
+                "GET",
+                "/api/v1/ingestion-jobs/019083a0-0000-7000-8000-000000000006",
+            ),
+            (
+                "POST",
+                "/api/v1/ingestion-jobs/019083a0-0000-7000-8000-000000000006/retry",
+            ),
+            (
+                "POST",
+                "/api/v1/ingestion-jobs/019083a0-0000-7000-8000-000000000006/cancel",
+            ),
+        ];
+
+        for (method, uri) in requests {
+            let response = build_app(AppConfig::default_local())
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should complete");
+
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {uri}"
+            );
+        }
     }
 }

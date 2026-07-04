@@ -102,6 +102,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
                 "../../../migrations/20260704000300_source_branch_and_retrieval_indexes.sql"
             ),
         },
+        Migration {
+            version: "20260704000400",
+            name: "git_ingestion",
+            sql: include_str!("../../../migrations/20260704000400_git_ingestion.sql"),
+        },
     ]
 }
 
@@ -151,5 +156,30 @@ mod tests {
                         .contains("add column if not exists branch text")),
             "missing source branch migration"
         );
+    }
+
+    #[test]
+    fn bundled_migrations_include_git_ingestion_lifecycle() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260704000400")
+            .expect("missing git ingestion migration");
+
+        for required_sql in [
+            "source_root_id",
+            "is_active",
+            "stable_key",
+            "generated_by",
+            "cancel_requested_at",
+            "retry_of_id",
+            "idx_ingestion_job_one_active_per_source",
+            "idx_source_document_active_child_path",
+        ] {
+            assert!(
+                migration.sql.contains(required_sql),
+                "git ingestion migration is missing {required_sql}"
+            );
+        }
     }
 }
