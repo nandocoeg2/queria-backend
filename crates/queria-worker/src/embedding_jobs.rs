@@ -11,6 +11,7 @@ use queria_search::embedding::{
     EmbeddingDocument, EmbeddingProvider, VectorIndex, VectorPayload, VectorPoint,
 };
 use serde_json::{Value, json};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,8 +86,20 @@ where
         return Ok(false);
     };
     let job_id = IngestionJobId::from_uuid(job.id);
+    let backoff_seconds = retry_backoff_seconds(config, job.attempts);
     let result = match job.job_type.as_str() {
-        "embedding_backfill" => run_backfill(store, provider, index, config, job_id).await,
+        "embedding_backfill" => {
+            run_backfill(
+                store,
+                provider,
+                index,
+                config,
+                job_id,
+                job.attempts,
+                backoff_seconds,
+            )
+            .await
+        }
         "qdrant_delete" => run_delete(store, index, job_id).await,
         _ => Err(QueriaError::Validation(format!(
             "unsupported worker job type {}",
@@ -97,11 +110,7 @@ where
         let sanitized = sanitized_error(&error);
         if is_retryable_embedding_error(&error) {
             store
-                .release_job_for_retry(
-                    job_id,
-                    &sanitized,
-                    retry_backoff_seconds(config, job.attempts),
-                )
+                .release_job_for_retry(job_id, &sanitized, backoff_seconds)
                 .await?;
         } else {
             store.fail_job(job_id, &sanitized).await?;
@@ -116,6 +125,8 @@ async fn run_backfill<S, E, V>(
     index: &V,
     config: &EmbeddingWorkerConfig,
     job_id: IngestionJobId,
+    job_attempts: i32,
+    backoff_seconds: i64,
 ) -> QueriaResult<()>
 where
     S: EmbeddingJobStore,
@@ -151,10 +162,24 @@ where
                 let error = QueriaError::Infrastructure(
                     "embedding response count did not match chunk batch".to_owned(),
                 );
+                log_embedding_batch_failure(
+                    job_id,
+                    job_attempts,
+                    &chunks,
+                    &error,
+                    retry_after_at(SystemTime::now(), backoff_seconds),
+                );
                 fail_chunk_batch(store, &chunks, &error).await?;
                 return Err(error);
             }
             Err(error) => {
+                log_embedding_batch_failure(
+                    job_id,
+                    job_attempts,
+                    &chunks,
+                    &error,
+                    retry_after_at(SystemTime::now(), backoff_seconds),
+                );
                 fail_chunk_batch(store, &chunks, &error).await?;
                 return Err(error);
             }
@@ -175,6 +200,13 @@ where
             })
             .collect::<Vec<_>>();
         if let Err(error) = index.upsert(&points).await {
+            log_embedding_batch_failure(
+                job_id,
+                job_attempts,
+                &chunks,
+                &error,
+                retry_after_at(SystemTime::now(), backoff_seconds),
+            );
             fail_chunk_batch(store, &chunks, &error).await?;
             return Err(error);
         }
@@ -247,6 +279,59 @@ where
     store
         .mark_batch_failed(&chunk_ids, &sanitized_error(error))
         .await
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BatchFailureLogContext {
+    chunk_count: usize,
+    provider_status: Option<String>,
+    sample_source_path: Option<String>,
+}
+
+fn log_embedding_batch_failure(
+    job_id: IngestionJobId,
+    attempts: i32,
+    chunks: &[EmbeddingChunkRecord],
+    error: &QueriaError,
+    retry_after_at: u64,
+) {
+    let context = batch_failure_log_context(chunks, error);
+    tracing::warn!(
+        job_id = %job_id.as_uuid(),
+        attempts,
+        chunk_count = context.chunk_count,
+        provider_status = context.provider_status.as_deref().unwrap_or("unknown"),
+        retry_after_at,
+        sample_source_path = context.sample_source_path.as_deref().unwrap_or(""),
+        error = %sanitized_error(error),
+        "embedding batch failed"
+    );
+}
+
+fn batch_failure_log_context(
+    chunks: &[EmbeddingChunkRecord],
+    error: &QueriaError,
+) -> BatchFailureLogContext {
+    BatchFailureLogContext {
+        chunk_count: chunks.len(),
+        provider_status: provider_status(error),
+        sample_source_path: chunks.first().map(|chunk| chunk.source_path.clone()),
+    }
+}
+
+fn provider_status(error: &QueriaError) -> Option<String> {
+    let message = error.to_string();
+    let (_, status) = message.split_once("status ")?;
+    let status = status.split(';').next().unwrap_or(status).trim();
+    (!status.is_empty()).then(|| status.to_owned())
+}
+
+fn retry_after_at(now: SystemTime, backoff_seconds: i64) -> u64 {
+    let backoff = u64::try_from(backoff_seconds.max(1)).unwrap_or(1);
+    let retry_time = now.checked_add(Duration::from_secs(backoff)).unwrap_or(now);
+    retry_time
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
 }
 
 fn sanitized_error(error: &QueriaError) -> String {
@@ -497,6 +582,34 @@ mod tests {
         assert_eq!(retry_backoff_seconds(&config, 1), 15);
         assert_eq!(retry_backoff_seconds(&config, 2), 30);
         assert_eq!(retry_backoff_seconds(&config, 7), 60);
+    }
+
+    #[test]
+    fn batch_failure_log_context_captures_operational_fields() {
+        let chunk = embedding_chunk();
+        let error = QueriaError::Infrastructure(
+            "Voyage request failed with status 429 Too Many Requests; request_id=test".to_owned(),
+        );
+
+        let context = batch_failure_log_context(&[chunk], &error);
+
+        assert_eq!(context.chunk_count, 1);
+        assert_eq!(
+            context.provider_status.as_deref(),
+            Some("429 Too Many Requests")
+        );
+        assert_eq!(
+            context.sample_source_path.as_deref(),
+            Some("docs/deploy.md")
+        );
+    }
+
+    #[test]
+    fn retry_after_at_uses_epoch_seconds() {
+        let now = UNIX_EPOCH + Duration::from_secs(100);
+
+        assert_eq!(retry_after_at(now, 30), 130);
+        assert_eq!(retry_after_at(now, 0), 101);
     }
 
     fn embedding_job() -> IngestionJobRecord {
