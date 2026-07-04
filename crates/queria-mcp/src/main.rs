@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
     PgProjectRepository::new(db_pool.clone())
         .seed_fjulian_me_registry()
         .await?;
-    let app = queria_mcp::server::build_app_with_pool(db_pool);
+    let app = queria_mcp::server::build_app_with_pool(config.clone(), db_pool);
     let listener = tokio::net::TcpListener::bind(config.mcp_addr.parse::<SocketAddr>()?).await?;
     tracing::info!(addr = %config.mcp_addr, "queria-mcp listening");
     axum::serve(listener, app).await?;

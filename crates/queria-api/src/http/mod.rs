@@ -1,5 +1,6 @@
 pub mod approvals;
 pub mod auth;
+pub mod embedding_jobs;
 pub mod health;
 pub mod ingestion_jobs;
 pub mod knowledge_items;

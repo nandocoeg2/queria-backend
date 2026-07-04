@@ -1,10 +1,12 @@
 use crate::http;
 use axum::Router;
+use queria_core::AppConfig;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone, Debug)]
 pub struct McpState {
+    pub config: AppConfig,
     pub pool: Option<PgPool>,
 }
 
@@ -18,11 +20,17 @@ impl McpState {
 }
 
 pub fn build_app() -> Router {
-    build_app_with_state(McpState { pool: None })
+    build_app_with_state(McpState {
+        config: AppConfig::default_local(),
+        pool: None,
+    })
 }
 
-pub fn build_app_with_pool(pool: PgPool) -> Router {
-    build_app_with_state(McpState { pool: Some(pool) })
+pub fn build_app_with_pool(config: AppConfig, pool: PgPool) -> Router {
+    build_app_with_state(McpState {
+        config,
+        pool: Some(pool),
+    })
 }
 
 fn build_app_with_state(state: McpState) -> Router {

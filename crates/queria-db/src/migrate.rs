@@ -107,6 +107,16 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "git_ingestion",
             sql: include_str!("../../../migrations/20260704000400_git_ingestion.sql"),
         },
+        Migration {
+            version: "20260704000500",
+            name: "hybrid_retrieval",
+            sql: include_str!("../../../migrations/20260704000500_hybrid_retrieval.sql"),
+        },
+        Migration {
+            version: "20260704000600",
+            name: "embedding_retry_backoff",
+            sql: include_str!("../../../migrations/20260704000600_embedding_retry_backoff.sql"),
+        },
     ]
 }
 
@@ -180,6 +190,49 @@ mod tests {
             assert!(
                 migration.sql.contains(required_sql),
                 "git ingestion migration is missing {required_sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_migrations_include_hybrid_retrieval_state() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260704000500")
+            .expect("missing hybrid retrieval migration");
+
+        for required_sql in [
+            "create type embedding_status",
+            "search_vector tsvector",
+            "embedding_content_hash",
+            "embedding_profile_version",
+            "idx_chunk_search_vector",
+            "idx_chunk_embedding_claim",
+        ] {
+            assert!(
+                migration.sql.contains(required_sql),
+                "hybrid retrieval migration is missing {required_sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_migrations_include_embedding_retry_backoff() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260704000600")
+            .expect("missing embedding retry backoff migration");
+
+        for required_sql in [
+            "retry_after_at",
+            "idx_ingestion_job_embedding_retry_ready",
+            "status = 'queued'",
+        ] {
+            assert!(
+                migration.sql.contains(required_sql),
+                "embedding retry migration is missing {required_sql}"
             );
         }
     }

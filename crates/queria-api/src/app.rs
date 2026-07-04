@@ -1,6 +1,6 @@
 use crate::http::{
-    approvals, auth, health, ingestion_jobs, knowledge_items, projects, retrieval, setup, sources,
-    tokens,
+    approvals, auth, embedding_jobs, health, ingestion_jobs, knowledge_items, projects, retrieval,
+    setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
@@ -48,15 +48,19 @@ fn build_app_with_state(state: ApiState) -> Router {
         .merge(health::router())
         .nest("/api/v1/setup", setup::router())
         .nest("/api/v1/auth", auth::router())
-        .nest("/api/v1/projects", projects::router())
+        .nest(
+            "/api/v1/projects",
+            projects::router().merge(embedding_jobs::project_router()),
+        )
         .nest(
             "/api/v1/sources",
             sources::router().merge(ingestion_jobs::source_router()),
         )
         .nest("/api/v1/ingestion-jobs", ingestion_jobs::job_router())
+        .nest("/api/v1/embedding-jobs", embedding_jobs::job_router())
         .nest("/api/v1/approvals", approvals::router())
         .nest("/api/v1/knowledge-items", knowledge_items::router())
-        .nest("/api/v1/retrieval", retrieval::router())
+        .nest("/api/v1", retrieval::router())
         .nest("/api/v1/agent-tokens", tokens::router())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -168,6 +172,24 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/projects")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn embedding_backfill_requires_session_cookie() {
+        let app = build_app(AppConfig::default_local());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/projects/fjulian-me/embedding-jobs/backfill")
                     .body(Body::empty())
                     .expect("request should build"),
             )

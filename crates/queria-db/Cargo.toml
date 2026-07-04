@@ -14,5 +14,6 @@ queria-core = { path = "../queria-core" }
 queria-ingestion = { path = "../queria-ingestion" }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 uuid.workspace = true

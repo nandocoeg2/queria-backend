@@ -14,6 +14,7 @@ use queria_db::repositories::{
     AuthenticatedAgentToken, PgProjectRepository, ProjectRecord, ProposeMemoryParams,
     SourceDocumentRecord,
 };
+use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -111,7 +112,7 @@ async fn mcp(
             request.id,
             json!({ "tools": tools::tool_definitions(&agent.permissions) }),
         ),
-        "tools/call" => match call_tool(&repository, &agent, request.params).await {
+        "tools/call" => match call_tool(&state, &repository, &agent, request.params).await {
             Ok(value) => json_rpc_result(request.id, value),
             Err(error) => json_rpc_error(request.id, -32602, &error),
         },
@@ -122,6 +123,7 @@ async fn mcp(
 }
 
 async fn call_tool(
+    state: &McpState,
     repository: &PgProjectRepository,
     agent: &AuthenticatedAgentToken,
     params: Option<Value>,
@@ -155,23 +157,8 @@ async fn call_tool(
                 include_global: args.include_global.unwrap_or(true),
                 limit: args.limit.unwrap_or(5),
             };
-            request.validate().map_err(|error| error.to_string())?;
-            let items = repository
-                .search_approved_chunks_for_agent(
-                    agent,
-                    request.project_id,
-                    &request.query,
-                    request.include_global,
-                    request.limit,
-                )
-                .await
-                .map_err(infrastructure_error)?;
-            Ok(tool_success(json!(RetrieveContextResponse {
-                project_id: request.project_id,
-                query: request.query,
-                items,
-                generated_at: chrono::Utc::now(),
-            })))
+            let response = hybrid_retrieve(state, agent, request).await?;
+            Ok(tool_success(json!(response)))
         }
         "search_knowledge" => {
             let args: RetrievalArgs =
@@ -182,22 +169,8 @@ async fn call_tool(
                 include_global: args.include_global.unwrap_or(true),
                 limit: args.limit.unwrap_or(10),
             };
-            request.validate().map_err(|error| error.to_string())?;
-            let items = repository
-                .search_approved_chunks_for_agent(
-                    agent,
-                    request.project_id,
-                    &request.query,
-                    request.include_global,
-                    request.limit,
-                )
-                .await
-                .map_err(infrastructure_error)?;
-            Ok(tool_success(json!({
-                "project_id": request.project_id,
-                "query": request.query,
-                "items": items
-            })))
+            let response = hybrid_retrieve(state, agent, request).await?;
+            Ok(tool_success(json!(response)))
         }
         "get_source" => {
             let args: GetSourceArgs =
@@ -225,6 +198,30 @@ async fn call_tool(
         }
         _ => Err("unknown_tool".to_owned()),
     }
+}
+
+async fn hybrid_retrieve(
+    state: &McpState,
+    agent: &AuthenticatedAgentToken,
+    request: RetrieveContextRequest,
+) -> Result<RetrieveContextResponse, String> {
+    request.validate().map_err(|error| error.to_string())?;
+    let pool = state
+        .pool
+        .clone()
+        .ok_or_else(|| "knowledge_store_not_configured".to_owned())?;
+    let service = build_pg_retrieval_service(&state.config, pool).map_err(infrastructure_error)?;
+    service
+        .retrieve_context(
+            &RetrievalPrincipal::Agent {
+                organization_id: agent.organization_id,
+                project_slugs: agent.permissions.project_slugs.clone(),
+                allow_global_knowledge: agent.permissions.allow_global_knowledge,
+            },
+            request,
+        )
+        .await
+        .map_err(infrastructure_error)
 }
 
 impl ProposeMemoryArgs {

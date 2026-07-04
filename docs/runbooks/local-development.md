@@ -1,0 +1,72 @@
+# Local Development Runbook
+
+## Services
+
+Queria backend runs these local services:
+
+- Postgres on `127.0.0.1:17675`
+- Qdrant local on `127.0.0.1:17676`
+- MinIO on `127.0.0.1:17678`
+
+Start infrastructure:
+
+```bash
+rtk docker compose up -d postgres qdrant minio
+```
+
+Apply migrations:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- database migrate
+```
+
+For local-only development without Infisical, copy `.env.example` to `.env` and set provider keys manually.
+
+## First Project
+
+The seeded first project is:
+
+- project slug: `fjulian-me`
+- source path: `/Users/fernandojulian/project/fjulian/fjulian.me`
+
+Run Git ingestion first if the source registry/chunks need refresh:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-worker
+```
+
+Stop the worker after the ingestion job succeeds if you only want a one-off run.
+
+## Embedding Backfill
+
+Queue backfill:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- embeddings backfill --project fjulian-me
+```
+
+Check status:
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- embeddings status --project fjulian-me
+```
+
+Run worker with a conservative Voyage batch size:
+
+```bash
+rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=8 cargo run -p queria-worker
+```
+
+`failed` chunks are retryable for embedding backfill. A `429 Too Many Requests` response should requeue the job with `retry_after_at`, not leave the newest job terminal failed.
+
+## Retrieval Probe
+
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- retrieval probe --project fjulian-me --query "Astro markdown content flow" --limit 5
+```
+
+Expected result:
+
+- `items` contains cited chunks with source path and chunk id.
+- `retrieval.mode` is `hybrid` when Voyage and Qdrant are available.
+- `retrieval.mode` is `lexical_fallback` only when semantic retrieval is temporarily unavailable.

@@ -1,0 +1,3 @@
+{"id":"fjulian-me-astro-content","project_slug":"fjulian-me","query":"Astro markdown content flow","include_global":true,"expected_scope":["project"],"expected_citations":[],"minimum_items":1}
+{"id":"fjulian-me-typescript-config","project_slug":"fjulian-me","query":"TypeScript and Astro configuration","include_global":true,"expected_scope":["project"],"expected_citations":[],"minimum_items":1}
+{"id":"fjulian-me-deploy-notes","project_slug":"fjulian-me","query":"deployment and site build notes","include_global":true,"expected_scope":["project","global"],"expected_citations":[],"minimum_items":1}

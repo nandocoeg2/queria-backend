@@ -1,9 +1,9 @@
 use crate::{QueriaError, QueriaResult};
 use serde::{Deserialize, Serialize};
-use std::{env, net::SocketAddr};
+use std::{env, fmt, net::SocketAddr};
 use url::Url;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub environment: String,
     pub public_base_url: String,
@@ -13,6 +13,21 @@ pub struct AppConfig {
     pub proxy_addr: String,
     pub database_url: String,
     pub qdrant_url: String,
+    #[serde(skip_serializing)]
+    pub qdrant_api_key: String,
+    pub qdrant_collection: String,
+    pub qdrant_vector_name: String,
+    #[serde(skip_serializing)]
+    pub voyage_api_key: String,
+    pub embedding_model: String,
+    pub embedding_dimension: u32,
+    pub embedding_profile_version: String,
+    pub embedding_batch_size: u32,
+    pub embedding_timeout_seconds: u64,
+    pub embedding_max_retries: u32,
+    pub retrieval_rrf_k: u32,
+    pub retrieval_candidate_multiplier: u32,
+    pub retrieval_candidate_cap: u32,
     pub minio_endpoint: String,
     pub minio_bucket: String,
     pub setup_token: String,
@@ -35,6 +50,34 @@ pub struct AppConfig {
     pub trufflehog_timeout_seconds: u64,
 }
 
+impl fmt::Debug for AppConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AppConfig")
+            .field("environment", &self.environment)
+            .field("public_base_url", &self.public_base_url)
+            .field("api_addr", &self.api_addr)
+            .field("mcp_addr", &self.mcp_addr)
+            .field("worker_health_addr", &self.worker_health_addr)
+            .field("proxy_addr", &self.proxy_addr)
+            .field("qdrant_url", &self.qdrant_url)
+            .field("qdrant_collection", &self.qdrant_collection)
+            .field("qdrant_vector_name", &self.qdrant_vector_name)
+            .field("embedding_model", &self.embedding_model)
+            .field("embedding_dimension", &self.embedding_dimension)
+            .field("embedding_profile_version", &self.embedding_profile_version)
+            .field("embedding_batch_size", &self.embedding_batch_size)
+            .field("retrieval_rrf_k", &self.retrieval_rrf_k)
+            .field(
+                "retrieval_candidate_multiplier",
+                &self.retrieval_candidate_multiplier,
+            )
+            .field("retrieval_candidate_cap", &self.retrieval_candidate_cap)
+            .field("log_level", &self.log_level)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AppConfig {
     pub fn from_env() -> QueriaResult<Self> {
         let defaults = Self::default_local();
@@ -47,6 +90,40 @@ impl AppConfig {
             proxy_addr: read_env("QUERIA_PROXY_ADDR", &defaults.proxy_addr),
             database_url: read_env("QUERIA_DATABASE_URL", &defaults.database_url),
             qdrant_url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant_url),
+            qdrant_api_key: read_env("QDRANT_API_KEY", &defaults.qdrant_api_key),
+            qdrant_collection: read_env("QUERIA_QDRANT_COLLECTION", &defaults.qdrant_collection),
+            qdrant_vector_name: read_env("QUERIA_QDRANT_VECTOR_NAME", &defaults.qdrant_vector_name),
+            voyage_api_key: read_env("VOYAGE_API_KEY", &defaults.voyage_api_key),
+            embedding_model: read_env("QUERIA_EMBEDDING_MODEL", &defaults.embedding_model),
+            embedding_dimension: read_number_env(
+                "QUERIA_EMBEDDING_DIMENSION",
+                defaults.embedding_dimension,
+            )?,
+            embedding_profile_version: read_env(
+                "QUERIA_EMBEDDING_PROFILE_VERSION",
+                &defaults.embedding_profile_version,
+            ),
+            embedding_batch_size: read_number_env(
+                "QUERIA_EMBEDDING_BATCH_SIZE",
+                defaults.embedding_batch_size,
+            )?,
+            embedding_timeout_seconds: read_number_env(
+                "QUERIA_EMBEDDING_TIMEOUT_SECONDS",
+                defaults.embedding_timeout_seconds,
+            )?,
+            embedding_max_retries: read_number_env(
+                "QUERIA_EMBEDDING_MAX_RETRIES",
+                defaults.embedding_max_retries,
+            )?,
+            retrieval_rrf_k: read_number_env("QUERIA_RETRIEVAL_RRF_K", defaults.retrieval_rrf_k)?,
+            retrieval_candidate_multiplier: read_number_env(
+                "QUERIA_RETRIEVAL_CANDIDATE_MULTIPLIER",
+                defaults.retrieval_candidate_multiplier,
+            )?,
+            retrieval_candidate_cap: read_number_env(
+                "QUERIA_RETRIEVAL_CANDIDATE_CAP",
+                defaults.retrieval_candidate_cap,
+            )?,
             minio_endpoint: read_env("QUERIA_MINIO_ENDPOINT", &defaults.minio_endpoint),
             minio_bucket: read_env("QUERIA_MINIO_BUCKET", &defaults.minio_bucket),
             setup_token: read_env("QUERIA_SETUP_TOKEN", &defaults.setup_token),
@@ -122,6 +199,19 @@ impl AppConfig {
             proxy_addr: "127.0.0.1:17674".to_owned(),
             database_url: "postgres://queria:queria@127.0.0.1:17675/queria".to_owned(),
             qdrant_url: "http://127.0.0.1:17676".to_owned(),
+            qdrant_api_key: String::new(),
+            qdrant_collection: "queria_local_chunks_v1".to_owned(),
+            qdrant_vector_name: "dense_v1".to_owned(),
+            voyage_api_key: String::new(),
+            embedding_model: "voyage-4".to_owned(),
+            embedding_dimension: 1024,
+            embedding_profile_version: "voyage-4-1024-v1".to_owned(),
+            embedding_batch_size: 64,
+            embedding_timeout_seconds: 30,
+            embedding_max_retries: 3,
+            retrieval_rrf_k: 60,
+            retrieval_candidate_multiplier: 4,
+            retrieval_candidate_cap: 100,
             minio_endpoint: "http://127.0.0.1:17678".to_owned(),
             minio_bucket: "queria-local".to_owned(),
             setup_token: "change-me-one-time-setup-token".to_owned(),
@@ -162,6 +252,40 @@ impl AppConfig {
         parse_url("QUERIA_PUBLIC_BASE_URL", &self.public_base_url)?;
         parse_url("QUERIA_QDRANT_URL", &self.qdrant_url)?;
         parse_url("QUERIA_MINIO_ENDPOINT", &self.minio_endpoint)?;
+
+        if self.environment != "local"
+            && (self.voyage_api_key.trim().is_empty() || self.qdrant_api_key.trim().is_empty())
+        {
+            return Err(QueriaError::Config(
+                "VOYAGE_API_KEY and QDRANT_API_KEY are required outside local".to_owned(),
+            ));
+        }
+        if self.embedding_model.trim().is_empty()
+            || self.embedding_profile_version.trim().is_empty()
+            || self.qdrant_collection.trim().is_empty()
+            || self.qdrant_vector_name.trim().is_empty()
+        {
+            return Err(QueriaError::Config(
+                "embedding and Qdrant identifiers must not be blank".to_owned(),
+            ));
+        }
+        if !matches!(self.embedding_dimension, 256 | 512 | 1024 | 2048) {
+            return Err(QueriaError::Config(
+                "QUERIA_EMBEDDING_DIMENSION must be 256, 512, 1024, or 2048".to_owned(),
+            ));
+        }
+        if self.embedding_batch_size == 0
+            || self.embedding_batch_size > 128
+            || self.embedding_timeout_seconds == 0
+            || self.embedding_max_retries > 10
+            || self.retrieval_rrf_k == 0
+            || self.retrieval_candidate_multiplier == 0
+            || self.retrieval_candidate_cap < 20
+        {
+            return Err(QueriaError::Config(
+                "embedding and retrieval numeric limits are invalid".to_owned(),
+            ));
+        }
 
         if !self.database_url.starts_with("postgres://")
             && !self.database_url.starts_with("postgresql://")
@@ -300,6 +424,15 @@ mod tests {
         assert_eq!(config.git_chunk_max_lines, 120);
         assert_eq!(config.git_chunk_overlap_lines, 20);
         assert_eq!(config.git_max_file_bytes, 1_000_000);
+        assert_eq!(config.embedding_model, "voyage-4");
+        assert_eq!(config.embedding_dimension, 1024);
+        assert_eq!(config.embedding_profile_version, "voyage-4-1024-v1");
+        assert_eq!(config.embedding_batch_size, 64);
+        assert_eq!(config.qdrant_collection, "queria_local_chunks_v1");
+        assert_eq!(config.qdrant_vector_name, "dense_v1");
+        assert_eq!(config.retrieval_rrf_k, 60);
+        assert_eq!(config.retrieval_candidate_multiplier, 4);
+        assert_eq!(config.retrieval_candidate_cap, 100);
         assert!(
             config
                 .git_allowed_ssh_repositories
@@ -329,6 +462,32 @@ mod tests {
         let err = config
             .validate()
             .expect_err("placeholder token must be rejected");
+
+        assert!(matches!(err, QueriaError::Config(_)));
+    }
+
+    #[test]
+    fn validation_rejects_unsupported_embedding_dimension() {
+        let mut config = AppConfig::default_local();
+        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
+        config.embedding_dimension = 768;
+
+        let err = config
+            .validate()
+            .expect_err("unsupported embedding dimension must be rejected");
+
+        assert!(matches!(err, QueriaError::Config(_)));
+    }
+
+    #[test]
+    fn validation_requires_provider_keys_outside_local() {
+        let mut config = AppConfig::default_local();
+        config.environment = "dev".to_owned();
+        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
+
+        let err = config
+            .validate()
+            .expect_err("remote environments require provider keys");
 
         assert!(matches!(err, QueriaError::Config(_)));
     }

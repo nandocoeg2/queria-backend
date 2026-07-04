@@ -14,6 +14,7 @@ queria-auth = { path = "../queria-auth" }
 queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
 queria-observability = { path = "../queria-observability" }
+queria-search = { path = "../queria-search" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

@@ -7,8 +7,15 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 chrono.workspace = true
 mockall.workspace = true
 queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
-
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true

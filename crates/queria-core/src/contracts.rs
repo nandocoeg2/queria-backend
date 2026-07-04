@@ -16,7 +16,23 @@ pub struct RetrieveContextResponse {
     pub project_id: ProjectId,
     pub query: String,
     pub items: Vec<RetrievedContextItem>,
+    pub retrieval: RetrievalDiagnostics,
     pub generated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalMode {
+    Hybrid,
+    LexicalFallback,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RetrievalDiagnostics {
+    pub mode: RetrievalMode,
+    pub lexical_candidates: u32,
+    pub semantic_candidates: u32,
+    pub embedding_profile_version: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -89,5 +105,13 @@ mod tests {
         };
 
         request.validate().expect("bounded query should be valid");
+    }
+
+    #[test]
+    fn retrieval_mode_serializes_as_stable_snake_case() {
+        assert_eq!(
+            serde_json::to_value(RetrievalMode::LexicalFallback).expect("mode should serialize"),
+            serde_json::json!("lexical_fallback")
+        );
     }
 }

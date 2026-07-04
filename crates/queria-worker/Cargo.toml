@@ -14,11 +14,12 @@ queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
 queria-ingestion = { path = "../queria-ingestion" }
 queria-observability = { path = "../queria-observability" }
+queria-search = { path = "../queria-search" }
 serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true
-uuid.workspace = true

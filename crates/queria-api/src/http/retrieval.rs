@@ -8,6 +8,7 @@ use axum::{
 };
 use queria_core::QueriaError;
 use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
+use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -18,7 +19,9 @@ struct ErrorResponse {
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 
 pub fn router() -> Router<ApiState> {
-    Router::new().route("/retrieve-context", post(retrieve_context))
+    Router::new()
+        .route("/retrieve-context", post(retrieve_context))
+        .route("/retrieval/retrieve-context", post(retrieve_context))
 }
 
 async fn retrieve_context(
@@ -31,30 +34,23 @@ async fn retrieve_context(
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
     request.validate().map_err(map_error)?;
 
-    let Some(repository) = state.project_repository() else {
+    let Some(pool) = state.pool.clone() else {
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "knowledge_store_not_configured",
         ));
     };
-
-    let items = repository
-        .search_approved_chunks(
-            session.user_id,
-            request.project_id,
-            &request.query,
-            request.include_global,
-            request.limit,
+    let service = build_pg_retrieval_service(&state.config, pool).map_err(map_error)?;
+    service
+        .retrieve_context(
+            &RetrievalPrincipal::User {
+                user_id: session.user_id,
+            },
+            request,
         )
         .await
-        .map_err(map_error)?;
-
-    Ok(Json(RetrieveContextResponse {
-        project_id: request.project_id,
-        query: request.query,
-        items,
-        generated_at: chrono::Utc::now(),
-    }))
+        .map(Json)
+        .map_err(map_error)
 }
 
 fn map_error(err: QueriaError) -> (StatusCode, Json<ErrorResponse>) {

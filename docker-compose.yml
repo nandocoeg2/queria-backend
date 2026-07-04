@@ -17,6 +17,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.14.1
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     ports:
       - "17676:6333"
       - "17677:6334"

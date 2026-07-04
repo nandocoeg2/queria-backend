@@ -33,7 +33,32 @@ const CLAIM_JOB_SQL: &str = "with candidate as (
                job.retry_of_id, job.cancel_requested_at, job.started_at,
                job.finished_at, job.created_at, job.updated_at";
 
-#[derive(Clone, Debug, PartialEq)]
+const QUEUE_QDRANT_DELETE_SQL: &str = "
+insert into ingestion_job(
+  organization_id, project_id, source_document_id, job_type, payload
+)
+select k.organization_id, k.project_id, $1, 'qdrant_delete',
+       jsonb_build_object(
+         'point_ids',
+         jsonb_agg(c.qdrant_point_id::text order by c.qdrant_point_id)
+       )
+from chunk c
+join knowledge_item k on k.id = c.knowledge_item_id
+where k.source_document_id = $1
+  and k.generated_by = 'trusted_git_pipeline'
+  and c.qdrant_point_id is not null
+group by k.organization_id, k.project_id
+on conflict (source_document_id, job_type)
+  where source_document_id is not null and status in ('queued', 'running')
+do update
+set payload = jsonb_build_object(
+      'point_ids',
+      coalesce(ingestion_job.payload->'point_ids', '[]'::jsonb) ||
+      coalesce(excluded.payload->'point_ids', '[]'::jsonb)
+    ),
+    updated_at = now()";
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct IngestionJobRecord {
     pub id: Uuid,
     pub organization_id: Uuid,
@@ -691,6 +716,11 @@ async fn retire_generated_knowledge(
     source_id: Uuid,
     status: &str,
 ) -> QueriaResult<()> {
+    sqlx::query(QUEUE_QDRANT_DELETE_SQL)
+        .bind(source_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
     sqlx::query(
         "delete from chunk
          where knowledge_item_id in (
@@ -936,6 +966,15 @@ mod tests {
         assert!(normalized.contains("update ingestion_job"));
         assert!(normalized.contains("attempts = attempts + 1"));
         assert!(normalized.contains("job_type = 'git_ingestion'"));
+    }
+
+    #[test]
+    fn retire_query_enqueues_qdrant_cleanup_before_chunk_delete() {
+        let normalized = QUEUE_QDRANT_DELETE_SQL.to_ascii_lowercase();
+
+        assert!(normalized.contains("insert into ingestion_job"));
+        assert!(normalized.contains("'qdrant_delete'"));
+        assert!(normalized.contains("qdrant_point_id is not null"));
     }
 
     #[test]
