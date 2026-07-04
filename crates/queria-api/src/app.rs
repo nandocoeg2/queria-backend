@@ -1,16 +1,35 @@
 use crate::http::{auth, health, projects, retrieval, setup, sources, tokens};
 use axum::Router;
 use queria_core::AppConfig;
+use queria_db::repositories::PgAuthRepository;
+use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone, Debug)]
 pub struct ApiState {
     pub config: AppConfig,
+    pub pool: Option<PgPool>,
+}
+
+impl ApiState {
+    #[must_use]
+    pub fn auth_repository(&self) -> Option<PgAuthRepository> {
+        self.pool.clone().map(PgAuthRepository::new)
+    }
 }
 
 pub fn build_app(config: AppConfig) -> Router {
-    let state = ApiState { config };
+    build_app_with_state(ApiState { config, pool: None })
+}
 
+pub fn build_app_with_pool(config: AppConfig, pool: PgPool) -> Router {
+    build_app_with_state(ApiState {
+        config,
+        pool: Some(pool),
+    })
+}
+
+fn build_app_with_state(state: ApiState) -> Router {
     Router::new()
         .merge(health::router())
         .nest("/api/v1/setup", setup::router())

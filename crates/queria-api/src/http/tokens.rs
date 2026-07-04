@@ -1,3 +1,4 @@
+use crate::app::ApiState;
 use axum::{Json, Router, http::StatusCode, routing::post};
 use serde::Serialize;
 
@@ -8,10 +9,7 @@ struct CreateAgentTokenResponse {
     error: Option<&'static str>,
 }
 
-pub fn router<S>() -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
+pub fn router() -> Router<ApiState> {
     Router::new().route("/", post(create_agent_token))
 }
 

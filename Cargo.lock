@@ -1332,9 +1332,11 @@ dependencies = [
  "http",
  "queria-auth",
  "queria-core",
+ "queria-db",
  "queria-observability",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
  "tower",
  "tower-http",
@@ -1383,9 +1385,11 @@ dependencies = [
 name = "queria-db"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "mockall",
  "queria-core",
  "sqlx",
+ "uuid",
 ]
 
 [[package]]

@@ -12,9 +12,11 @@ axum.workspace = true
 chrono.workspace = true
 queria-auth = { path = "../queria-auth" }
 queria-core = { path = "../queria-core" }
+queria-db = { path = "../queria-db" }
 queria-observability = { path = "../queria-observability" }
 serde.workspace = true
 serde_json.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 tower.workspace = true
 tower-http.workspace = true
