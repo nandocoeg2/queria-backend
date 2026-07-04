@@ -32,3 +32,12 @@ create index if not exists idx_source_document_root_active
 create index if not exists idx_ingestion_job_source_created
   on ingestion_job(source_document_id, created_at desc);
 
+update source_document
+set metadata = metadata || jsonb_build_object(
+      'trusted_auto_approve', true,
+      'ssh_uri', 'git@github.com:nandocoeg2/fjulian.me.git'
+    ),
+    updated_at = now()
+where kind = 'git_repo'
+  and uri = 'file:///Users/fernandojulian/project/fjulian/fjulian.me'
+  and metadata->>'seed' = 'first_project_registry';

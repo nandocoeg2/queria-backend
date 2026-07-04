@@ -356,6 +356,7 @@ impl PgProjectRepository {
              join user_account u on u.organization_id = sd.organization_id
              where u.id = $1
                and p.slug = $2
+               and sd.source_root_id is null
              order by sd.created_at desc, sd.title",
         )
         .bind(user_id)

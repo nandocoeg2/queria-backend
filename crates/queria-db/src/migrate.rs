@@ -175,6 +175,7 @@ mod tests {
             "retry_of_id",
             "idx_ingestion_job_one_active_per_source",
             "idx_source_document_active_child_path",
+            "trusted_auto_approve",
         ] {
             assert!(
                 migration.sql.contains(required_sql),

@@ -1,0 +1,4 @@
+(^|/)(\.git|\.astro|\.next|node_modules|dist|build|coverage|target)(/|$)
+(^|/)\.env(\..*)?$
+(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock)$
+(?i)\.(pem|key|p12|pfx)$
