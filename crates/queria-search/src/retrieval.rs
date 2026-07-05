@@ -253,6 +253,23 @@ impl HybridRetrievalStore for PgHybridRetrievalRepository {
     }
 }
 
+#[async_trait]
+impl<S, E, V> crate::evaluation::EvaluationRetriever for RetrievalService<S, E, V>
+where
+    S: HybridRetrievalStore + Send + Sync,
+    E: EmbeddingProvider + Send + Sync,
+    V: VectorIndex + Send + Sync,
+{
+    async fn retrieve(
+        &self,
+        user_id: Uuid,
+        request: RetrieveContextRequest,
+    ) -> QueriaResult<RetrieveContextResponse> {
+        self.retrieve_context(&RetrievalPrincipal::User { user_id }, request)
+            .await
+    }
+}
+
 fn bounded_count(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }

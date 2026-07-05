@@ -10,11 +10,19 @@ pub const LEXICAL_SEARCH_SQL: &str = "
 with access as (
   select $1::uuid as organization_id, $2::uuid as project_id, $3::boolean as include_global
 ),
-query as (
+strict_query as (
   select websearch_to_tsquery('simple', $4) as value
+),
+relaxed_query as (
+  select case
+    when array_to_string(tsvector_to_array(to_tsvector('simple', $4)), ' | ') = '' then null
+    else to_tsquery('simple', array_to_string(tsvector_to_array(to_tsvector('simple', $4)), ' | '))
+  end as value
 )
-select c.id as chunk_id, ts_rank_cd(c.search_vector, query.value) as score
-from access, query, chunk c
+select c.id as chunk_id,
+       (coalesce(ts_rank_cd(c.search_vector, strict_query.value), 0.0) * 2.0 +
+        coalesce(ts_rank_cd(c.search_vector, relaxed_query.value), 0.0))::real as score
+from access, strict_query, relaxed_query, chunk c
 join knowledge_item k on k.id = c.knowledge_item_id
 left join source_document sd on sd.id = c.source_document_id
 where k.organization_id = access.organization_id
@@ -24,7 +32,10 @@ where k.organization_id = access.organization_id
     k.project_id = access.project_id
     or (access.include_global and k.scope = 'global')
   )
-  and c.search_vector @@ query.value
+  and (
+    c.search_vector @@ strict_query.value
+    or (relaxed_query.value is not null and c.search_vector @@ relaxed_query.value)
+  )
 order by score desc, c.id
 limit $5";
 
@@ -252,6 +263,17 @@ mod tests {
         assert!(normalized.contains("k.status = 'approved'"));
         assert!(normalized.contains("access.include_global"));
         assert!(normalized.contains("ts_rank_cd"));
+    }
+
+    #[test]
+    fn lexical_search_has_bounded_relaxed_candidates() {
+        let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
+        assert!(sql.contains("websearch_to_tsquery('simple'"));
+        assert!(sql.contains("to_tsvector('simple'"));
+        assert!(sql.contains(" | "));
+        assert!(sql.contains("k.status = 'approved'"));
+        assert!(sql.contains("k.organization_id = access.organization_id"));
+        assert!(sql.contains("access.include_global"));
     }
 
     #[test]

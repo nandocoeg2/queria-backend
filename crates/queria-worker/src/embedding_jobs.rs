@@ -59,7 +59,12 @@ pub trait EmbeddingJobStore: Send + Sync {
         dimension: i32,
         profile_version: &str,
     ) -> QueriaResult<()>;
-    async fn mark_batch_failed(&self, chunk_ids: &[Uuid], error: &str) -> QueriaResult<()>;
+    async fn mark_batch_failed(
+        &self,
+        chunk_ids: &[Uuid],
+        error: &str,
+        retryable: bool,
+    ) -> QueriaResult<()>;
     async fn qdrant_delete_points(&self, job_id: IngestionJobId) -> QueriaResult<Vec<Uuid>>;
     async fn complete_job(&self, job_id: IngestionJobId, result: Value) -> QueriaResult<bool>;
     async fn fail_job(&self, job_id: IngestionJobId, error: &str) -> QueriaResult<bool>;
@@ -290,8 +295,9 @@ where
         .iter()
         .map(|chunk| chunk.chunk_id)
         .collect::<Vec<_>>();
+    let retryable = is_retryable_embedding_error(error);
     store
-        .mark_batch_failed(&chunk_ids, &sanitized_error(error))
+        .mark_batch_failed(&chunk_ids, &sanitized_error(error), retryable)
         .await
 }
 
@@ -409,8 +415,13 @@ impl EmbeddingJobStore for PgEmbeddingRepository {
         .await
     }
 
-    async fn mark_batch_failed(&self, chunk_ids: &[Uuid], error: &str) -> QueriaResult<()> {
-        PgEmbeddingRepository::mark_batch_failed(self, chunk_ids, error).await
+    async fn mark_batch_failed(
+        &self,
+        chunk_ids: &[Uuid],
+        error: &str,
+        retryable: bool,
+    ) -> QueriaResult<()> {
+        PgEmbeddingRepository::mark_batch_failed(self, chunk_ids, error, retryable).await
     }
 
     async fn qdrant_delete_points(&self, job_id: IngestionJobId) -> QueriaResult<Vec<Uuid>> {
@@ -626,10 +637,10 @@ mod tests {
         store
             .expect_mark_batch_failed()
             .once()
-            .withf(move |chunk_ids, error| {
-                chunk_ids == [chunk_id] && error.contains("429 Too Many Requests")
+            .withf(move |chunk_ids, error, retryable| {
+                chunk_ids == [chunk_id] && error.contains("429 Too Many Requests") && *retryable
             })
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _| Ok(()));
         store
             .expect_release_job_for_retry()
             .once()

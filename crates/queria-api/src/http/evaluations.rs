@@ -7,12 +7,9 @@ use axum::{
     routing::{get, post},
 };
 use queria_core::QueriaError;
-use queria_core::contracts::{RetrievalMode, RetrieveContextRequest, RetrieveContextResponse};
-use queria_core::evaluation::{
-    EvaluationReport, evaluation_limit, parse_golden_questions_jsonl, score_evaluation_report,
-};
+use queria_core::evaluation::EvaluationReport;
 use queria_db::evaluation::EvaluationReportRecord;
-use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
+use queria_search::retrieval::build_pg_retrieval_service;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -123,20 +120,7 @@ async fn evaluate_project(
     project_id: uuid::Uuid,
 ) -> Result<EvaluationReport, (StatusCode, Json<ErrorResponse>)> {
     let golden_path = PathBuf::from(format!("tests/golden_questions/{project_slug}.jsonl"));
-    let content = std::fs::read_to_string(&golden_path).map_err(|read_error| {
-        tracing::warn!(
-            error = %read_error,
-            project_slug = project_slug,
-            "golden question file unavailable"
-        );
-        error(StatusCode::NOT_FOUND, "golden_questions_not_found")
-    })?;
-    let questions = parse_golden_questions_jsonl(&content)
-        .map_err(map_error)?
-        .into_iter()
-        .filter(|question| question.project_slug == project_slug)
-        .collect::<Vec<_>>();
-    if questions.is_empty() {
+    if !golden_path.exists() {
         return Err(error(StatusCode::NOT_FOUND, "golden_questions_not_found"));
     }
 
@@ -147,53 +131,21 @@ async fn evaluate_project(
         )
     })?;
     let service = build_pg_retrieval_service(&state.config, pool).map_err(map_error)?;
-    let mut responses = Vec::with_capacity(questions.len());
-    for question in &questions {
-        let request = RetrieveContextRequest {
-            project_id: queria_core::ids::ProjectId::from_uuid(project_id),
-            query: question.query.clone(),
-            include_global: question.include_global,
-            limit: evaluation_limit(question.minimum_items),
-        };
-        let response = retrieve_for_evaluation(&service, user_id, request).await;
-        responses.push(response);
-    }
+    let executor = queria_search::evaluation::EvaluationExecutor::new(
+        service,
+        EVALUATION_RETRY_ATTEMPTS,
+        Duration::from_millis(EVALUATION_RETRY_DELAY_MS),
+    );
 
-    Ok(score_evaluation_report(
-        project_slug,
-        &golden_path.display().to_string(),
-        &questions,
-        responses,
-    ))
-}
-
-async fn retrieve_for_evaluation(
-    service: &queria_search::retrieval::PgRetrievalService,
-    user_id: uuid::Uuid,
-    request: RetrieveContextRequest,
-) -> Result<RetrieveContextResponse, String> {
-    for attempt in 0..EVALUATION_RETRY_ATTEMPTS {
-        let response = service
-            .retrieve_context(&RetrievalPrincipal::User { user_id }, request.clone())
-            .await
-            .map_err(|error| error.to_string())?;
-        if should_retry_evaluation_response(&response) && attempt + 1 < EVALUATION_RETRY_ATTEMPTS {
-            tracing::warn!(
-                attempt = attempt + 1,
-                project_id = %request.project_id,
-                "empty semantic fallback during evaluation; retrying"
-            );
-            tokio::time::sleep(Duration::from_millis(EVALUATION_RETRY_DELAY_MS)).await;
-            continue;
-        }
-        return Ok(response);
-    }
-
-    Err("evaluation retry attempts exhausted".to_owned())
-}
-
-fn should_retry_evaluation_response(response: &RetrieveContextResponse) -> bool {
-    response.retrieval.mode == RetrievalMode::LexicalFallback && response.items.is_empty()
+    executor
+        .run(
+            user_id,
+            project_slug,
+            queria_core::ids::ProjectId::from_uuid(project_id),
+            &golden_path,
+        )
+        .await
+        .map_err(map_error)
 }
 
 async fn require_session(
@@ -259,35 +211,14 @@ fn error(status: StatusCode, message: &str) -> (StatusCode, Json<ErrorResponse>)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use queria_core::contracts::{
-        RetrievalDiagnostics, RetrievalMode, RetrieveContextResponse, RetrievedContextItem,
-    };
-    use queria_core::ids::ProjectId;
 
     #[test]
-    fn evaluation_retry_only_targets_empty_lexical_fallback() {
-        assert!(should_retry_evaluation_response(&response(
-            RetrievalMode::LexicalFallback,
-            Vec::new()
-        )));
-        assert!(!should_retry_evaluation_response(&response(
-            RetrievalMode::Hybrid,
-            Vec::new()
-        )));
-    }
-
-    fn response(mode: RetrievalMode, items: Vec<RetrievedContextItem>) -> RetrieveContextResponse {
-        RetrieveContextResponse {
-            project_id: ProjectId::new(),
-            query: "query".to_owned(),
-            items,
-            retrieval: RetrievalDiagnostics {
-                mode,
-                lexical_candidates: 0,
-                semantic_candidates: 0,
-                embedding_profile_version: "voyage-4-1024-v1".to_owned(),
-            },
-            generated_at: chrono::Utc::now(),
-        }
+    fn test_valid_slug() {
+        assert!(valid_slug("fjulian-me"));
+        assert!(!valid_slug(""));
+        assert!(!valid_slug("a"));
+        assert!(!valid_slug("ab"));
+        assert!(!valid_slug("-slug"));
+        assert!(!valid_slug("slug-"));
     }
 }

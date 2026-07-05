@@ -1,45 +1,40 @@
 use crate::embeddings;
-use queria_core::contracts::RetrieveContextRequest;
-use queria_core::evaluation::{
-    evaluation_limit, parse_golden_questions_jsonl, score_evaluation_report,
-};
-use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
+use queria_db::evaluation::PgEvaluationRepository;
+use queria_search::evaluation::EvaluationExecutor;
 use std::path::PathBuf;
+use std::time::Duration;
+
+const EVALUATION_RETRY_ATTEMPTS: usize = 3;
+const EVALUATION_RETRY_DELAY_MS: u64 = 750;
 
 pub async fn run(project_slug: &str) -> anyhow::Result<()> {
     let golden_path = PathBuf::from(format!("tests/golden_questions/{project_slug}.jsonl"));
-    let content = std::fs::read_to_string(&golden_path)?;
-    let questions = parse_golden_questions_jsonl(&content)?
-        .into_iter()
-        .filter(|question| question.project_slug == project_slug)
-        .collect::<Vec<_>>();
-    if questions.is_empty() {
-        anyhow::bail!("no golden questions found for project {project_slug}");
+    if !golden_path.exists() {
+        anyhow::bail!(
+            "no golden questions file found at {}",
+            golden_path.display()
+        );
     }
 
     let (config, pool, user_id, project_id) = embeddings::context(project_slug).await?;
-    let service = build_pg_retrieval_service(&config, pool)?;
-    let mut responses = Vec::with_capacity(questions.len());
-    for question in &questions {
-        let request = RetrieveContextRequest {
-            project_id,
-            query: question.query.clone(),
-            include_global: question.include_global,
-            limit: evaluation_limit(question.minimum_items),
-        };
-        let response = service
-            .retrieve_context(&RetrievalPrincipal::User { user_id }, request)
-            .await
-            .map_err(|error| error.to_string());
-        responses.push(response);
-    }
+    let service = queria_search::retrieval::build_pg_retrieval_service(&config, pool.clone())?;
 
-    let report = score_evaluation_report(
-        project_slug,
-        &golden_path.display().to_string(),
-        &questions,
-        responses,
+    let executor = EvaluationExecutor::new(
+        service,
+        EVALUATION_RETRY_ATTEMPTS,
+        Duration::from_millis(EVALUATION_RETRY_DELAY_MS),
     );
-    println!("{}", serde_json::to_string_pretty(&report)?);
+
+    let report = executor
+        .run(user_id, project_slug, project_id, &golden_path)
+        .await?;
+
+    let repository = PgEvaluationRepository::new(pool);
+    let evaluation = repository
+        .insert_for_project_slug(user_id, project_slug, &report)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("project not found or permission denied"))?;
+
+    println!("{}", serde_json::to_string_pretty(&evaluation)?);
     Ok(())
 }

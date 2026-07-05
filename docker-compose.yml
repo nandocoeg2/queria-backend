@@ -14,6 +14,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:v1.14.1
@@ -24,6 +25,12 @@ services:
       - "17677:6334"
     volumes:
       - queria_qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "perl", "-MIO::Socket::INET", "-e", "exit(0) if IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => 6333, Timeout => 1); exit(1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
   minio:
     image: minio/minio:RELEASE.2025-06-13T11-33-47Z
@@ -36,6 +43,97 @@ services:
       - "17679:9001"
     volumes:
       - queria_minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  queria-api:
+    build: .
+    command: queria-api
+    ports:
+      - "17671:17671"
+    env_file:
+      - .env
+    environment:
+      - QUERIA_API_ADDR=0.0.0.0:17671
+      - QUERIA_DATABASE_URL=postgres://queria:queria@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - QUERIA_MINIO_ENDPOINT=http://minio:9000
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-mcp:
+    build: .
+    command: queria-mcp
+    ports:
+      - "17672:17672"
+    env_file:
+      - .env
+    environment:
+      - QUERIA_MCP_ADDR=0.0.0.0:17672
+      - QUERIA_DATABASE_URL=postgres://queria:queria@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-worker:
+    build: .
+    command: queria-worker
+    ports:
+      - "17673:17673"
+    env_file:
+      - .env
+    environment:
+      - QUERIA_WORKER_HEALTH_ADDR=0.0.0.0:17673
+      - QUERIA_DATABASE_URL=postgres://queria:queria@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - QUERIA_MINIO_ENDPOINT=http://minio:9000
+      - QUERIA_TRUFFLEHOG_EXECUTABLE=trufflehog
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+    volumes:
+      - /Users/fernandojulian/project/fjulian/fjulian.me:/Users/fernandojulian/project/fjulian/fjulian.me
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-proxy:
+    build: .
+    command: queria-proxy
+    ports:
+      - "17674:17674"
+    env_file:
+      - .env
+    environment:
+      - QUERIA_PROXY_ADDR=0.0.0.0:17674
+    depends_on:
+      - queria-api
+    restart: unless-stopped
 
 volumes:
   queria_postgres:
