@@ -113,6 +113,8 @@ services:
       - QUERIA_API_UPSTREAM=queria-api:17671
       - QUERIA_MCP_UPSTREAM=queria-mcp:17672
       - QUERIA_ADMIN_UPSTREAM=queria-admin:17674
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
     depends_on:
       - queria-api
       - queria-mcp
