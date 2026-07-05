@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: queria
+      POSTGRES_USER: queria
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U queria -d queria"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "perl", "-MIO::Socket::INET", "-e", "exit(0) if IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => 6333, Timeout => 1); exit(1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  queria-api:
+    image: queria-backend:latest
+    command: queria-api
+    environment:
+      - QUERIA_ENV=production
+      - QUERIA_API_ADDR=0.0.0.0:67671
+      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_MINIO_ENDPOINT=${OCI_STORAGE_ENDPOINT}
+      - QUERIA_MINIO_BUCKET=${OCI_STORAGE_BUCKET}
+      - QUERIA_MINIO_ACCESS_KEY=${OCI_STORAGE_ACCESS_KEY}
+      - QUERIA_MINIO_SECRET_KEY=${OCI_STORAGE_SECRET_KEY}
+      - QUERIA_MINIO_REGION=${OCI_STORAGE_REGION}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-mcp:
+    image: queria-backend:latest
+    command: queria-mcp
+    environment:
+      - QUERIA_ENV=production
+      - QUERIA_MCP_ADDR=0.0.0.0:67672
+      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-worker:
+    image: queria-backend:latest
+    command: queria-worker
+    environment:
+      - QUERIA_ENV=production
+      - QUERIA_WORKER_HEALTH_ADDR=0.0.0.0:67673
+      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      - QUERIA_QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_MINIO_ENDPOINT=${OCI_STORAGE_ENDPOINT}
+      - QUERIA_MINIO_BUCKET=${OCI_STORAGE_BUCKET}
+      - QUERIA_MINIO_ACCESS_KEY=${OCI_STORAGE_ACCESS_KEY}
+      - QUERIA_MINIO_SECRET_KEY=${OCI_STORAGE_SECRET_KEY}
+      - QUERIA_MINIO_REGION=${OCI_STORAGE_REGION}
+      - QUERIA_SOURCE_COMMIT=${QUERIA_SOURCE_COMMIT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queria-admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    environment:
+      - HOST=0.0.0.0
+      - PORT=67674
+      - QUERIA_API_URL=http://queria-api:67671
+    restart: unless-stopped
+
+  queria-proxy:
+    image: queria-backend:latest
+    command: queria-proxy
+    ports:
+      - "443:443"
+    environment:
+      - QUERIA_ENV=production
+      - QUERIA_PROXY_ADDR=0.0.0.0:443
+      - QUERIA_API_UPSTREAM=queria-api:67671
+      - QUERIA_MCP_UPSTREAM=queria-mcp:67672
+      - QUERIA_ADMIN_UPSTREAM=queria-admin:67674
+    depends_on:
+      - queria-api
+      - queria-mcp
+      - queria-admin
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-06-13T11-33-47Z
+    command: server /data --console-address ":17679"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  minio_data:

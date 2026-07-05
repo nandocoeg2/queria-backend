@@ -2,7 +2,7 @@
 FROM rust:1.85-slim-bookworm AS builder
 WORKDIR /usr/src/queria
 # Install build dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev cmake g++ build-essential && rm -rf /var/lib/apt/lists/*
 # Copy workspace files
 COPY . .
 # Build all release binaries
@@ -10,10 +10,13 @@ RUN cargo build --release --workspace
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim AS runtime
+ARG QUERIA_SOURCE_COMMIT=unknown
+ENV QUERIA_SOURCE_COMMIT=${QUERIA_SOURCE_COMMIT}
 # Install CA certificates, git, and clean apt cache
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 # Copy TruffleHog from the official TruffleSecurity image
 COPY --from=trufflesecurity/trufflehog:latest /usr/bin/trufflehog /usr/local/bin/trufflehog

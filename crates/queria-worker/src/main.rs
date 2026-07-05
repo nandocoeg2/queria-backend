@@ -1,6 +1,8 @@
+mod backup_jobs;
 mod embedding_jobs;
 mod jobs;
 
+use queria_backup::object_store::ObjectStore;
 use queria_core::AppConfig;
 use queria_db::embedding::PgEmbeddingRepository;
 use queria_db::ingestion::PgIngestionRepository;
@@ -24,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     queria_db::migrate::run_migrations(&pool).await?;
     let repository = PgIngestionRepository::new(pool.clone());
-    let embedding_repository = PgEmbeddingRepository::new(pool);
+    let embedding_repository = PgEmbeddingRepository::new(pool.clone());
     let recovered = repository
         .recover_expired_leases(i64::try_from(config.worker_lease_seconds)?)
         .await?;
@@ -89,12 +91,27 @@ async fn main() -> anyhow::Result<()> {
         dimension: usize::try_from(config.embedding_dimension)?,
     })?;
     qdrant.ensure_collection().await?;
+
+    // Initialize object store for backups
+    let object_store = ObjectStore::new(
+        &config.minio_endpoint,
+        &config.minio_bucket,
+        &config.minio_access_key,
+        &config.minio_secret_key,
+        &config.minio_region,
+    )?;
+    object_store.ensure_bucket().await.unwrap_or_else(|error| {
+        tracing::warn!(error = %error, "failed to ensure S3 bucket (will retry on backup)");
+    });
+
     tracing::info!(
         worker_id = %config.worker_identity,
         embedding_profile = %config.embedding_profile_version,
         qdrant_collection = %config.qdrant_collection,
         embedding_request_interval_ms = config.embedding_request_interval_ms,
-        "ingestion and embedding worker started"
+        backup_cron_hour_utc = config.backup_cron_hour_utc,
+        backup_retention_days = config.backup_retention_days,
+        "ingestion, embedding, and backup worker started"
     );
 
     loop {
@@ -116,10 +133,18 @@ async fn main() -> anyhow::Result<()> {
             Ok(false) => {}
             Err(error) => tracing::error!(error = %error, "embedding worker iteration failed"),
         }
+
+        // Check if it's time for a scheduled backup
+        if backup_jobs::should_run_backup(&pool, config.backup_cron_hour_utc).await {
+            if let Err(error) = backup_jobs::run_backup(&object_store, &pool, &config).await {
+                tracing::error!(error = %error, "scheduled backup failed");
+            }
+        }
+
         tokio::select! {
             signal = tokio::signal::ctrl_c() => {
                 signal?;
-                tracing::info!("ingestion and embedding worker stopping");
+                tracing::info!("ingestion, embedding, and backup worker stopping");
                 break;
             }
             () = tokio::time::sleep(poll_interval) => {}

@@ -122,6 +122,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "evaluation_reports",
             sql: include_str!("../../../migrations/20260704000700_evaluation_reports.sql"),
         },
+        Migration {
+            version: "20260705000100",
+            name: "backup_records",
+            sql: include_str!("../../../migrations/20260705000100_backup_records.sql"),
+        },
     ]
 }
 

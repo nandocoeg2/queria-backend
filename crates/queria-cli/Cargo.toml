@@ -11,6 +11,7 @@ anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
 queria-core = { path = "../queria-core" }
+queria-backup = { path = "../queria-backup" }
 queria-db = { path = "../queria-db" }
 queria-search = { path = "../queria-search" }
 reqwest.workspace = true

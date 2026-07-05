@@ -33,6 +33,13 @@ pub struct AppConfig {
     pub retrieval_candidate_cap: u32,
     pub minio_endpoint: String,
     pub minio_bucket: String,
+    #[serde(skip_serializing)]
+    pub minio_access_key: String,
+    #[serde(skip_serializing)]
+    pub minio_secret_key: String,
+    pub minio_region: String,
+    pub backup_retention_days: u32,
+    pub backup_cron_hour_utc: u32,
     pub setup_token: String,
     pub first_admin_email: String,
     pub first_org_slug: String,
@@ -88,6 +95,9 @@ impl fmt::Debug for AppConfig {
                 &self.retrieval_candidate_multiplier,
             )
             .field("retrieval_candidate_cap", &self.retrieval_candidate_cap)
+            .field("minio_region", &self.minio_region)
+            .field("backup_retention_days", &self.backup_retention_days)
+            .field("backup_cron_hour_utc", &self.backup_cron_hour_utc)
             .field("log_level", &self.log_level)
             .finish_non_exhaustive()
     }
@@ -153,6 +163,17 @@ impl AppConfig {
             )?,
             minio_endpoint: read_env("QUERIA_MINIO_ENDPOINT", &defaults.minio_endpoint),
             minio_bucket: read_env("QUERIA_MINIO_BUCKET", &defaults.minio_bucket),
+            minio_access_key: read_env("QUERIA_MINIO_ACCESS_KEY", &defaults.minio_access_key),
+            minio_secret_key: read_env("QUERIA_MINIO_SECRET_KEY", &defaults.minio_secret_key),
+            minio_region: read_env("QUERIA_MINIO_REGION", &defaults.minio_region),
+            backup_retention_days: read_number_env(
+                "QUERIA_BACKUP_RETENTION_DAYS",
+                defaults.backup_retention_days,
+            )?,
+            backup_cron_hour_utc: read_number_env(
+                "QUERIA_BACKUP_CRON_HOUR_UTC",
+                defaults.backup_cron_hour_utc,
+            )?,
             setup_token: read_env("QUERIA_SETUP_TOKEN", &defaults.setup_token),
             first_admin_email: read_env("QUERIA_FIRST_ADMIN_EMAIL", &defaults.first_admin_email),
             first_org_slug: read_env("QUERIA_FIRST_ORG_SLUG", &defaults.first_org_slug),
@@ -244,6 +265,11 @@ impl AppConfig {
             retrieval_candidate_cap: 100,
             minio_endpoint: "http://127.0.0.1:17678".to_owned(),
             minio_bucket: "queria-local".to_owned(),
+            minio_access_key: "queria".to_owned(),
+            minio_secret_key: "queria-local-dev-only".to_owned(),
+            minio_region: "us-east-1".to_owned(),
+            backup_retention_days: 30,
+            backup_cron_hour_utc: 2,
             setup_token: "change-me-one-time-setup-token".to_owned(),
             first_admin_email: "nando@fjulian.id".to_owned(),
             first_org_slug: "fjulian".to_owned(),

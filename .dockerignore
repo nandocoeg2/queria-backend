@@ -1,0 +1,8 @@
+target/
+.git/
+.vscode/
+admin/node_modules/
+admin/.astro/
+admin/dist/
+node_modules/
+*.tar

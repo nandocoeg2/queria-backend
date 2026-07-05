@@ -1,3 +1,4 @@
+mod backup;
 mod bootstrap;
 mod database;
 mod doctor_mcp;
@@ -37,6 +38,10 @@ enum Command {
     Eval {
         #[command(subcommand)]
         command: EvalCommand,
+    },
+    Backup {
+        #[command(subcommand)]
+        command: BackupCommand,
     },
 }
 
@@ -87,6 +92,20 @@ enum EvalCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum BackupCommand {
+    RestoreDrill {
+        #[arg(long)]
+        org: String,
+        #[arg(long)]
+        target_database_url: Option<String>,
+        #[arg(long)]
+        target_qdrant_url: Option<String>,
+        #[arg(long)]
+        target_qdrant_collection: Option<String>,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -117,6 +136,23 @@ async fn main() -> anyhow::Result<()> {
         Command::Eval {
             command: EvalCommand::Run { project },
         } => evaluation::run(&project).await,
+        Command::Backup {
+            command:
+                BackupCommand::RestoreDrill {
+                    org,
+                    target_database_url,
+                    target_qdrant_url,
+                    target_qdrant_collection,
+                },
+        } => {
+            backup::restore_drill(
+                &org,
+                target_database_url,
+                target_qdrant_url,
+                target_qdrant_collection,
+            )
+            .await
+        }
     }
 }
 
@@ -153,6 +189,31 @@ mod tests {
             Command::Eval {
                 command: EvalCommand::Run { project }
             } if project == "fjulian-me"
+        ));
+    }
+
+    #[test]
+    fn parses_backup_restore_drill_command() {
+        let cli = Cli::try_parse_from([
+            "queria-cli",
+            "backup",
+            "restore-drill",
+            "--org",
+            "fjulian",
+            "--target-database-url",
+            "postgres://localhost/queria_restore",
+            "--target-qdrant-url",
+            "http://localhost:6333",
+            "--target-qdrant-collection",
+            "queria_restore",
+        ])
+        .expect("restore drill command should parse");
+
+        assert!(matches!(
+            cli.command,
+            Command::Backup {
+                command: BackupCommand::RestoreDrill { org, .. }
+            } if org == "fjulian"
         ));
     }
 }

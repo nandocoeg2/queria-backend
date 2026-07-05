@@ -62,6 +62,8 @@ services:
       - QUERIA_DATABASE_URL=postgres://queria:queria@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
       - QUERIA_MINIO_ENDPOINT=http://minio:9000
+      - QUERIA_MINIO_ACCESS_KEY=queria
+      - QUERIA_MINIO_SECRET_KEY=queria-local-dev-only
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
@@ -96,7 +98,10 @@ services:
     restart: unless-stopped
 
   queria-worker:
-    build: .
+    build:
+      context: .
+      args:
+        QUERIA_SOURCE_COMMIT: ${QUERIA_SOURCE_COMMIT:-unknown}
     command: queria-worker
     ports:
       - "17673:17673"
@@ -107,6 +112,8 @@ services:
       - QUERIA_DATABASE_URL=postgres://queria:queria@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
       - QUERIA_MINIO_ENDPOINT=http://minio:9000
+      - QUERIA_MINIO_ACCESS_KEY=queria
+      - QUERIA_MINIO_SECRET_KEY=queria-local-dev-only
       - QUERIA_TRUFFLEHOG_EXECUTABLE=trufflehog
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QDRANT_API_KEY=${QDRANT_API_KEY}
