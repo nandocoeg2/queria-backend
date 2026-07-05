@@ -1,3 +1,4 @@
+pub mod admin_queries;
 pub mod embedding;
 pub mod evaluation;
 pub mod hybrid;

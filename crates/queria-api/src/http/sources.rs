@@ -100,22 +100,105 @@ async fn register_source(
     Ok(Json(SourceDocumentResponse::from(source)))
 }
 
+#[derive(Debug, Serialize)]
+struct IngestionJobSummary {
+    id: String,
+    status: String,
+    started_at: Option<DateTime<Utc>>,
+    finished_at: Option<DateTime<Utc>>,
+    error_message: Option<String>,
+    result: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct ChunkCountsByEmbeddingState {
+    pending: i64,
+    processing: i64,
+    ready: i64,
+    failed: i64,
+    stale: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceDocumentDetailResponse {
+    id: String,
+    project_id: Option<String>,
+    kind: String,
+    uri: String,
+    title: String,
+    source_path: Option<String>,
+    branch: Option<String>,
+    commit_sha: Option<String>,
+    content_hash: String,
+    metadata: Value,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    latest_ingestion: Option<IngestionJobSummary>,
+    chunk_counts: ChunkCountsByEmbeddingState,
+    content_preview: Option<String>,
+}
+
+impl From<queria_db::admin_queries::SourceDocumentDetailRecord> for SourceDocumentDetailResponse {
+    fn from(value: queria_db::admin_queries::SourceDocumentDetailRecord) -> Self {
+        let latest_ingestion = value.latest_ingestion_id.map(|id| IngestionJobSummary {
+            id: id.to_string(),
+            status: value.latest_ingestion_status.unwrap_or_default(),
+            started_at: value.latest_ingestion_started_at,
+            finished_at: value.latest_ingestion_finished_at,
+            error_message: value.latest_ingestion_error_message,
+            result: value
+                .latest_ingestion_result
+                .unwrap_or_else(|| serde_json::json!({})),
+        });
+
+        Self {
+            id: value.id.to_string(),
+            project_id: value.project_id.map(|id| id.to_string()),
+            kind: value.kind,
+            uri: value.uri,
+            title: value.title,
+            source_path: value.source_path,
+            branch: value.branch,
+            commit_sha: value.commit_sha,
+            content_hash: value.content_hash,
+            metadata: value.metadata,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+            latest_ingestion,
+            chunk_counts: ChunkCountsByEmbeddingState {
+                pending: value.chunks_pending,
+                processing: value.chunks_processing,
+                ready: value.chunks_ready,
+                failed: value.chunks_failed,
+                stale: value.chunks_stale,
+            },
+            content_preview: value.content_preview,
+        }
+    }
+}
+
 async fn get_source(
     State(state): State<ApiState>,
     headers: HeaderMap,
     Path(source_document_id): Path<SourceDocumentId>,
-) -> ApiResult<SourceDocumentResponse> {
+) -> Result<Json<SourceDocumentDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
     let session = require_session(&state, &headers).await?;
-    let repository = project_repository(&state)?;
+    let Some(repository) = state.admin_queries_repository() else {
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "admin_queries_store_not_configured",
+        ));
+    };
+
     let Some(source) = repository
-        .get_source_document(session.user_id, source_document_id)
+        .get_source_document_detail(session.user_id, source_document_id)
         .await
         .map_err(map_error)?
     else {
         return Err(error(StatusCode::NOT_FOUND, "source_document_not_found"));
     };
 
-    Ok(Json(SourceDocumentResponse::from(source)))
+    Ok(Json(SourceDocumentDetailResponse::from(source)))
 }
 
 impl RegisterSourceRequest {

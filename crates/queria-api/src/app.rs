@@ -1,9 +1,10 @@
 use crate::http::{
-    approvals, auth, embedding_jobs, evaluations, health, ingestion_jobs, knowledge_items,
-    projects, retrieval, setup, sources, tokens,
+    approvals, audit_logs, auth, dashboard, embedding_jobs, evaluations, health, ingestion_jobs,
+    knowledge_items, projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
+use queria_db::admin_queries::PgAdminQueriesRepository;
 use queria_db::evaluation::PgEvaluationRepository;
 use queria_db::ingestion::PgIngestionRepository;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
@@ -35,6 +36,11 @@ impl ApiState {
     #[must_use]
     pub fn evaluation_repository(&self) -> Option<PgEvaluationRepository> {
         self.pool.clone().map(PgEvaluationRepository::new)
+    }
+
+    #[must_use]
+    pub fn admin_queries_repository(&self) -> Option<PgAdminQueriesRepository> {
+        self.pool.clone().map(PgAdminQueriesRepository::new)
     }
 }
 
@@ -69,6 +75,8 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/embedding-jobs", embedding_jobs::job_router())
         .nest("/api/v1/approvals", approvals::router())
         .nest("/api/v1/knowledge-items", knowledge_items::router())
+        .nest("/api/v1/dashboard", dashboard::router())
+        .nest("/api/v1/audit-logs", audit_logs::router())
         .nest("/api/v1", retrieval::router())
         .nest("/api/v1/agent-tokens", tokens::router())
         .layer(TraceLayer::new_for_http())
@@ -438,6 +446,34 @@ mod tests {
                 "POST",
                 "/api/v1/ingestion-jobs/019083a0-0000-7000-8000-000000000006/cancel",
             ),
+        ];
+
+        for (method, uri) in requests {
+            let response = build_app(AppConfig::default_local())
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should complete");
+
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {uri}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn admin_endpoints_require_session_cookie() {
+        let requests = [
+            ("GET", "/api/v1/knowledge-items"),
+            ("GET", "/api/v1/dashboard/summary"),
+            ("GET", "/api/v1/audit-logs"),
         ];
 
         for (method, uri) in requests {

@@ -645,6 +645,5 @@ mod tests {
         // Actually, we can write a test to make sure our code is fully covered.
         // Since the SQL is inline in PgEmbeddingRepository::mark_batch_failed, we can mock it or verify compilation.
         // This test is a placeholder to document the safety guarantees.
-        assert!(true);
     }
 }

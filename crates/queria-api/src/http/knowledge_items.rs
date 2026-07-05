@@ -2,7 +2,7 @@ use crate::app::ApiState;
 use crate::http::auth;
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     routing::get,
 };
@@ -11,6 +11,24 @@ use queria_core::QueriaError;
 use queria_core::ids::KnowledgeItemId;
 use queria_db::repositories::KnowledgeItemRecord;
 use serde::Serialize;
+use uuid::Uuid;
+
+#[derive(Debug, serde::Deserialize)]
+struct ListKnowledgeItemsQuery {
+    scope: Option<String>,
+    project_slug: Option<String>,
+    category: Option<String>,
+    status: Option<String>,
+    tag: Option<String>,
+    cursor: Option<Uuid>,
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct ListKnowledgeItemsResponse {
+    items: Vec<KnowledgeItemResponse>,
+    next_cursor: Option<String>,
+}
 
 #[derive(Debug, Serialize)]
 struct KnowledgeItemResponse {
@@ -36,7 +54,55 @@ struct ErrorResponse {
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 
 pub fn router() -> Router<ApiState> {
-    Router::new().route("/{knowledge_item_id}", get(get_knowledge_item))
+    Router::new()
+        .route("/", get(list_knowledge_items))
+        .route("/{knowledge_item_id}", get(get_knowledge_item))
+}
+
+async fn list_knowledge_items(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Query(query): Query<ListKnowledgeItemsQuery>,
+) -> ApiResult<ListKnowledgeItemsResponse> {
+    let session = auth::require_session(&state, &headers)
+        .await
+        .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
+    let Some(repository) = state.admin_queries_repository() else {
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "admin_queries_store_not_configured",
+        ));
+    };
+
+    let limit = query.limit.unwrap_or(20);
+
+    let items = repository
+        .list_knowledge_items(
+            session.user_id,
+            query.scope.as_deref(),
+            query.project_slug.as_deref(),
+            query.category.as_deref(),
+            query.status.as_deref(),
+            query.tag.as_deref(),
+            query.cursor,
+            limit,
+        )
+        .await
+        .map_err(map_error)?;
+
+    let response_items: Vec<KnowledgeItemResponse> =
+        items.into_iter().map(KnowledgeItemResponse::from).collect();
+
+    let next_cursor = if response_items.len() == limit.min(100) as usize {
+        response_items.last().map(|item| item.id.clone())
+    } else {
+        None
+    };
+
+    Ok(Json(ListKnowledgeItemsResponse {
+        items: response_items,
+        next_cursor,
+    }))
 }
 
 async fn get_knowledge_item(

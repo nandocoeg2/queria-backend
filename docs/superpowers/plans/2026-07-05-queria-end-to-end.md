@@ -263,32 +263,32 @@ binaries; infrastructure volumes remain compatible.
 - Create: `crates/queria-db/src/admin_queries.rs`
 - Test: API router tests in each module
 
-- [ ] **Task 3.1: Implement paginated knowledge list**
+- [x] **Task 3.1: Implement paginated knowledge list**
 
 Add `GET /api/v1/knowledge-items` with cursor pagination and filters for scope,
 project, category, status, owner, tag, and validation state. Response fields
 must match the UI table and never include deprecated/rejected content unless
 explicitly filtered by an authorized human session.
 
-- [ ] **Task 3.2: Implement source operational detail**
+- [x] **Task 3.2: Implement source operational detail**
 
 Extend source detail with latest ingestion, branch/commit, parser/chunker
 versions, chunk counts by embedding state, stale cleanup summary, and bounded
 content preview. Never return secret-scan context or raw credentials.
 
-- [ ] **Task 3.3: Implement audit-log reads**
+- [x] **Task 3.3: Implement audit-log reads**
 
 Add `GET /api/v1/audit-logs` with organization-scoped cursor pagination and
 filters for actor, action, resource type, resource ID, project, and date range.
 Audit rows remain append-only.
 
-- [ ] **Task 3.4: Implement dashboard summaries**
+- [x] **Task 3.4: Implement dashboard summaries**
 
 Add project summary counts, latest ingestion/evaluation, source health,
 embedding state, pending approvals, and failed jobs in one bounded query surface
 for server-rendered UI pages.
 
-- [ ] **Task 3.5: Add contract and authorization tests**
+- [x] **Task 3.5: Add contract and authorization tests**
 
 Test missing sessions, cross-organization access, invalid cursors, limit caps,
 empty states, and stable ordering. Use transaction-isolated Postgres fixtures;
