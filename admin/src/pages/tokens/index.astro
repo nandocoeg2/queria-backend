@@ -1,0 +1,336 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listAgentTokens, fetchFromBackend } from '../../lib/api';
+
+let message = '';
+let isError = false;
+let generatedToken = '';
+
+// Handle generate token POST
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const action = data.get('action');
+    
+    if (action === 'generate') {
+      const description = data.get('description') || 'Admin generated token';
+      const res = await fetchFromBackend('/api/v1/agent-tokens', Astro.request, {
+        method: 'POST',
+        body: JSON.stringify({ description }),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        generatedToken = result.token;
+        message = 'Agent token successfully generated.';
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || 'Failed to generate agent token.';
+        isError = true;
+      }
+    } else if (action === 'revoke') {
+      const tokenId = data.get('token_id');
+      if (tokenId) {
+        const res = await fetchFromBackend(`/api/v1/agent-tokens/${tokenId}`, Astro.request, {
+          method: 'DELETE',
+        });
+
+        if (res.ok) {
+          message = 'Agent token successfully revoked.';
+        } else {
+          const errorRes = await res.json().catch(() => ({}));
+          message = errorRes.error || 'Failed to revoke token.';
+          isError = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Agent token action error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const tokens = await listAgentTokens(Astro.request);
+if (!tokens) {
+  return Astro.redirect('/admin/login');
+}
+
+// Format dates
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'Never';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+};
+---
+
+<AdminLayout title="Agent Tokens" activeTab="tokens">
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  {generatedToken && (
+    <div class="card token-reveal-box">
+      <div class="reveal-header">
+        <h3>⚠️ Copy Your Agent Token</h3>
+        <p class="warning-text">This token is only shown once. It cannot be recovered after you navigate away or refresh this page.</p>
+      </div>
+      <div class="reveal-body">
+        <code class="raw-token">{generatedToken}</code>
+        <button 
+          class="btn btn-primary btn-sm"
+          onclick={`navigator.clipboard.writeText("${generatedToken}"); alert("Copied token to clipboard!");`}
+        >
+          Copy Token
+        </button>
+      </div>
+    </div>
+  )}
+
+  <div class="tokens-split-layout">
+    <!-- List of Tokens -->
+    <div class="card tokens-list-panel">
+      <div class="panel-header">
+        <h2>Active Agent Tokens</h2>
+      </div>
+
+      {tokens.length > 0 ? (
+        <div class="table-container">
+          <table class="tokens-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Prefix</th>
+                <th>Created At</th>
+                <th>Last Used At</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.map((t: any) => (
+                <tr>
+                  <td class="token-desc">{t.description}</td>
+                  <td><code class="prefix-code">{t.prefix}***</code></td>
+                  <td>{formatDate(t.created_at)}</td>
+                  <td>{formatDate(t.last_used_at)}</td>
+                  <td>
+                    <form method="POST" style="display:inline" onsubmit="return confirm('Are you sure you want to revoke this agent token? This action is permanent.');">
+                      <input type="hidden" name="action" value="revoke" />
+                      <input type="hidden" name="token_id" value={t.id} />
+                      <button type="submit" class="btn btn-secondary btn-sm btn-danger-hover">Revoke</button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>No active agent tokens exist. Generate a new token below to configure AI clients.</p>
+        </div>
+      )}
+    </div>
+
+    <!-- Generate New Token -->
+    <div class="card token-generate-panel">
+      <div class="panel-header">
+        <h2>Generate Agent Token</h2>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="generate" />
+        <div class="form-group">
+          <label for="description">Token Description</label>
+          <input 
+            type="text" 
+            name="description" 
+            id="description" 
+            placeholder="e.g. Claude Code MCP Gateway" 
+            required
+            class="form-control"
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Generate Token</button>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .tokens-split-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-lg);
+  }
+
+  .tokens-list-panel, .token-generate-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .token-reveal-box {
+    border-color: var(--color-primary);
+    background-color: var(--color-surface-container);
+    padding: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .reveal-header h3 {
+    color: var(--color-primary);
+    font-size: 18px;
+  }
+
+  .warning-text {
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    margin-top: 4px;
+  }
+
+  .reveal-body {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+    background-color: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    justify-content: space-between;
+  }
+
+  .raw-token {
+    font-family: var(--font-family-mono);
+    font-size: 14px;
+    color: var(--color-on-surface);
+    word-break: break-all;
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .tokens-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .tokens-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .tokens-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .tokens-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .token-desc {
+    font-weight: 600;
+  }
+
+  .prefix-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .btn-block {
+    width: 100%;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .btn-danger-hover:hover {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+
+  @media (max-width: 1024px) {
+    .tokens-split-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

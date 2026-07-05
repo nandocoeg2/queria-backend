@@ -324,26 +324,26 @@ Rollback: revert Phase 3 routes and queries; no existing contract is removed.
 - Create: `admin/src/pages/evaluation/index.astro`
 - Create: focused React islands under `admin/src/components/`
 
-- [ ] **Task 4.1: Scaffold Astro with React islands**
+- [x] **Task 4.1: Scaffold Astro with React islands**
 
 Use SSR pages for navigation and initial data. Hydrate only filters, dialogs,
 token copy-once flow, approval action forms, retrieval probe, and evaluation
 comparison. Keep session authentication cookie-based through the API.
 
-- [ ] **Task 4.2: Implement Sahara tokens exactly**
+- [x] **Task 4.2: Implement Sahara tokens exactly**
 
 Use `#c2652a` primary, `#faf5ee` background, `#8c3c3c` tertiary, EB Garamond
 headings, Manrope body, 8px maximum card/button radius, and warm thin borders.
 All design reference frames remain 1920x1080, while implementation must also be
 usable at mobile and normal desktop widths.
 
-- [ ] **Task 4.3: Implement screens in operational order**
+- [x] **Task 4.3: Implement screens in operational order**
 
 Build Setup, Projects, Sources, Ingestion/Embedding, Retrieval Probe,
 Evaluation, Knowledge, Approval, Tokens, and Audit. Every mutation must show
 server-confirmed status and preserve filters after navigation.
 
-- [ ] **Task 4.4: Add browser acceptance**
+- [x] **Task 4.4: Add browser acceptance**
 
 Use Playwright to verify first-run setup, login, project/source navigation,
 retrieval probe, approval, token copy-once behavior, and evaluation report. Take

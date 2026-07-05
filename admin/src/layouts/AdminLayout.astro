@@ -1,0 +1,264 @@
+---
+import '../styles/tokens.css';
+
+interface Props {
+  title: string;
+  activeTab: string;
+}
+
+const { title, activeTab } = Astro.props;
+
+const navItems = [
+  { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard' },
+  { id: 'projects', label: 'Projects', href: '/admin/projects' },
+  { id: 'sources', label: 'Source Documents', href: '/admin/sources' },
+  { id: 'jobs', label: 'Ingestion Jobs', href: '/admin/jobs' },
+  { id: 'knowledge', label: 'Knowledge Items', href: '/admin/knowledge' },
+  { id: 'approvals', label: 'Approvals', href: '/admin/approvals' },
+  { id: 'evaluation', label: 'Evaluations', href: '/admin/evaluation' },
+  { id: 'tokens', label: 'Agent Tokens', href: '/admin/tokens' },
+  { id: 'audit', label: 'Audit Logs', href: '/admin/audit' },
+];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title} | Queria Console</title>
+    
+    <!-- Load EB Garamond and Manrope from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Manrope:wght@200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div class="app-layout">
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-logo">Q</div>
+          <div class="brand-text">
+            <h2>Queria</h2>
+            <span>Knowledge Console</span>
+          </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+          <ul>
+            {navItems.map((item) => (
+              <li>
+                <a 
+                  href={item.href} 
+                  class:list={['nav-link', { active: activeTab === item.id }]}
+                >
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        
+        <div class="sidebar-footer">
+          <span class="user-email">Admin Console</span>
+          <a href="/admin/logout" class="logout-btn">Sign Out</a>
+        </div>
+      </aside>
+      
+      <!-- Main Content Area -->
+      <main class="main-content">
+        <header class="content-header">
+          <div class="header-title">
+            <h1>{title}</h1>
+          </div>
+        </header>
+        
+        <div class="content-body">
+          <slot />
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
+
+<style>
+  .app-layout {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  .sidebar {
+    width: 240px;
+    background-color: var(--color-surface-container-lowest);
+    border-right: 1px solid var(--color-outline-variant);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    height: 100vh;
+    left: 0;
+    top: 0;
+    z-index: 100;
+  }
+
+  .sidebar-brand {
+    padding: var(--spacing-xl);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    font-family: var(--font-family-headline);
+  }
+
+  .brand-text h2 {
+    font-size: 16px;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+
+  .brand-text span {
+    font-size: 10px;
+    color: var(--color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: var(--spacing-lg) 0;
+  }
+
+  .sidebar-nav ul {
+    list-style: none;
+  }
+
+  .nav-link {
+    display: block;
+    padding: var(--spacing-sm) var(--spacing-xl);
+    color: var(--color-on-surface-variant);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    font-weight: 500;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-surface-container-low);
+    color: var(--color-on-surface);
+  }
+
+  .nav-link.active {
+    background-color: var(--color-surface-container);
+    color: var(--color-primary);
+    border-left-color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .sidebar-footer {
+    padding: var(--spacing-xl);
+    border-top: 1px solid var(--color-outline-variant);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .user-email {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .logout-btn {
+    font-size: 11px;
+    color: var(--color-tertiary);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .logout-btn:hover {
+    color: var(--color-tertiary-container);
+  }
+
+  .main-content {
+    margin-left: 240px;
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content-header {
+    background-color: var(--color-surface-container-lowest);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding: var(--spacing-lg) var(--layout-margin);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+
+  .header-title h1 {
+    font-size: 20px;
+    color: var(--color-on-surface);
+  }
+
+  .content-body {
+    padding: var(--layout-margin);
+    flex: 1;
+    background-color: var(--color-background);
+  }
+
+  @media (max-width: 768px) {
+    .sidebar {
+      width: 64px;
+    }
+    
+    .brand-text, .user-email, .logout-btn {
+      display: none;
+    }
+    
+    .sidebar-brand {
+      justify-content: center;
+      padding: var(--spacing-md);
+    }
+    
+    .nav-link {
+      padding: var(--spacing-md);
+      text-align: center;
+      font-size: 0;
+      border-left: none;
+      border-bottom: 2px solid transparent;
+    }
+    
+    .nav-link.active {
+      border-bottom-color: var(--color-primary);
+      background-color: var(--color-surface-container);
+    }
+    
+    .main-content {
+      margin-left: 64px;
+    }
+  }
+</style>

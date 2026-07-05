@@ -1,0 +1,331 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { getDashboardSummary } from '../lib/api';
+
+const summary = await getDashboardSummary(Astro.request);
+if (!summary) {
+  return Astro.redirect('/admin/login');
+}
+
+const {
+  project_count,
+  source_count,
+  pending_approvals_count,
+  chunk_counts,
+  failed_jobs_count,
+  latest_ingestion,
+  latest_evaluation,
+} = summary;
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+};
+---
+
+<AdminLayout title="Console Dashboard" activeTab="dashboard">
+  <div class="dashboard-grid">
+    <!-- Stat Card: Projects -->
+    <div class="card stat-card">
+      <span class="stat-label">Total Projects</span>
+      <span class="stat-value">{project_count}</span>
+      <a href="/admin/projects" class="stat-link">View Projects →</a>
+    </div>
+
+    <!-- Stat Card: Sources -->
+    <div class="card stat-card">
+      <span class="stat-label">Active Sources</span>
+      <span class="stat-value">{source_count}</span>
+      <a href="/admin/sources" class="stat-link">View Sources →</a>
+    </div>
+
+    <!-- Stat Card: Pending Approvals -->
+    <div class="card stat-card">
+      <span class="stat-label">Pending Approvals</span>
+      <span class="stat-value">{pending_approvals_count}</span>
+      <a href="/admin/approvals" class="stat-link">View Queue →</a>
+    </div>
+
+    <!-- Stat Card: Failed Jobs -->
+    <div class="card stat-card">
+      <span class="stat-label">Failed Jobs (7d)</span>
+      <span class="stat-value {failed_jobs_count > 0 ? 'alert' : ''}">{failed_jobs_count}</span>
+      <a href="/admin/audit" class="stat-link">View Audit Logs →</a>
+    </div>
+  </div>
+
+  <div class="content-row">
+    <!-- Chunk Embedding Summary -->
+    <div class="card main-panel">
+      <div class="panel-header">
+        <h2>Knowledge Chunks Embedding Status</h2>
+      </div>
+      
+      <div class="chunk-bar-container">
+        {(() => {
+          const total = chunk_counts.ready + chunk_counts.pending + chunk_counts.processing + chunk_counts.failed + chunk_counts.stale;
+          if (total === 0) return <p class="muted-text">No knowledge chunks registered yet.</p>;
+
+          const pct = (val: number) => total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0%';
+          return (
+            <>
+              <div class="chunk-bar">
+                <div class="bar-segment ready" style={`width: ${pct(chunk_counts.ready)}`} title={`Ready: ${chunk_counts.ready}`}></div>
+                <div class="bar-segment pending" style={`width: ${pct(chunk_counts.pending)}`} title={`Pending: ${chunk_counts.pending}`}></div>
+                <div class="bar-segment processing" style={`width: ${pct(chunk_counts.processing)}`} title={`Processing: ${chunk_counts.processing}`}></div>
+                <div class="bar-segment failed" style={`width: ${pct(chunk_counts.failed)}`} title={`Failed: ${chunk_counts.failed}`}></div>
+                <div class="bar-segment stale" style={`width: ${pct(chunk_counts.stale)}`} title={`Stale: ${chunk_counts.stale}`}></div>
+              </div>
+
+              <div class="chunk-legend">
+                <div class="legend-item"><span class="dot ready"></span> Ready ({chunk_counts.ready})</div>
+                <div class="legend-item"><span class="dot pending"></span> Pending ({chunk_counts.pending})</div>
+                <div class="legend-item"><span class="dot processing"></span> Processing ({chunk_counts.processing})</div>
+                <div class="legend-item"><span class="dot failed"></span> Failed ({chunk_counts.failed})</div>
+                <div class="legend-item"><span class="dot stale"></span> Stale ({chunk_counts.stale})</div>
+              </div>
+            </>
+          );
+        })()}
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-grid split-grid">
+    <!-- Latest Ingestion Job -->
+    <div class="card sub-panel">
+      <div class="panel-header">
+        <h2>Latest Ingestion Activity</h2>
+      </div>
+      
+      {latest_ingestion ? (
+        <div class="activity-details">
+          <div class="detail-row">
+            <span class="detail-label">Job ID</span>
+            <code class="detail-val">{latest_ingestion.id}</code>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Status</span>
+            <span class={`badge badge-${latest_ingestion.status === 'succeeded' ? 'approved' : latest_ingestion.status === 'failed' ? 'rejected' : 'pending'}`}>
+              {latest_ingestion.status}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Started At</span>
+            <span class="detail-val">{formatDate(latest_ingestion.started_at)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Finished At</span>
+            <span class="detail-val">{formatDate(latest_ingestion.finished_at)}</span>
+          </div>
+          {latest_ingestion.error_message && (
+            <div class="error-box">
+              <strong>Error Message:</strong>
+              <p>{latest_ingestion.error_message}</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p class="muted-text">No ingestion jobs run yet.</p>
+      )}
+    </div>
+
+    <!-- Latest Evaluation baseline -->
+    <div class="card sub-panel">
+      <div class="panel-header">
+        <h2>Latest Evaluation Baseline</h2>
+      </div>
+
+      {latest_evaluation ? (
+        <div class="activity-details">
+          <div class="detail-row">
+            <span class="detail-label">Report ID</span>
+            <code class="detail-val">{latest_evaluation.id}</code>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Project</span>
+            <span class="detail-val">{latest_evaluation.project_slug}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Score</span>
+            <strong class="detail-val">{(latest_evaluation.score * 100).toFixed(1)}%</strong>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Result</span>
+            <span class={`badge ${latest_evaluation.passed ? 'badge-approved' : 'badge-rejected'}`}>
+              {latest_evaluation.passed ? 'Passed' : 'Failed'}
+            </span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Executed At</span>
+            <span class="detail-val">{formatDate(latest_evaluation.created_at)}</span>
+          </div>
+        </div>
+      ) : (
+        <p class="muted-text">No evaluations run yet.</p>
+      )}
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .split-grid {
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  }
+
+  .stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .stat-value {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--color-on-surface);
+    font-family: var(--font-family-headline);
+    line-height: 1;
+  }
+
+  .stat-value.alert {
+    color: var(--color-error);
+  }
+
+  .stat-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .content-row {
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+    color: var(--color-on-surface);
+  }
+
+  .chunk-bar {
+    display: flex;
+    height: 16px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background-color: var(--color-surface-container);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .bar-segment {
+    height: 100%;
+    transition: width 0.3s ease;
+  }
+
+  .bar-segment.ready, .dot.ready { background-color: #10b981; }
+  .bar-segment.pending, .dot.pending { background-color: #f59e0b; }
+  .bar-segment.processing, .dot.processing { background-color: #3b82f6; }
+  .bar-segment.failed, .dot.failed { background-color: #ef4444; }
+  .bar-segment.stale, .dot.stale { background-color: #9ca3af; }
+
+  .chunk-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+  }
+
+  .muted-text {
+    color: var(--color-on-surface-variant);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .activity-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px dashed var(--color-outline-variant);
+    padding-bottom: var(--spacing-xs);
+  }
+
+  .detail-label {
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .detail-val {
+    font-size: 13px;
+    color: var(--color-on-surface);
+  }
+
+  code.detail-val {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .error-box {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background-color: var(--color-error-container);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+
+  .error-box strong {
+    color: var(--color-on-error-container);
+  }
+
+  .error-box p {
+    color: var(--color-on-error-container);
+    margin-top: 4px;
+    word-break: break-all;
+  }
+</style>

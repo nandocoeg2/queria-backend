@@ -1,0 +1,313 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listAuditLogs } from '../../lib/api';
+
+const url = new URL(Astro.request.url);
+const actorId = url.searchParams.get('actor_id') || undefined;
+const action = url.searchParams.get('action') || undefined;
+const resourceType = url.searchParams.get('resource_type') || undefined;
+const resourceId = url.searchParams.get('resource_id') || undefined;
+const cursor = url.searchParams.get('cursor') || undefined;
+const limit = 25;
+
+const res = await listAuditLogs(Astro.request, {
+  actor_id: actorId,
+  action,
+  resource_type: resourceType,
+  resource_id: resourceId,
+  cursor,
+  limit,
+});
+
+if (!res) {
+  return Astro.redirect('/admin/login');
+}
+
+const { logs, next_cursor } = res;
+
+// Format timestamp
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+};
+
+// Pagination URLs
+const getNextPageUrl = () => {
+  if (!next_cursor) return '#';
+  const newParams = new URLSearchParams(url.searchParams);
+  newParams.set('cursor', next_cursor);
+  return `/admin/audit?${newParams.toString()}`;
+};
+---
+
+<AdminLayout title="Audit Logs" activeTab="audit">
+  <!-- Filter Panel -->
+  <div class="card filter-bar">
+    <form method="GET" class="filter-form-grid">
+      <div class="form-group-inline">
+        <label for="actor_id">Actor ID</label>
+        <input 
+          type="text" 
+          name="actor_id" 
+          id="actor_id" 
+          value={actorId || ''} 
+          placeholder="e.g. nando"
+          class="form-control"
+        />
+      </div>
+
+      <div class="form-group-inline">
+        <label for="action">Action</label>
+        <input 
+          type="text" 
+          name="action" 
+          id="action" 
+          value={action || ''} 
+          placeholder="e.g. approve_proposal"
+          class="form-control"
+        />
+      </div>
+
+      <div class="form-group-inline">
+        <label for="resource_type">Resource Type</label>
+        <select 
+          name="resource_type" 
+          id="resource_type" 
+          class="form-control"
+        >
+          <option value="">All Resources</option>
+          <option value="organization" selected={resourceType === 'organization'}>Organization</option>
+          <option value="project" selected={resourceType === 'project'}>Project</option>
+          <option value="source_document" selected={resourceType === 'source_document'}>Source Document</option>
+          <option value="knowledge_item" selected={resourceType === 'knowledge_item'}>Knowledge Item</option>
+          <option value="proposal" selected={resourceType === 'proposal'}>Proposal</option>
+          <option value="agent_token" selected={resourceType === 'agent_token'}>Agent Token</option>
+        </select>
+      </div>
+
+      <div class="form-group-inline">
+        <label for="resource_id">Resource ID</label>
+        <input 
+          type="text" 
+          name="resource_id" 
+          id="resource_id" 
+          value={resourceId || ''} 
+          placeholder="e.g. 01908..."
+          class="form-control"
+        />
+      </div>
+
+      <button type="submit" class="btn btn-secondary filter-submit-btn">Filter</button>
+    </form>
+  </div>
+
+  <!-- Audit List Card -->
+  <div class="card audit-panel">
+    <div class="panel-header">
+      <h2>System Audit Trails</h2>
+    </div>
+
+    {logs.length > 0 ? (
+      <>
+        <div class="table-container">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Resource Type</th>
+                <th>Resource ID</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log: any) => (
+                <tr>
+                  <td class="time-cell">{formatDate(log.created_at)}</td>
+                  <td><code class="actor-code">{log.actor_id}</code></td>
+                  <td><span class="action-label">{log.action}</span></td>
+                  <td><span class="resource-type-label">{log.resource_type}</span></td>
+                  <td><code class="resource-id-code">{log.resource_id}</code></td>
+                  <td>
+                    {log.details && Object.keys(log.details).length > 0 ? (
+                      <pre class="details-json"><code>{JSON.stringify(log.details)}</code></pre>
+                    ) : (
+                      <span class="muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {next_cursor && (
+          <div class="pagination-bar">
+            <a href={getNextPageUrl()} class="btn btn-secondary">
+              Next Page →
+            </a>
+          </div>
+        )}
+      </>
+    ) : (
+      <div class="empty-state">
+        <p>No audit log records found matching the filters.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .filter-bar {
+    padding: var(--spacing-md) var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .filter-form-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    align-items: flex-end;
+  }
+
+  .form-group-inline {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .form-group-inline label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .filter-submit-btn {
+    padding: 0.5rem 1rem;
+    height: 38px;
+  }
+
+  .audit-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .audit-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .audit-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    vertical-align: middle;
+  }
+
+  .audit-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .time-cell {
+    white-space: nowrap;
+    color: var(--color-on-surface-variant);
+  }
+
+  .actor-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .action-label {
+    font-weight: 600;
+  }
+
+  .resource-type-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
+
+  .resource-id-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+
+  .details-json {
+    background-color: var(--color-surface-container-low);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    max-width: 300px;
+    overflow-x: auto;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .pagination-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--spacing-lg);
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>

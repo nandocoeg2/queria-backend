@@ -1,0 +1,589 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listProjects, listKnowledgeItems, getKnowledgeItemDetail } from '../../lib/api';
+
+const projects = await listProjects(Astro.request);
+if (!projects) {
+  return Astro.redirect('/admin/login');
+}
+
+const url = new URL(Astro.request.url);
+const scope = url.searchParams.get('scope') || undefined;
+const projectSlug = url.searchParams.get('project_slug') || undefined;
+const category = url.searchParams.get('category') || undefined;
+const status = url.searchParams.get('status') || undefined;
+const tag = url.searchParams.get('tag') || undefined;
+const cursor = url.searchParams.get('cursor') || undefined;
+const limit = 20;
+
+// Fetch filtered list
+const res = await listKnowledgeItems(Astro.request, {
+  scope,
+  projectSlug,
+  category,
+  status,
+  tag,
+  cursor,
+  limit,
+});
+
+if (!res) {
+  return Astro.redirect('/admin/login');
+}
+
+const { items, next_cursor } = res;
+
+// Fetch side detail if requested
+const detailId = url.searchParams.get('detail_id') || undefined;
+const detail = detailId ? await getKnowledgeItemDetail(Astro.request, detailId) : null;
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+  });
+};
+
+// Construct filter URL
+const getFilterUrl = (params: Record<string, string | null | undefined>) => {
+  const newParams = new URLSearchParams(url.searchParams);
+  // Clear cursor when changing filters
+  newParams.delete('cursor');
+  
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === '') {
+      newParams.delete(key);
+    } else {
+      newParams.set(key, value);
+    }
+  }
+  return `/admin/knowledge?${newParams.toString()}`;
+};
+
+// Construct pagination URL
+const getNextPageUrl = () => {
+  if (!next_cursor) return '#';
+  const newParams = new URLSearchParams(url.searchParams);
+  newParams.set('cursor', next_cursor);
+  return `/admin/knowledge?${newParams.toString()}`;
+};
+---
+
+<AdminLayout title="Knowledge Items" activeTab="knowledge">
+  <div class="knowledge-layout">
+    <!-- Main Content Panel -->
+    <div class="main-panel-container {detail ? 'split-view' : ''}">
+      
+      <!-- Filters bar -->
+      <div class="card filter-bar">
+        <form method="GET" class="filter-form-grid">
+          {/* Project slug */}
+          <div class="form-group-inline">
+            <label for="project_slug">Project</label>
+            <select 
+              name="project_slug" 
+              id="project_slug" 
+              class="form-control"
+              onchange="this.form.submit()"
+            >
+              <option value="">All Projects</option>
+              {projects.map((p: any) => (
+                <option value={p.slug} selected={p.slug === projectSlug}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Scope */}
+          <div class="form-group-inline">
+            <label for="scope">Scope</label>
+            <select 
+              name="scope" 
+              id="scope" 
+              class="form-control"
+              onchange="this.form.submit()"
+            >
+              <option value="">All Scopes</option>
+              <option value="project" selected={scope === 'project'}>Project</option>
+              <option value="global" selected={scope === 'global'}>Global</option>
+            </select>
+          </div>
+
+          {/* Status */}
+          <div class="form-group-inline">
+            <label for="status">Status</label>
+            <select 
+              name="status" 
+              id="status" 
+              class="form-control"
+              onchange="this.form.submit()"
+            >
+              <option value="">All Statuses</option>
+              <option value="draft" selected={status === 'draft'}>Draft</option>
+              <option value="proposed" selected={status === 'proposed'}>Proposed</option>
+              <option value="approved" selected={status === 'approved'}>Approved</option>
+              <option value="rejected" selected={status === 'rejected'}>Rejected</option>
+              <option value="deprecated" selected={status === 'deprecated'}>Deprecated</option>
+              <option value="superseded" selected={status === 'superseded'}>Superseded</option>
+            </select>
+          </div>
+
+          {/* Tag search */}
+          <div class="form-group-inline">
+            <label for="tag">Tag</label>
+            <input 
+              type="text" 
+              name="tag" 
+              id="tag" 
+              value={tag || ''} 
+              placeholder="e.g. standard"
+              class="form-control"
+            />
+          </div>
+
+          <button type="submit" class="btn btn-secondary filter-submit-btn">Apply Filters</button>
+        </form>
+      </div>
+
+      <!-- Items list card -->
+      <div class="card list-panel">
+        <div class="panel-header">
+          <h2>Knowledge Base Entries</h2>
+        </div>
+
+        {items.length > 0 ? (
+          <>
+            <div class="table-container">
+              <table class="knowledge-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Scope</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Approved At</th>
+                    <th>Created At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item: any) => (
+                    <tr class:list={[{ selected: detail?.id === item.id }]}>
+                      <td>
+                        <a 
+                          href={getFilterUrl({ detail_id: item.id })} 
+                          class="item-title-link"
+                        >
+                          {item.title}
+                        </a>
+                      </td>
+                      <td>
+                        <span class="scope-label">{item.scope}</span>
+                      </td>
+                      <td class="cat-label">{item.category}</td>
+                      <td>
+                        <span class={`badge badge-${item.status}`}>
+                          {item.status}
+                        </span>
+                      </td>
+                      <td>{item.approved_at ? formatDate(item.approved_at) : <span class="muted">—</span>}</td>
+                      <td>{formatDate(item.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {next_cursor && (
+              <div class="pagination-bar">
+                <a href={getNextPageUrl()} class="btn btn-secondary">
+                  Next Page →
+                </a>
+              </div>
+            )}
+          </>
+        ) : (
+          <div class="empty-state">
+            <p>No knowledge items found matching the selected filters.</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- Side Detail View Panel -->
+    {detail && (
+      <div class="detail-sidebar card">
+        <div class="sidebar-header">
+          <h2>Item Details</h2>
+          <a href={getFilterUrl({ detail_id: null })} class="close-btn" title="Close Panel">✕</a>
+        </div>
+        
+        <div class="sidebar-body">
+          <div class="meta-section">
+            <span class={`badge badge-${detail.status}`}>{detail.status}</span>
+            <span class="scope-pill">{detail.scope}</span>
+          </div>
+
+          <h3 class="detail-title">{detail.title}</h3>
+          
+          <div class="detail-props">
+            <div class="prop-row">
+              <span class="prop-label">ID</span>
+              <code class="prop-val">{detail.id}</code>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">Category</span>
+              <span class="prop-val">{detail.category}</span>
+            </div>
+            {detail.project_id && (
+              <div class="prop-row">
+                <span class="prop-label">Project ID</span>
+                <code class="prop-val">{detail.project_id}</code>
+              </div>
+            )}
+            {detail.source_document_id && (
+              <div class="prop-row">
+                <span class="prop-label">Source Document</span>
+                <a href={`/admin/sources/detail?id=${detail.source_document_id}`} class="prop-link-val">
+                  View Source Document →
+                </a>
+              </div>
+            )}
+            {detail.approved_at && (
+              <div class="prop-row">
+                <span class="prop-label">Approved At</span>
+                <span class="prop-val">{formatDate(detail.approved_at)}</span>
+              </div>
+            )}
+            <div class="prop-row">
+              <span class="prop-label">Created At</span>
+              <span class="prop-val">{formatDate(detail.created_at)}</span>
+            </div>
+          </div>
+
+          {detail.tags && detail.tags.length > 0 && (
+            <div class="tags-section">
+              <h4>Tags</h4>
+              <div class="tags-list">
+                {detail.tags.map((t: string) => (
+                  <span class="tag-badge">#{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div class="body-section">
+            <h4>Content Body</h4>
+            <div class="body-box">
+              <pre class="body-pre"><code>{detail.body}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .knowledge-layout {
+    display: flex;
+    gap: var(--spacing-lg);
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .main-panel-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    transition: all 0.25s ease-in-out;
+  }
+
+  .main-panel-container.split-view {
+    max-width: calc(100% - 380px);
+  }
+
+  .filter-bar {
+    padding: var(--spacing-md) var(--spacing-xl);
+  }
+
+  .filter-form-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    align-items: flex-end;
+  }
+
+  .form-group-inline {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .form-group-inline label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .filter-submit-btn {
+    padding: 0.5rem 1rem;
+    height: 38px;
+  }
+
+  .list-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .knowledge-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .knowledge-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .knowledge-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .knowledge-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .knowledge-table tbody tr.selected {
+    background-color: var(--color-surface-container-low);
+  }
+
+  .item-title-link {
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .item-title-link:hover {
+    color: var(--color-primary);
+  }
+
+  .scope-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
+
+  .cat-label {
+    font-weight: 500;
+  }
+
+  .badge-draft { background-color: #e5e7eb; color: #374151; }
+  .badge-proposed { background-color: #dbeafe; color: #1e40af; }
+  .badge-approved { background-color: #d1fae5; color: #065f46; }
+  .badge-rejected { background-color: #fee2e2; color: #991b1b; }
+  .badge-deprecated { background-color: #f3f4f6; color: #4b5563; }
+  .badge-superseded { background-color: #fef3c7; color: #92400e; }
+
+  .pagination-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--spacing-lg);
+  }
+
+  .detail-sidebar {
+    width: 360px;
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding: var(--spacing-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .sidebar-header h2 {
+    font-size: 16px;
+  }
+
+  .close-btn {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--color-on-surface-variant);
+  }
+
+  .meta-section {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+  }
+
+  .scope-pill {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .detail-title {
+    font-size: 20px;
+    line-height: 1.3;
+    margin: var(--spacing-sm) 0;
+  }
+
+  .detail-props {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    background-color: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+  }
+
+  .prop-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-bottom: 1px dashed var(--color-outline-variant);
+    padding-bottom: var(--spacing-xs);
+  }
+
+  .prop-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .prop-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .prop-val {
+    font-size: 12px;
+    color: var(--color-on-surface);
+  }
+
+  code.prop-val {
+    font-family: var(--font-family-mono);
+    font-size: 10px;
+    word-break: break-all;
+  }
+
+  .prop-link-val {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .tags-section h4, .body-section h4 {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+
+  .tag-badge {
+    font-size: 11px;
+    font-weight: 600;
+    background-color: var(--color-surface-container-low);
+    color: var(--color-primary);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .body-box {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-low);
+  }
+
+  .body-pre {
+    padding: var(--spacing-md);
+    max-height: 250px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--color-on-surface);
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+
+  @media (max-width: 1024px) {
+    .knowledge-layout {
+      flex-direction: column;
+    }
+    .main-panel-container.split-view {
+      max-width: 100%;
+    }
+    .detail-sidebar {
+      width: 100%;
+      position: static;
+      max-height: none;
+    }
+  }
+</style>

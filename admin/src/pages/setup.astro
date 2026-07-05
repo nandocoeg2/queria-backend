@@ -1,0 +1,297 @@
+---
+import '../styles/tokens.css';
+
+let error = '';
+
+// Handle setup POST request
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const organizationName = data.get('organization_name');
+    const organizationSlug = data.get('organization_slug');
+    const adminName = data.get('admin_name');
+    const adminEmail = data.get('admin_email');
+    const adminPassword = data.get('admin_password');
+    const seedProject = data.get('seed_project') === 'true';
+
+    const backendUrl = import.meta.env.QUERIA_API_URL || process.env.QUERIA_API_URL || 'http://localhost:17671';
+    
+    const response = await fetch(`${backendUrl}/api/v1/setup`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        organization_name: organizationName,
+        organization_slug: organizationSlug,
+        admin_name: adminName,
+        admin_email: adminEmail,
+        admin_password: adminPassword,
+        seed_project: seedProject,
+      }),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success) {
+        // Automatically sign in the user after setup by setting the session cookie
+        const setCookieHeader = response.headers.get('set-cookie');
+        if (setCookieHeader) {
+          Astro.response.headers.set('set-cookie', setCookieHeader);
+        }
+        return Astro.redirect('/admin');
+      } else {
+        error = result.error || 'Setup failed';
+      }
+    } else {
+      const errRes = await response.json().catch(() => ({}));
+      error = errRes.error || 'Failed to complete setup.';
+    }
+  } catch (err) {
+    console.error('Setup submission error:', err);
+    error = 'Failed to communicate with setup server.';
+  }
+}
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>First-Run Setup Wizard | Queria</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+  </head>
+  <body class="setup-body">
+    <div class="setup-container">
+      <div class="setup-header">
+        <div class="logo">Q</div>
+        <h1>Queria</h1>
+        <p>First-Run Infrastructure Setup Wizard</p>
+      </div>
+
+      <div class="card setup-card">
+        {error && <div class="error-alert">{error}</div>}
+
+        <form method="POST">
+          <div class="section-title">
+            <h3>1. Organization Details</h3>
+          </div>
+          
+          <div class="form-group">
+            <label for="organization_name">Organization Name</label>
+            <input 
+              type="text" 
+              id="organization_name" 
+              name="organization_name" 
+              required 
+              placeholder="Fernando Julian Organization" 
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="organization_slug">Organization Slug</label>
+            <input 
+              type="text" 
+              id="organization_slug" 
+              name="organization_slug" 
+              required 
+              placeholder="fjulian" 
+              class="form-control"
+            />
+          </div>
+
+          <div class="section-title">
+            <h3>2. Admin Account Credentials</h3>
+          </div>
+
+          <div class="form-group">
+            <label for="admin_name">Full Name</label>
+            <input 
+              type="text" 
+              id="admin_name" 
+              name="admin_name" 
+              required 
+              placeholder="Nando Julian" 
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="admin_email">Email Address</label>
+            <input 
+              type="email" 
+              id="admin_email" 
+              name="admin_email" 
+              required 
+              placeholder="nando@fjulian.id" 
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="admin_password">Password</label>
+            <input 
+              type="password" 
+              id="admin_password" 
+              name="admin_password" 
+              required 
+              placeholder="At least 8 characters" 
+              minlength="8"
+              class="form-control"
+            />
+          </div>
+
+          <div class="section-title">
+            <h3>3. Project Seeding</h3>
+          </div>
+
+          <div class="form-group checkbox-group">
+            <input 
+              type="checkbox" 
+              id="seed_project" 
+              name="seed_project" 
+              value="true" 
+              checked
+            />
+            <label for="seed_project">Seed default project <code>fjulian-me</code></label>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Complete System Setup</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+
+<style>
+  .setup-body {
+    background-color: var(--color-background);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: var(--font-family-body);
+    padding: var(--spacing-xxl) var(--spacing-xl);
+  }
+
+  .setup-container {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+  }
+
+  .setup-header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-default);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 24px;
+    font-family: var(--font-family-headline);
+  }
+
+  .setup-header h1 {
+    font-size: 32px;
+    color: var(--color-on-surface);
+  }
+
+  .setup-header p {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .setup-card {
+    padding: var(--spacing-xxl);
+  }
+
+  .section-title {
+    margin-top: var(--spacing-xl);
+    margin-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-xs);
+  }
+
+  .section-title h3 {
+    font-size: 14px;
+    color: var(--color-primary);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .error-alert {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    font-size: 13px;
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .checkbox-group {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .checkbox-group label {
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .btn-block {
+    width: 100%;
+    padding: 0.75rem var(--spacing-xl);
+    font-size: 14px;
+    margin-top: var(--spacing-md);
+  }
+</style>

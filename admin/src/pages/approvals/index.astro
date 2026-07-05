@@ -1,0 +1,248 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listApprovals, fetchFromBackend } from '../../lib/api';
+
+let message = '';
+let isError = false;
+
+// Handle approve / reject actions
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const action = data.get('action');
+    const approvalId = data.get('approval_id');
+
+    if (approvalId && (action === 'approve' || action === 'reject')) {
+      const endpoint = `/api/v1/approvals/${approvalId}/${action}`;
+      const res = await fetchFromBackend(endpoint, Astro.request, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        message = `Proposal successfully ${action === 'approve' ? 'approved' : 'rejected'}.`;
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || `Failed to ${action} proposal.`;
+        isError = true;
+      }
+    }
+  } catch (err) {
+    console.error('Approval action error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const approvals = await listApprovals(Astro.request);
+if (!approvals) {
+  return Astro.redirect('/admin/login');
+}
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+};
+---
+
+<AdminLayout title="Approvals Queue" activeTab="approvals">
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  <div class="card approvals-panel">
+    <div class="panel-header">
+      <h2>Proposed Knowledge Items</h2>
+    </div>
+
+    {approvals.length > 0 ? (
+      <div class="table-container">
+        <table class="approvals-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Proposed By</th>
+              <th>Source / Scope</th>
+              <th>Proposed At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {approvals.map((approval: any) => (
+              <tr>
+                <td>
+                  <div class="proposal-title">{approval.title}</div>
+                  <pre class="proposal-body"><code>{approval.body}</code></pre>
+                </td>
+                <td class="cat-cell">{approval.category}</td>
+                <td><code class="actor-code">{approval.proposed_by}</code></td>
+                <td>
+                  <span class="scope-cell">{approval.scope}</span>
+                  {approval.source_document_id && (
+                    <a href={`/admin/sources/detail?id=${approval.source_document_id}`} class="source-link">
+                      source document
+                    </a>
+                  )}
+                </td>
+                <td>{formatDate(approval.created_at)}</td>
+                <td class="action-cell">
+                  <form method="POST" style="display:inline">
+                    <input type="hidden" name="action" value="approve" />
+                    <input type="hidden" name="approval_id" value={approval.id} />
+                    <button type="submit" class="btn btn-primary btn-sm">Approve</button>
+                  </form>
+                  <form method="POST" style="display:inline">
+                    <input type="hidden" name="action" value="reject" />
+                    <input type="hidden" name="approval_id" value={approval.id} />
+                    <button type="submit" class="btn btn-secondary btn-sm btn-danger-hover">Reject</button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No pending proposals in the queue.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .approvals-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .approvals-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .approvals-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .approvals-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    vertical-align: top;
+  }
+
+  .approvals-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .proposal-title {
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .proposal-body {
+    background-color: var(--color-surface-container-low);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    max-width: 400px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .cat-cell {
+    font-weight: 500;
+  }
+
+  .actor-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+
+  .scope-cell {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
+
+  .source-link {
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .action-cell {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .btn-danger-hover:hover {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>

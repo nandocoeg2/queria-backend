@@ -1,0 +1,8 @@
+---
+// Log out by clearing cookie session
+Astro.response.headers.set(
+  'set-cookie',
+  'queria_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
+);
+return Astro.redirect('/admin/login');
+---

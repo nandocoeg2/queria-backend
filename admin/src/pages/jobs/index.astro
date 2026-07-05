@@ -1,0 +1,254 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listJobs, fetchFromBackend } from '../../lib/api';
+
+let message = '';
+let isError = false;
+
+// Handle job actions (retry/cancel)
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const action = data.get('action');
+    const jobId = data.get('job_id');
+
+    if (jobId && (action === 'retry' || action === 'cancel')) {
+      const endpoint = `/api/v1/ingestion-jobs/${jobId}/${action}`;
+      const res = await fetchFromBackend(endpoint, Astro.request, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        message = `Job successfully ${action === 'retry' ? 'retried' : 'cancelled'}.`;
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || `Failed to ${action} job.`;
+        isError = true;
+      }
+    }
+  } catch (err) {
+    console.error('Job action error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const jobs = await listJobs(Astro.request);
+if (!jobs) {
+  return Astro.redirect('/admin/login');
+}
+
+// Sort jobs by created_at desc
+const sortedJobs = [...jobs].sort((a: any, b: any) => {
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+});
+
+// Format dates
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+};
+---
+
+<AdminLayout title="Ingestion Jobs" activeTab="jobs">
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  <div class="card jobs-panel">
+    <div class="panel-header">
+      <h2>Ingestion & Embedding History</h2>
+    </div>
+
+    {sortedJobs.length > 0 ? (
+      <div class="table-container">
+        <table class="jobs-table">
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Attempts</th>
+              <th>Created At</th>
+              <th>Timeline</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedJobs.map((job: any) => (
+              <tr>
+                <td>
+                  <code class="job-id-code">{job.id}</code>
+                  {job.error_message && (
+                    <div class="job-error-text">
+                      <strong>Error:</strong> {job.error_message}
+                    </div>
+                  )}
+                </td>
+                <td><span class="type-label">{job.job_type}</span></td>
+                <td>
+                  <span class={`badge badge-${job.status === 'succeeded' ? 'approved' : job.status === 'failed' ? 'rejected' : 'pending'}`}>
+                    {job.status}
+                  </span>
+                </td>
+                <td class="attempts-cell">{job.attempts}</td>
+                <td>{formatDate(job.created_at)}</td>
+                <td class="timeline-cell">
+                  <div><strong>Started:</strong> {formatDate(job.started_at)}</div>
+                  <div><strong>Finished:</strong> {formatDate(job.finished_at)}</div>
+                </td>
+                <td class="action-cell">
+                  {(job.status === 'failed' || job.status === 'cancelled') && (
+                    <form method="POST" style="display:inline">
+                      <input type="hidden" name="action" value="retry" />
+                      <input type="hidden" name="job_id" value={job.id} />
+                      <button type="submit" class="btn btn-primary btn-sm">Retry</button>
+                    </form>
+                  )}
+                  
+                  {(job.status === 'queued' || job.status === 'running') && (
+                    <form method="POST" style="display:inline">
+                      <input type="hidden" name="action" value="cancel" />
+                      <input type="hidden" name="job_id" value={job.id} />
+                      <button type="submit" class="btn btn-secondary btn-sm btn-danger-hover">Cancel</button>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No ingestion jobs exist.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .jobs-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .jobs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .jobs-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .jobs-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    vertical-align: top;
+  }
+
+  .jobs-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .job-id-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .job-error-text {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--color-error);
+    max-width: 300px;
+    word-break: break-all;
+  }
+
+  .type-label {
+    font-weight: 600;
+  }
+
+  .attempts-cell {
+    text-align: center;
+  }
+
+  .timeline-cell {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .action-cell {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .btn-danger-hover:hover {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>

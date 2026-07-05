@@ -1,0 +1,353 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getSourceDetail } from '../../lib/api';
+
+const url = new URL(Astro.request.url);
+const sourceId = url.searchParams.get('id');
+
+if (!sourceId) {
+  return Astro.redirect('/admin/sources');
+}
+
+const source = await getSourceDetail(Astro.request, sourceId);
+if (!source) {
+  return Astro.redirect('/admin/login');
+}
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+};
+---
+
+<AdminLayout title="Source Details" activeTab="sources">
+  <div class="back-bar">
+    <a href="/admin/sources" class="back-link">← Back to Sources</a>
+  </div>
+
+  <div class="detail-header card">
+    <div class="title-section">
+      <span class="badge badge-stale">{source.kind}</span>
+      <h1>{source.title}</h1>
+      <code class="source-id">{source.id}</code>
+    </div>
+  </div>
+
+  <div class="details-grid">
+    <!-- General Information -->
+    <div class="card detail-panel">
+      <div class="panel-header">
+        <h2>General Information</h2>
+      </div>
+      <div class="info-list">
+        <div class="info-item">
+          <span class="label">URI</span>
+          <code class="val uri-val">{source.uri}</code>
+        </div>
+        {source.source_path && (
+          <div class="info-item">
+            <span class="label">Source Path</span>
+            <code class="val">{source.source_path}</code>
+          </div>
+        )}
+        {source.branch && (
+          <div class="info-item">
+            <span class="label">Branch</span>
+            <span class="val">{source.branch}</span>
+          </div>
+        )}
+        {source.commit_sha && (
+          <div class="info-item">
+            <span class="label">Commit SHA</span>
+            <code class="val">{source.commit_sha}</code>
+          </div>
+        )}
+        <div class="info-item">
+          <span class="label">Created At</span>
+          <span class="val">{formatDate(source.created_at)}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Updated At</span>
+          <span class="val">{formatDate(source.updated_at)}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chunk Statuses -->
+    <div class="card detail-panel">
+      <div class="panel-header">
+        <h2>Chunk Embedding Summary</h2>
+      </div>
+      <div class="info-list">
+        <div class="info-item">
+          <span class="label"><span class="status-dot dot-ready"></span> Ready</span>
+          <strong class="val">{source.chunk_counts.ready}</strong>
+        </div>
+        <div class="info-item">
+          <span class="label"><span class="status-dot dot-pending"></span> Pending</span>
+          <strong class="val">{source.chunk_counts.pending}</strong>
+        </div>
+        <div class="info-item">
+          <span class="label"><span class="status-dot dot-processing"></span> Processing</span>
+          <strong class="val">{source.chunk_counts.processing}</strong>
+        </div>
+        <div class="info-item">
+          <span class="label"><span class="status-dot dot-failed"></span> Failed</span>
+          <strong class="val {source.chunk_counts.failed > 0 ? 'text-alert' : ''}">{source.chunk_counts.failed}</strong>
+        </div>
+        <div class="info-item">
+          <span class="label"><span class="status-dot dot-stale"></span> Stale</span>
+          <strong class="val">{source.chunk_counts.stale}</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latest Ingestion Activity -->
+  <div class="card main-panel section-row">
+    <div class="panel-header">
+      <h2>Latest Ingestion Activity</h2>
+    </div>
+
+    {source.latest_ingestion ? (
+      <div class="details-split">
+        <div class="info-list compact-list">
+          <div class="info-item">
+            <span class="label">Job ID</span>
+            <code class="val">{source.latest_ingestion.id}</code>
+          </div>
+          <div class="info-item">
+            <span class="label">Status</span>
+            <span class={`badge badge-${source.latest_ingestion.status === 'succeeded' ? 'approved' : source.latest_ingestion.status === 'failed' ? 'rejected' : 'pending'}`}>
+              {source.latest_ingestion.status}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="label">Started At</span>
+            <span class="val">{formatDate(source.latest_ingestion.started_at)}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Finished At</span>
+            <span class="val">{formatDate(source.latest_ingestion.finished_at)}</span>
+          </div>
+        </div>
+
+        {source.latest_ingestion.error_message && (
+          <div class="error-container">
+            <strong>Ingestion Error Message:</strong>
+            <pre class="error-pre"><code>{source.latest_ingestion.error_message}</code></pre>
+          </div>
+        )}
+
+        {source.latest_ingestion.result && Object.keys(source.latest_ingestion.result).length > 0 && (
+          <div class="result-container">
+            <strong>Ingestion Result Metrics:</strong>
+            <pre class="result-pre"><code>{JSON.stringify(source.latest_ingestion.result, null, 2)}</code></pre>
+          </div>
+        )}
+      </div>
+    ) : (
+      <p class="muted">No ingestion activity recorded for this source document.</p>
+    )}
+  </div>
+
+  <!-- Content Preview -->
+  {source.content_preview && (
+    <div class="card main-panel section-row">
+      <div class="panel-header">
+        <h2>Content Preview (First Parsed Section)</h2>
+      </div>
+      <div class="preview-box">
+        <pre class="preview-pre"><code>{source.content_preview}</code></pre>
+      </div>
+    </div>
+  )}
+</AdminLayout>
+
+<style>
+  .back-bar {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .back-link {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .detail-header {
+    margin-bottom: var(--spacing-xl);
+    padding: var(--spacing-xl);
+  }
+
+  .title-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    align-items: flex-start;
+  }
+
+  .title-section h1 {
+    font-size: 24px;
+    margin-top: var(--spacing-xs);
+  }
+
+  .source-id {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .detail-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .panel-header h2 {
+    font-size: 15px;
+  }
+
+  .info-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px dashed var(--color-outline-variant);
+    padding-bottom: var(--spacing-xs);
+    gap: var(--spacing-xl);
+  }
+
+  .info-item .label {
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .info-item .val {
+    font-size: 13px;
+    color: var(--color-on-surface);
+    text-align: right;
+  }
+
+  code.val {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .uri-val {
+    word-break: break-all;
+    max-width: 250px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    display: inline-block;
+  }
+
+  .dot-ready { background-color: #10b981; }
+  .dot-pending { background-color: #f59e0b; }
+  .dot-processing { background-color: #3b82f6; }
+  .dot-failed { background-color: #ef4444; }
+  .dot-stale { background-color: #9ca3af; }
+
+  .text-alert {
+    color: var(--color-error);
+  }
+
+  .section-row {
+    margin-bottom: var(--spacing-xl);
+    padding: var(--spacing-xl);
+  }
+
+  .details-split {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .compact-list {
+    max-width: 400px;
+  }
+
+  .error-container, .result-container {
+    padding: var(--spacing-md);
+    background-color: var(--color-surface-container-low);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
+  }
+
+  .error-container strong {
+    color: var(--color-error);
+    font-size: 12px;
+    display: block;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .result-container strong {
+    color: var(--color-on-surface);
+    font-size: 12px;
+    display: block;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .error-pre, .result-pre {
+    background-color: #1e293b;
+    color: #f8fafc;
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .preview-box {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-lowest);
+    overflow: hidden;
+  }
+
+  .preview-pre {
+    padding: var(--spacing-xl);
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--color-on-surface);
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+    font-size: 13px;
+    font-style: italic;
+  }
+</style>

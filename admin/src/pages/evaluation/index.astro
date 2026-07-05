@@ -1,0 +1,273 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listProjects, listEvaluations, fetchFromBackend } from '../../lib/api';
+
+const projects = await listProjects(Astro.request);
+if (!projects) {
+  return Astro.redirect('/admin/login');
+}
+
+const url = new URL(Astro.request.url);
+const selectedSlug = url.searchParams.get('project_slug') || projects[0]?.slug;
+
+let message = '';
+let isError = false;
+
+// Handle run evaluation POST
+if (Astro.request.method === 'POST' && selectedSlug) {
+  try {
+    const res = await fetchFromBackend(`/api/v1/projects/${selectedSlug}/evaluations/run`, Astro.request, {
+      method: 'POST',
+    });
+
+    if (res.ok) {
+      message = 'Evaluation job executed successfully.';
+    } else {
+      const errorRes = await res.json().catch(() => ({}));
+      message = errorRes.error || 'Failed to execute evaluation job.';
+      isError = true;
+    }
+  } catch (err) {
+    console.error('Trigger evaluation error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const evaluations = selectedSlug ? await listEvaluations(Astro.request, selectedSlug) : [];
+
+// Sort evaluations by created_at desc
+const sortedEvals = [...(evaluations || [])].sort((a: any, b: any) => {
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+});
+
+// Format dates
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  });
+};
+---
+
+<AdminLayout title="Retrieval Evaluations" activeTab="evaluation">
+  <div class="project-selector-bar card">
+    <form method="GET" class="filter-form">
+      <label for="project_slug">Select Project:</label>
+      <select 
+        name="project_slug" 
+        id="project_slug" 
+        class="form-control inline-select"
+        onchange="this.form.submit()"
+      >
+        {projects.map((p: any) => (
+          <option value={p.slug} selected={p.slug === selectedSlug}>
+            {p.name} ({p.slug})
+          </option>
+        ))}
+      </select>
+    </form>
+  </div>
+
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  <div class="card evals-panel">
+    <div class="panel-header">
+      <h2>Evaluation Baseline Reports for <code class="project-slug-title">{selectedSlug}</code></h2>
+      
+      {selectedSlug && (
+        <form method="POST" style="display:inline">
+          <button type="submit" class="btn btn-primary">
+            Run Evaluation Suite
+          </button>
+        </form>
+      )}
+    </div>
+
+    {sortedEvals.length > 0 ? (
+      <div class="table-container">
+        <table class="evals-table">
+          <thead>
+            <tr>
+              <th>Report ID</th>
+              <th>Overall Score</th>
+              <th>Status</th>
+              <th>Executed At</th>
+              <th>Metrics Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedEvals.map((report: any) => (
+              <tr>
+                <td><code class="report-id-code">{report.id}</code></td>
+                <td>
+                  <strong class="score-val">{(report.score * 100).toFixed(1)}%</strong>
+                </td>
+                <td>
+                  <span class={`badge ${report.passed ? 'badge-approved' : 'badge-rejected'}`}>
+                    {report.passed ? 'Passed' : 'Failed'}
+                  </span>
+                </td>
+                <td>{formatDate(report.created_at)}</td>
+                <td>
+                  {report.metrics && Object.keys(report.metrics).length > 0 ? (
+                    <pre class="metrics-json"><code>{JSON.stringify(report.metrics, null, 2)}</code></pre>
+                  ) : (
+                    <span class="muted">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No evaluation report history exists for this project. Trigger one above to establish a baseline.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .project-selector-bar {
+    padding: var(--spacing-md) var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .filter-form {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  .filter-form label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .inline-select {
+    width: auto;
+    min-width: 200px;
+    padding: 0.5rem var(--spacing-md);
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .evals-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .project-slug-title {
+    font-family: var(--font-family-mono);
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .evals-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .evals-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .evals-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    vertical-align: top;
+  }
+
+  .evals-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .report-id-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .score-val {
+    font-size: 16px;
+    color: var(--color-on-surface);
+  }
+
+  .metrics-json {
+    background-color: var(--color-surface-container-low);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    max-width: 400px;
+    overflow-x: auto;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>

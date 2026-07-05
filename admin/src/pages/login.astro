@@ -1,0 +1,201 @@
+---
+import '../styles/tokens.css';
+
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const email = data.get('email');
+    const password = data.get('password');
+
+    const backendUrl = import.meta.env.QUERIA_API_URL || process.env.QUERIA_API_URL || 'http://localhost:17671';
+    
+    const response = await fetch(`${backendUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.authenticated) {
+        // Forward Set-Cookie header to client
+        const setCookieHeader = response.headers.get('set-cookie');
+        if (setCookieHeader) {
+          Astro.response.headers.set('set-cookie', setCookieHeader);
+        }
+        return Astro.redirect('/admin');
+      } else {
+        error = result.error || 'Invalid credentials';
+      }
+    } else {
+      const errRes = await response.json().catch(() => ({}));
+      error = errRes.error || 'Authentication failed';
+    }
+  } catch (err) {
+    console.error('Login error:', err);
+    error = 'Failed to communicate with authorization server';
+  }
+}
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In | Queria Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+  </head>
+  <body class="login-body">
+    <div class="login-container">
+      <div class="login-header">
+        <div class="logo">Q</div>
+        <h1>Queria</h1>
+        <p>Knowledge Base Administration Console</p>
+      </div>
+
+      <div class="card login-card">
+        {error && <div class="error-alert">{error}</div>}
+
+        <form method="POST">
+          <div class="form-group">
+            <label for="email">Email Address</label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              required 
+              placeholder="nando@fjulian.id" 
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input 
+              type="password" 
+              id="password" 
+              name="password" 
+              required 
+              placeholder="••••••••" 
+              class="form-control"
+            />
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+
+<style>
+  .login-body {
+    background-color: var(--color-background);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: var(--font-family-body);
+    padding: var(--spacing-xl);
+  }
+
+  .login-container {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xxl);
+  }
+
+  .login-header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-default);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 24px;
+    font-family: var(--font-family-headline);
+  }
+
+  .login-header h1 {
+    font-size: 32px;
+    color: var(--color-on-surface);
+  }
+
+  .login-header p {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .login-card {
+    padding: var(--spacing-xxl);
+  }
+
+  .error-alert {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    font-size: 13px;
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.75rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 14px;
+    outline: none;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-outline-variant);
+  }
+
+  .btn-block {
+    width: 100%;
+    padding: 0.75rem var(--spacing-xl);
+    font-size: 14px;
+  }
+</style>

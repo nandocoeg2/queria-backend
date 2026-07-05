@@ -1,0 +1,290 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listProjects, listSources, fetchFromBackend } from '../../lib/api';
+
+const projects = await listProjects(Astro.request);
+if (!projects) {
+  return Astro.redirect('/admin/login');
+}
+
+const url = new URL(Astro.request.url);
+const selectedSlug = url.searchParams.get('project_slug') || projects[0]?.slug;
+
+let message = '';
+let isError = false;
+
+// Handle trigger ingestion form post
+if (Astro.request.method === 'POST' && selectedSlug) {
+  try {
+    const data = await Astro.request.formData();
+    const action = data.get('action');
+    const sourceId = data.get('source_id');
+
+    if (action === 'ingest' && sourceId) {
+      const res = await fetchFromBackend(`/api/v1/sources/${sourceId}/ingest`, Astro.request, {
+        method: 'POST',
+      });
+
+      if (res.ok) {
+        message = 'Ingestion job successfully queued.';
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || 'Failed to trigger ingestion job.';
+        isError = true;
+      }
+    }
+  } catch (err) {
+    console.error('Trigger Ingestion error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const sources = selectedSlug ? await listSources(Astro.request, selectedSlug) : [];
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+  });
+};
+---
+
+<AdminLayout title="Source Documents" activeTab="sources">
+  <div class="project-selector-bar card">
+    <form method="GET" class="filter-form">
+      <label for="project_slug">Select Project:</label>
+      <select 
+        name="project_slug" 
+        id="project_slug" 
+        class="form-control inline-select"
+        onchange="this.form.submit()"
+      >
+        {projects.map((p: any) => (
+          <option value={p.slug} selected={p.slug === selectedSlug}>
+            {p.name} ({p.slug})
+          </option>
+        ))}
+      </select>
+    </form>
+  </div>
+
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  <div class="card sources-panel">
+    <div class="panel-header">
+      <h2>Active Sources for <code class="project-slug-title">{selectedSlug}</code></h2>
+    </div>
+
+    {sources.length > 0 ? (
+      <div class="table-container">
+        <table class="sources-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Kind</th>
+              <th>URI</th>
+              <th>Branch / Commit</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((source: any) => (
+              <tr>
+                <td class="source-title">{source.title}</td>
+                <td><span class="kind-label">{source.kind}</span></td>
+                <td class="source-uri"><code class="uri-code">{source.uri}</code></td>
+                <td class="source-git">
+                  {source.branch ? (
+                    <div>
+                      <span class="branch">branch: {source.branch}</span>
+                      {source.commit_sha && <code class="commit">sha: {source.commit_sha.substring(0, 7)}</code>}
+                    </div>
+                  ) : (
+                    <span class="muted">—</span>
+                  )}
+                </td>
+                <td>{formatDate(source.created_at)}</td>
+                <td class="action-cell">
+                  <a href={`/admin/sources/detail?id=${source.id}`} class="btn btn-secondary btn-sm">
+                    View Details
+                  </a>
+                  
+                  {source.kind === 'git_repo' && (
+                    <form method="POST" style="display:inline">
+                      <input type="hidden" name="action" value="ingest" />
+                      <input type="hidden" name="source_id" value={source.id} />
+                      <button type="submit" class="btn btn-primary btn-sm">
+                        Trigger Ingest
+                      </button>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No source documents registered for this project.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .project-selector-bar {
+    padding: var(--spacing-md) var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .filter-form {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  .filter-form label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .inline-select {
+    width: auto;
+    min-width: 200px;
+    padding: 0.5rem var(--spacing-md);
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #10b981;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .sources-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .project-slug-title {
+    font-family: var(--font-family-mono);
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .sources-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .sources-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .sources-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .sources-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .source-title {
+    font-weight: 600;
+  }
+
+  .kind-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--color-on-surface-variant);
+  }
+
+  .uri-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    word-break: break-all;
+  }
+
+  .branch {
+    font-weight: 600;
+    display: block;
+  }
+
+  .commit {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+  }
+
+  .action-cell {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>

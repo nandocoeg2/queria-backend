@@ -1,0 +1,168 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listProjects } from '../../lib/api';
+
+const projects = await listProjects(Astro.request);
+if (!projects) {
+  return Astro.redirect('/admin/login');
+}
+
+// Format dates nicely
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+  });
+};
+---
+
+<AdminLayout title="Projects Management" activeTab="projects">
+  <div class="card projects-panel">
+    <div class="panel-header">
+      <h2>Registered Projects</h2>
+      <button class="btn btn-primary" onclick="alert('First-run setup determines the project list. Seed fjulian-me via setup or config if necessary.')">
+        Create Project
+      </button>
+    </div>
+
+    {projects.length > 0 ? (
+      <div class="table-container">
+        <table class="projects-table">
+          <thead>
+            <tr>
+              <th>Slug</th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Default Model</th>
+              <th>Global Default</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map((project: any) => (
+              <tr>
+                <td><code class="project-slug">{project.slug}</code></td>
+                <td class="project-name">{project.name}</td>
+                <td class="project-desc">{project.description || <span class="muted">—</span>}</td>
+                <td><code class="model-code">{project.default_embedding_model}</code></td>
+                <td>
+                  <span class={`badge ${project.include_global_default ? 'badge-approved' : 'badge-stale'}`}>
+                    {project.include_global_default ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td>{formatDate(project.created_at)}</td>
+                <td class="action-cell">
+                  <a href={`/admin/sources?project_slug=${project.slug}`} class="btn btn-secondary btn-sm">
+                    Manage Sources
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No projects registered in this organization.</p>
+      </div>
+    )}
+  </div>
+</AdminLayout>
+
+<style>
+  .projects-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .projects-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .projects-table th {
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .projects-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .projects-table tbody tr:hover {
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .project-slug {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-low);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .project-name {
+    font-weight: 600;
+  }
+
+  .project-desc {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+
+  .muted {
+    color: var(--color-on-surface-variant);
+  }
+
+  .action-cell {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+</style>
