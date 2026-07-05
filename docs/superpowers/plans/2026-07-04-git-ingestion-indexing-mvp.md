@@ -1,5 +1,21 @@
 # Git Ingestion and Indexing MVP Implementation Plan
 
+> Status: COMPLETED for MVP scope on 2026-07-04.
+> Ongoing embedding and production operations are tracked in [`2026-07-05-queria-end-to-end.md`](./2026-07-05-queria-end-to-end.md).
+
+| Original task | Status |
+|---|---|
+| 1. Schema and ingestion-job repository | `COMPLETED` |
+| 2. Authenticated ingestion HTTP API | `COMPLETED` |
+| 3. Deterministic parsers and chunking | `COMPLETED` |
+| 4. Git and secret-scan gateway | `COMPLETED` |
+| 5. Transactional manifest and stale cleanup | `COMPLETED` |
+| 6. Worker claim loop | `COMPLETED` |
+| 7. End-to-end `fjulian-me` ingestion | `COMPLETED` |
+
+The original unchecked task boxes below are preserved as historical plan text.
+The completion table above is authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a secure, idempotent Git ingestion pipeline that indexes allowlisted project repositories into approved, cited Postgres knowledge and exposes job control through authenticated HTTP endpoints.

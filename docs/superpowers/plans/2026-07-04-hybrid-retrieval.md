@@ -1,5 +1,21 @@
 # Hybrid Retrieval Implementation Plan
 
+> Status: PARTIAL and SUPERSEDED by [`2026-07-05-queria-end-to-end.md`](./2026-07-05-queria-end-to-end.md).
+> Last reconciled: 2026-07-05.
+
+| Original task | Status |
+|---|---|
+| 1. Embedding configuration and database state | `COMPLETED` |
+| 2. Voyage and Qdrant gateways | `COMPLETED` |
+| 3. Embedding repository and durable jobs | `COMPLETED` |
+| 4. Worker embedding and cleanup jobs | `COMPLETED` |
+| 5. Authorized hybrid retrieval | `PARTIAL` - strict lexical query gap remains |
+| 6. API, MCP, and CLI adapters | `COMPLETED` |
+| 7. Real backfill and acceptance | `PARTIAL` - 717 pending, 168 historical failed, eval 2/3 |
+
+The original unchecked steps below are preserved for implementation history.
+Use the status table above and the active end-to-end plan for continuation.
+
 > **For Codex:** Execute this plan task-by-task with test-driven development. Do not proceed past a task until its focused tests, `cargo fmt --check`, and relevant `cargo clippy` checks pass.
 
 **Goal:** Replace PostgreSQL substring retrieval with production-ready Voyage 4 + Qdrant + PostgreSQL FTS hybrid retrieval while preserving project/global authorization, citations, deterministic ingestion, and an operational fallback path.

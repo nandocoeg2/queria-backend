@@ -1,5 +1,8 @@
 # Voyage-4, Qdrant, and Postgres FTS Hybrid Retrieval
 
+> Status: PARTIAL. Core design is implemented. Remaining: relaxed lexical candidate generation, shared/persisted CLI evaluation, completion of the real backfill, and final acceptance.
+> Superseded execution plan: [`../plans/2026-07-05-queria-end-to-end.md`](../plans/2026-07-05-queria-end-to-end.md).
+
 ## Goal
 
 Replace Queria's temporary substring retrieval with production-oriented hybrid

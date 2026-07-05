@@ -1,6 +1,22 @@
 # queria-backend
 
+> Status: PARTIAL - core backend vertical slice is operational; Admin UI, backup/restore, Pingora, and production deployment remain.
+> Last verified: 2026-07-05.
+> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) and the [active end-to-end plan](docs/superpowers/plans/2026-07-05-queria-end-to-end.md).
+
 Queria backend workspace for centralized team and agent knowledge.
+
+## Completion Summary
+
+| Area | Status |
+|---|---|
+| Auth, setup, project/source registry, approval, tokens | `COMPLETED` |
+| Git ingestion and trusted auto-approval | `COMPLETED` |
+| Hybrid retrieval and evaluation | `PARTIAL` |
+| MCP real tools | `COMPLETED` |
+| Admin UI API surface | `PARTIAL` |
+| Astro Admin UI | `NOT STARTED` |
+| Backup/restore, Pingora, OCI deployment | `NOT STARTED` |
 
 ## Local services
 

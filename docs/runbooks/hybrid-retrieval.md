@@ -1,5 +1,9 @@
 # Hybrid Retrieval Runbook
 
+> Status: PARTIAL - provider integration, RRF, fallback, jobs, and evaluation API are implemented; relaxed lexical candidates and CLI evaluation persistence remain.
+> Last verified: 2026-07-05.
+> Current evidence: [`../HANDOFF.md`](../HANDOFF.md).
+
 ## Retrieval Path
 
 Queria uses PostgreSQL as the source of truth and combines:
@@ -105,6 +109,11 @@ Pass criteria:
 - evaluation API persists an `evaluation_report` row with the full JSON report
 
 ## Evaluation Baseline
+
+Current verified baseline is 2/3. `deployment and site build notes` returns zero
+lexical candidates because `websearch_to_tsquery('simple', ...)` requires every
+lexeme, including `and`. Do not treat the runbook's passing target below as the
+current observed state until Phase 1 of the active roadmap is complete.
 
 Golden questions live in:
 

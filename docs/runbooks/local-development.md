@@ -1,5 +1,9 @@
 # Local Development Runbook
 
+> Status: CURRENT for implemented local backend workflows.
+> Last verified: 2026-07-05.
+> Known gaps and current counts: [`../HANDOFF.md`](../HANDOFF.md).
+
 ## Services
 
 Queria backend runs these local services:
@@ -54,8 +58,12 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- embeddings status --pr
 Run worker with a conservative Voyage batch size:
 
 ```bash
-rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=8 cargo run -p queria-worker
+rtk infisical run --env=dev -- /usr/bin/env QUERIA_EMBEDDING_BATCH_SIZE=8 QUERIA_EMBEDDING_REQUEST_INTERVAL_MS=30000 cargo run -p queria-worker
 ```
+
+Pacing is durable: after each successful batch the worker requeues and unlocks
+the job with `retry_after_at`. It must not sleep while holding a `running` job.
+After stopping the worker, verify `processing=0` and no job lock remains.
 
 `failed` chunks are retryable for embedding backfill. A `429 Too Many Requests` response should requeue the job with `retry_after_at`, not leave the newest job terminal failed.
 
@@ -92,6 +100,10 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fju
 ```
 
 The baseline reads `tests/golden_questions/fjulian-me.jsonl` and reports pass/fail, expected scope hits, expected citation hits, and a regression score.
+
+Current limitation: the CLI report is not persisted. Only the admin API run is
+stored in `evaluation_report`. The active roadmap unifies both runners and makes
+CLI persistence explicit.
 
 The admin API can run and persist the same baseline:
 
