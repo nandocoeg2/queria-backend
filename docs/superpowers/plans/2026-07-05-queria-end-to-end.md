@@ -45,7 +45,7 @@
 - Test: `crates/queria-core/tests/evaluation_contract.rs`
 - Dataset: `tests/golden_questions/fjulian-me.jsonl`
 
-- [ ] **Task 1.1: Add a failing lexical-query regression test**
+- [x] **Task 1.1: Add a failing lexical-query regression test**
 
 Add a repository-level test that requires the lexical SQL to contain both a
 strict query and a relaxed query while preserving every authorization filter:
@@ -72,7 +72,7 @@ rtk cargo test -p queria-db lexical_search_has_bounded_relaxed_candidates
 Expected before implementation: FAIL because the SQL has only the strict
 `websearch_to_tsquery` path.
 
-- [ ] **Task 1.2: Implement strict-weighted relaxed lexical candidates**
+- [x] **Task 1.2: Implement strict-weighted relaxed lexical candidates**
 
 Use SQL CTEs to build a strict query and an OR query from normalized lexemes.
 Rank strict matches above relaxed matches and retain the configured candidate
@@ -103,7 +103,7 @@ rtk cargo test -p queria-db hybrid
 
 Expected: all hybrid repository tests pass.
 
-- [ ] **Task 1.3: Verify the real deployment query**
+- [x] **Task 1.3: Verify the real deployment query**
 
 Run the CLI probe:
 
@@ -118,7 +118,7 @@ Expected: at least one project-scoped item with a `README.md` citation. A
 semantic provider outage may produce `lexical_fallback`, but it must not produce
 zero items.
 
-- [ ] **Task 1.4: Extract one shared evaluation executor**
+- [x] **Task 1.4: Extract one shared evaluation executor**
 
 Create a mockable `EvaluationRetriever` boundary and
 `queria-search::evaluation::EvaluationExecutor`. The production adapter wraps
@@ -159,7 +159,7 @@ impl<R: EvaluationRetriever> EvaluationExecutor<R> {
 Write mock-backed tests for immediate success, retry then success, and
 non-retryable failure before replacing adapter-local loops.
 
-- [ ] **Task 1.5: Persist CLI evaluation reports**
+- [x] **Task 1.5: Persist CLI evaluation reports**
 
 After shared execution, construct `PgEvaluationRepository` from the existing
 pool and call `insert_for_project_slug`. Print the persisted record, including
@@ -168,7 +168,7 @@ its ID and timestamps, instead of printing an unpersisted report.
 The API `POST .../evaluations/run` must use the same executor and repository.
 `GET .../evaluations/latest` must return the row created by either adapter.
 
-- [ ] **Task 1.6: Run Phase 1 quality gate**
+- [x] **Task 1.6: Run Phase 1 quality gate**
 
 ```bash
 rtk cargo fmt --all --check
@@ -200,27 +200,27 @@ Rollback: revert the Phase 1 commit. No schema migration is required.
 - Modify: `docs/runbooks/local-development.md`
 - Modify: `docs/runbooks/hybrid-retrieval.md`
 
-- [ ] **Task 2.1: Add stale-lock recovery tests**
+- [x] **Task 2.1: Add stale-lock recovery tests**
 
 Test that startup recovery requeues only expired `running` jobs, resets chunk
 `processing` state to retryable state, clears worker locks, and records a
 structured audit/log reason. Active leases must remain untouched.
 
-- [ ] **Task 2.2: Add one production-grade multi-stage Dockerfile**
+- [x] **Task 2.2: Add one production-grade multi-stage Dockerfile**
 
 Build all five binaries in a Rust builder stage and copy them into a small
 Debian runtime image with CA certificates, Git, and TruffleHog. Run as a
 non-root UID. Select the binary through the Compose service `command`; do not
 produce five divergent images.
 
-- [ ] **Task 2.3: Add application services to Compose**
+- [x] **Task 2.3: Add application services to Compose**
 
 Add `queria-api`, `queria-mcp`, `queria-worker`, and `queria-proxy`. Use health
 dependencies for Postgres and Qdrant, explicit ports `17671`-`17674`, JSON logs,
 and restart policy `unless-stopped`. Secrets remain environment references and
 must not be hardcoded.
 
-- [ ] **Task 2.4: Run supervised backfill without blocking an interactive agent**
+- [x] **Task 2.4: Run supervised backfill without blocking an interactive agent**
 
 Use:
 
@@ -233,7 +233,7 @@ Observe at least three successful batches. Required trend: ready increases,
 pending decreases, failed does not increase, and processing is zero after a
 controlled stop. Historical failed chunks may remain until retried.
 
-- [ ] **Task 2.5: Classify historical failures**
+- [x] **Task 2.5: Classify historical failures**
 
 Group failed chunks by last provider status/error category. Retry only retryable
 429/5xx/network failures. Permanent payload/configuration failures must become
