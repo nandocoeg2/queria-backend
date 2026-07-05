@@ -138,8 +138,14 @@ services:
       - .env
     environment:
       - QUERIA_PROXY_ADDR=0.0.0.0:17674
+      - QUERIA_API_UPSTREAM=queria-api:17671
+      - QUERIA_MCP_UPSTREAM=queria-mcp:17672
+      - QUERIA_ADMIN_UPSTREAM=host.docker.internal:4321
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - queria-api
+      - queria-mcp
     restart: unless-stopped
 
 volumes:
