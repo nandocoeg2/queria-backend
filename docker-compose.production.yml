@@ -32,6 +32,7 @@ services:
     command: queria-api
     environment:
       - QUERIA_ENV=production
+      - QUERIA_GIT_ALLOWED_ROOTS=/tmp
       - QUERIA_API_ADDR=0.0.0.0:17671
       - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
@@ -73,6 +74,7 @@ services:
     command: queria-worker
     environment:
       - QUERIA_ENV=production
+      - QUERIA_GIT_ALLOWED_ROOTS=/tmp
       - QUERIA_WORKER_HEALTH_ADDR=0.0.0.0:17673
       - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
@@ -100,6 +102,7 @@ services:
       - HOST=0.0.0.0
       - PORT=17674
       - QUERIA_API_URL=http://queria-api:17671
+      - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
     restart: unless-stopped
 
   queria-proxy:

@@ -15,13 +15,15 @@ if (Astro.request.method === 'POST') {
     const seedProject = data.get('seed_project') === 'true';
 
     const backendUrl = import.meta.env.QUERIA_API_URL || process.env.QUERIA_API_URL || 'http://localhost:17671';
+    const setupToken = import.meta.env.QUERIA_SETUP_TOKEN || process.env.QUERIA_SETUP_TOKEN || 'queria-local-development-setup-token-2026';
     
-    const response = await fetch(`${backendUrl}/api/v1/setup`, {
+    const response = await fetch(`${backendUrl}/api/v1/setup/complete`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
+        setup_token: setupToken,
         organization_name: organizationName,
         organization_slug: organizationSlug,
         admin_name: adminName,
@@ -33,7 +35,7 @@ if (Astro.request.method === 'POST') {
 
     if (response.ok) {
       const result = await response.json();
-      if (result.success) {
+      if (result.setup_completed) {
         // Automatically sign in the user after setup by setting the session cookie
         const setCookieHeader = response.headers.get('set-cookie');
         const headers = new Headers();

@@ -68,6 +68,11 @@ impl ProxyHttp for QueriaProxy {
                 .unwrap();
         }
 
+        // Forward Host header
+        if let Some(host) = session.get_header("Host") {
+            upstream_request.insert_header("Host", host).unwrap();
+        }
+
         // Forward request ID
         let req_id = session
             .get_header("X-Request-ID")
