@@ -158,7 +158,7 @@ export async function listAuditLogs(
 }
 
 export async function listJobs(astroRequest: Request) {
-  const res = await fetchFromBackend('/api/v1/ingestion-jobs/', astroRequest);
+  const res = await fetchFromBackend('/api/v1/ingestion-jobs', astroRequest);
   if (!res.ok) {
     if (res.status === 401) return null;
     throw new Error(`Failed to fetch ingestion jobs: ${res.statusText}`);

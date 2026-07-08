@@ -1,8 +1,10 @@
 ---
 // Log out by clearing cookie session
-Astro.response.headers.set(
-  'set-cookie',
-  'queria_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
-);
-return Astro.redirect('/admin/login');
+const headers = new Headers();
+headers.set('Location', '/admin/login');
+headers.set('Set-Cookie', 'queria_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+return new Response(null, {
+  status: 302,
+  headers,
+});
 ---

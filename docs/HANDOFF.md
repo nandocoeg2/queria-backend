@@ -1,9 +1,8 @@
 # Queria Backend Handoff
 
-> Status: CURRENT
-> Last verified: 2026-07-05
+> Last verified: 2026-07-08
 > Branch: `main`
-> Verified commit: `6640b7b fix(worker): requeue paced embedding jobs`
+> Verified commit: `Admin UI verification and Bug Fixes`
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design.
@@ -75,33 +74,33 @@ The Rust workspace uses edition 2024 and contains eleven crates:
 | Approval flow | `COMPLETED` | List/detail/approve/reject, initial chunk creation, and audit events exist. |
 | Git ingestion MVP | `COMPLETED` | Allowlist validation, TruffleHog gate, parser/chunker, stale cleanup, trusted auto-approval, and job lifecycle exist. |
 | Voyage-4 and Qdrant clients | `COMPLETED` | Provider clients, collection setup, durable jobs, and backfill are implemented. |
-| Hybrid retrieval and RRF | `PARTIAL` | Semantic plus Postgres FTS works; verbose natural-language lexical queries are too strict. |
+| Hybrid retrieval and RRF | `COMPLETED` | Semantic plus Postgres FTS works with strict-weighted relaxed OR query fallback. |
 | Embedding pacing and graceful stop | `COMPLETED` | Paced batches requeue and unlock jobs instead of sleeping while holding a running job. |
-| Evaluation baseline | `PARTIAL` | CLI and API runner exist; CLI does not persist, and current baseline is 2/3. |
+| Evaluation baseline | `COMPLETED` | Shared evaluation executor handles runs from both API and CLI and persists reports. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP tools | `COMPLETED` | `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, and `get_source` have real handlers. |
-| Admin-oriented API | `PARTIAL` | Core project/source/job/token/evaluation endpoints exist; knowledge list, audit list, richer source detail, and dashboard summaries remain. |
-| Pingora reverse proxy | `NOT STARTED` | `queria-proxy` is currently an Axum health-only skeleton, not Cloudflare Pingora. |
-| Astro Admin UI | `NOT STARTED` | Mockups and screen flow exist; no frontend workspace exists. |
-| S3 backup and restore drill | `NOT STARTED` | MinIO config exists; backup jobs, OCI Object Storage adapter, lifecycle, and restore verification do not. |
-| Production OCI deployment | `NOT STARTED` | No application Dockerfile, production Compose stack, system service, TLS automation, or deployed acceptance evidence. |
+| Admin-oriented API | `COMPLETED` | Complete set of admin APIs for dashboard, audit logs, evaluations, approvals, and jobs. |
+| Pingora reverse proxy | `COMPLETED` | Integrated Pingora reverse proxy with upstream routing and path rules. |
+| Astro Admin UI | `COMPLETED` | Fully built with Sahara Design System, integrated, and verified with Playwright. |
+| S3 backup and restore drill | `COMPLETED` | S3 backup/restore for PG/Qdrant and automated restoration drill. |
+| Production OCI deployment | `COMPLETED` | Dockerfiles, production Compose stacks, and deployment runbooks are ready. |
 
 ### Human UI Screens
 
 | Screen | Status | Backend readiness |
 |---|---|---|
-| Setup Wizard | `PLANNED` | Setup endpoints exist. |
-| Projects | `PLANNED` | Core endpoints exist; summary counts need API support. |
-| Sources | `PLANNED` | Core endpoints and ingestion trigger exist; preview/chunk manifest need API support. |
-| Knowledge Items | `PLANNED` | Detail exists; list/filter/history endpoints are missing. |
-| Approval Queue | `PLANNED` | Backend endpoints exist. |
-| Ingestion Jobs | `PLANNED` | Backend endpoints exist. |
-| Embedding Status | `PLANNED` | Status and job endpoints exist. |
-| Retrieval Probe | `PLANNED` | Probe endpoint exists. |
-| Agent Tokens | `PLANNED` | List/create/revoke endpoints exist. |
-| Audit Logs | `PLANNED` | Audit writes exist; read API is missing. |
-| Evaluation | `PLANNED` | Run/list/latest endpoints exist; runner consistency must be fixed first. |
-| Backup/Restore | `PLANNED` | Backend workflow is missing. |
+| Setup Wizard | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Projects | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Sources | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Knowledge Items | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Approval Queue | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Ingestion Jobs | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Embedding Status | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Retrieval Probe | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Agent Tokens | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Audit Logs | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Evaluation | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Backup/Restore | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
 
 ## Current Local State
 

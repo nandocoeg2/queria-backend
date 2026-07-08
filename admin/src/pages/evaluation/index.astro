@@ -106,20 +106,18 @@ const formatDate = (dateStr?: string) => {
               <tr>
                 <td><code class="report-id-code">{report.id}</code></td>
                 <td>
-                  <strong class="score-val">{(report.score * 100).toFixed(1)}%</strong>
+                  <strong class="score-val">{(report.regression_score * 100).toFixed(1)}%</strong>
                 </td>
                 <td>
-                  <span class={`badge ${report.passed ? 'badge-approved' : 'badge-rejected'}`}>
-                    {report.passed ? 'Passed' : 'Failed'}
+                  <span class={`badge ${report.status === 'passed' ? 'badge-approved' : 'badge-rejected'}`}>
+                    {report.status === 'passed' ? 'Passed' : 'Failed'}
                   </span>
                 </td>
                 <td>{formatDate(report.created_at)}</td>
                 <td>
-                  {report.metrics && Object.keys(report.metrics).length > 0 ? (
-                    <pre class="metrics-json"><code>{JSON.stringify(report.metrics, null, 2)}</code></pre>
-                  ) : (
-                    <span class="muted">—</span>
-                  )}
+                  <div class="metrics-summary" style="font-size: 13px;">
+                    <strong>{report.passed_questions}</strong> passed, <strong>{report.failed_questions}</strong> failed (Total: {report.total_questions})
+                  </div>
                 </td>
               </tr>
             ))}

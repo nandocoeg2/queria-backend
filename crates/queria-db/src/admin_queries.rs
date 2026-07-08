@@ -386,7 +386,7 @@ impl PgAdminQueriesRepository {
 
         // 4. Get the latest evaluation run in the organization
         let latest_eval = sqlx::query(
-            "select r.id, r.project_slug, r.score, r.passed, r.created_at
+            "select r.id, r.project_slug, r.regression_score::double precision as score, (r.status = 'passed') as passed, r.created_at
              from evaluation_report r
              join project p on p.slug = r.project_slug
              join user_account u on u.organization_id = p.organization_id

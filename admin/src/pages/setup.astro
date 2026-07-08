@@ -36,10 +36,15 @@ if (Astro.request.method === 'POST') {
       if (result.success) {
         // Automatically sign in the user after setup by setting the session cookie
         const setCookieHeader = response.headers.get('set-cookie');
+        const headers = new Headers();
+        headers.set('Location', '/admin');
         if (setCookieHeader) {
-          Astro.response.headers.set('set-cookie', setCookieHeader);
+          headers.set('Set-Cookie', setCookieHeader);
         }
-        return Astro.redirect('/admin');
+        return new Response(null, {
+          status: 302,
+          headers,
+        });
       } else {
         error = result.error || 'Setup failed';
       }

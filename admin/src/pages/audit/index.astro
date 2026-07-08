@@ -23,7 +23,7 @@ if (!res) {
   return Astro.redirect('/admin/login');
 }
 
-const { logs, next_cursor } = res;
+const { items: logs = [], next_cursor } = res;
 
 // Format timestamp
 const formatDate = (dateStr?: string) => {
