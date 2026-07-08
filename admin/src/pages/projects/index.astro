@@ -1,6 +1,37 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listProjects } from '../../lib/api';
+import { listProjects, createProject } from '../../lib/api';
+
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const slug = data.get('slug')?.toString() || '';
+    const name = data.get('name')?.toString() || '';
+    const description = data.get('description')?.toString() || undefined;
+    const default_embedding_model = data.get('default_embedding_model')?.toString() || undefined;
+    const include_global_default = data.get('include_global_default') === 'true';
+
+    const res = await createProject(Astro.request, {
+      slug,
+      name,
+      description,
+      default_embedding_model,
+      include_global_default,
+    });
+
+    if (res.ok) {
+      return Astro.redirect('/admin/projects');
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      error = errData.error || 'Failed to create project';
+    }
+  } catch (err) {
+    console.error('Create project error:', err);
+    error = 'Failed to connect to backend server';
+  }
+}
 
 const projects = await listProjects(Astro.request);
 if (!projects) {
@@ -17,10 +48,16 @@ const formatDate = (dateStr?: string) => {
 ---
 
 <AdminLayout title="Projects Management" activeTab="projects">
+  {error && (
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6 text-sm">
+      <strong>Error:</strong> {error}
+    </div>
+  )}
+
   <div class="card projects-panel">
     <div class="panel-header">
       <h2>Registered Projects</h2>
-      <button class="btn btn-primary" onclick="alert('First-run setup determines the project list. Seed fjulian-me via setup or config if necessary.')">
+      <button class="btn btn-primary" onclick="document.getElementById('create-project-dialog').showModal()">
         Create Project
       </button>
     </div>
@@ -68,6 +105,94 @@ const formatDate = (dateStr?: string) => {
       </div>
     )}
   </div>
+
+  <!-- Create Project Dialog Modal -->
+  <dialog id="create-project-dialog" class="backdrop:bg-black/50 p-6 rounded-lg border border-[#dbc1b5] shadow-2xl bg-[#fff8f5] text-[#221a14] max-w-md w-full focus:outline-none">
+    <div class="flex justify-between items-center mb-4 border-b border-[#dbc1b5]/50 pb-2">
+      <h3 class="text-lg font-headline font-semibold text-[#964407]">Create New Project</h3>
+      <button type="button" class="text-sm font-semibold text-[#605e59] hover:text-[#964407] cursor-pointer" onclick="document.getElementById('create-project-dialog').close()">✕</button>
+    </div>
+    
+    <form method="POST" class="space-y-4">
+      <div class="flex flex-col gap-1">
+        <label for="slug" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Project Slug</label>
+        <input 
+          type="text" 
+          id="slug" 
+          name="slug" 
+          required 
+          placeholder="e.g. my-awesome-project" 
+          pattern="[a-z0-9-]{3,64}"
+          title="Slug must be lowercase alphanumeric and dashes only, 3-64 chars."
+          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="name" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Project Name</label>
+        <input 
+          type="text" 
+          id="name" 
+          name="name" 
+          required 
+          placeholder="e.g. My Awesome Project" 
+          maxlength="128"
+          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="description" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Description</label>
+        <textarea 
+          id="description" 
+          name="description" 
+          placeholder="Describe your project..." 
+          rows="3"
+          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407] resize-none"
+        ></textarea>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="default_embedding_model" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Default Embedding Model</label>
+        <select 
+          id="default_embedding_model" 
+          name="default_embedding_model"
+          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
+        >
+          <option value="voyage-4" selected>Voyage 4 (voyage-4)</option>
+          <option value="voyage-code-3">Voyage Code 3 (voyage-code-3)</option>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2 pt-2">
+        <input 
+          type="checkbox" 
+          id="include_global_default" 
+          name="include_global_default" 
+          value="true" 
+          checked
+          class="rounded border-[#dbc1b5] text-[#964407] focus:ring-[#964407]"
+        />
+        <label for="include_global_default" class="text-sm font-medium text-[#221a14]">Include global knowledge by default</label>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-4 border-t border-[#dbc1b5]/50">
+        <button 
+          type="button" 
+          class="px-4 py-2 border border-[#dbc1b5] rounded-md text-sm font-semibold hover:bg-[#fff1ea] text-[#221a14] cursor-pointer" 
+          onclick="document.getElementById('create-project-dialog').close()"
+        >
+          Cancel
+        </button>
+        <button 
+          type="submit" 
+          class="px-4 py-2 bg-[#964407] text-[#ffffff] rounded-md text-sm font-semibold hover:bg-[#b65c21] cursor-pointer"
+        >
+          Create Project
+        </button>
+      </div>
+    </form>
+  </dialog>
 </AdminLayout>
 
 <style>

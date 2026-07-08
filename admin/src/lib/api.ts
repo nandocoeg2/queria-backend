@@ -175,3 +175,21 @@ export async function listEvaluations(astroRequest: Request, projectSlug: string
   return res.json();
 }
 
+export async function createProject(
+  astroRequest: Request,
+  payload: {
+    slug: string;
+    name: string;
+    description?: string;
+    default_embedding_model?: string;
+    include_global_default?: boolean;
+  }
+) {
+  const res = await fetchFromBackend('/api/v1/projects', astroRequest, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res;
+}
+
+

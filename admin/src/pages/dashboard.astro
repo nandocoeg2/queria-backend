@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
 import { getDashboardSummary } from '../lib/api';
+import ThreeCanvas from '@/components/ThreeCanvas';
 
 const summary = await getDashboardSummary(Astro.request);
 if (!summary) {
@@ -58,8 +59,14 @@ const formatDate = (dateStr?: string) => {
     </div>
   </div>
 
+  <!-- 3D Knowledge Graph Visualization -->
+  <div class="content-row">
+    <ThreeCanvas client:only="react" />
+  </div>
+
   <div class="content-row">
     <!-- Chunk Embedding Summary -->
+
     <div class="card main-panel">
       <div class="panel-header">
         <h2>Knowledge Chunks Embedding Status</h2>

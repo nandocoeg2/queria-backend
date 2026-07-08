@@ -1,4 +1,6 @@
-/* Sahara Design System Tokens */
+@import "tailwindcss";
+
+/* Sahara Design System Tokens & shadcn/ui Compatibility */
 
 :root {
   /* Color Palette (Warm Editorial / Sahara Style) */
@@ -58,7 +60,56 @@
   
   --layout-margin: 2rem;
   --layout-gutter: 1.5rem;
+
+  /* HSL Colors mapped for shadcn/ui compatibility */
+  --background: 18 100% 98%;           /* #fff8f5 */
+  --foreground: 24 24% 11%;            /* #221a14 */
+  --card: 0 0% 100%;                   /* #ffffff */
+  --card-foreground: 24 24% 11%;
+  --popover: 18 100% 98%;
+  --popover-foreground: 24 24% 11%;
+  --primary: 26 91% 31%;               /* #964407 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 4% 91%;              /* #e6e2db */
+  --secondary-foreground: 24 24% 11%;
+  --muted: 21 13% 92%;
+  --muted-foreground: 21 13% 47%;
+  --accent: 18 100% 95%;               /* #fff1ea */
+  --accent-foreground: 26 91% 31%;
+  --destructive: 0 84% 41%;            /* #ba1a1a */
+  --destructive-foreground: 0 0% 100%;
+  --border: 20 36% 78%;                /* #dbc1b5 */
+  --input: 21 13% 47%;                 /* #887368 */
+  --ring: 26 91% 31%;
+  --radius: 0.5rem;
 }
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
 
 /* Base resets */
 * {
