@@ -2,7 +2,7 @@
 
 > Last verified: 2026-07-08
 > Branch: `main`
-> Verified commit: `471283e` (fix(prod): resolve first-run setup wizard token check and proxy csrf forwarding)
+> Verified commit: `11ca3ef` (feat(admin): add galaxy-style 3d knowledge graph and create project dialog)
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design.
@@ -90,7 +90,8 @@ The Rust workspace uses edition 2024 and contains eleven crates:
 | Screen | Status | Backend readiness |
 |---|---|---|
 | Setup Wizard | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Projects | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Dashboard | `COMPLETED` | Fully implemented, featuring interactive 3D Galaxy-Style Knowledge Graph visualizer using InstancedMesh & lineSegments, camera fly-to, and content detail panel. |
+| Projects | `COMPLETED` | Fully implemented, styled with Sahara tokens, featuring functional dialog modal to create projects. |
 | Sources | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
 | Knowledge Items | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
 | Approval Queue | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
