@@ -2,7 +2,7 @@
 
 > Last verified: 2026-07-08
 > Branch: `main`
-> Verified commit: `Admin UI verification and Bug Fixes`
+> Verified commit: `471283e` (fix(prod): resolve first-run setup wizard token check and proxy csrf forwarding)
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design.
