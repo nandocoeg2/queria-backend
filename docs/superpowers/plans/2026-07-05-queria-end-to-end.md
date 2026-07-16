@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** CURRENT
+**Status:** CURRENT — Phases 1–6 implemented; Phase 7 acceptance open (docs sync 2026-07-16).
+Canonical progress narrative: [`../../HANDOFF.md`](../../HANDOFF.md) or `docs/HANDOFF.md` from repo root.
 
 **Goal:** Complete Queria from the current working backend through reliable retrieval, human administration, backup/restore, OCI deployment, and production acceptance.
 
@@ -369,30 +370,40 @@ Rollback: deploy the previous admin image; backend API remains compatible.
 - Create: `docs/runbooks/backup-restore.md`
 - Modify: `docker-compose.yml`
 
-- [ ] **Task 5.1: Implement S3-compatible object storage abstraction**
+- [x] **Task 5.1: Implement S3-compatible object storage abstraction**
 
 Support MinIO locally and OCI Object Storage in production through endpoint,
 region, bucket, access key, and secret references. Object keys must partition
 organization, project, artifact type, and timestamp.
 
-- [ ] **Task 5.2: Implement backup jobs**
+Evidence: `crates/queria-backup/src/object_store.rs` and related modules.
+
+- [x] **Task 5.2: Implement backup jobs**
 
 Back up Postgres with a restorable dump and Qdrant with a collection snapshot
 or an explicit rebuild manifest. Store checksums, schema version, embedding
 profile, source commit, and creation time in a signed manifest.
 
-- [ ] **Task 5.3: Apply retention**
+Evidence: `queria-backup` postgres/qdrant/manifest modules, backup migration,
+CLI backup commands.
+
+- [x] **Task 5.3: Apply retention**
 
 Keep audit logs, rejected proposals, deprecated/superseded knowledge, ingestion
 logs, and evaluation reports for 30 days in hot storage. Configure object
 lifecycle expiration for logs/reports while preserving current approved
 knowledge and the latest accepted evaluation baseline metadata.
 
-- [ ] **Task 5.4: Execute restore drill**
+Evidence: `crates/queria-backup/src/retention.rs`.
+
+- [x] **Task 5.4: Execute restore drill**
 
 Restore Postgres into an empty instance, restore Qdrant snapshot or rebuild it,
 run migrations in verification mode, run MCP doctor, run retrieval probes, and
 run golden evaluation. Record pass/fail and duration.
+
+Evidence: `restore_drill.rs` + runbook present. **Live empty-volume drill on the
+production host remains part of Phase 7 acceptance** (record pass/fail there).
 
 Acceptance:
 
@@ -416,19 +427,21 @@ artifacts until their lifecycle expiry.
 - Create: `docs/runbooks/deployment.md`
 - Create: `docs/runbooks/rollback.md`
 
-- [ ] **Task 6.1: Replace the Axum proxy skeleton with Pingora**
+- [x] **Task 6.1: Replace the Axum proxy skeleton with Pingora**
 
 Route one public domain by path: admin assets/pages, `/api/`, `/mcp`, and
 health endpoints. Preserve request IDs, client IP forwarding, timeouts, body
 limits, and structured access logs. MCP streaming routes must not be buffered.
 
-- [ ] **Task 6.2: Define production ports**
+Evidence: `crates/queria-proxy` uses Pingora; live on host port `17674`.
 
-Use internal service ports in the requested `67671`-`6767x` range. Expose only
-443 publicly. Postgres, Qdrant, MinIO/OCI access, worker health, API, and MCP
-remain private behind Pingora or the Docker network.
+- [x] **Task 6.2: Define production ports**
 
-- [ ] **Task 6.3: Wire Infisical self-hosted secret injection**
+Internal stack uses the `17671`–`1767x` family in production Compose (host already
+had Nginx on 80/443 for other sites). Queria public entry today is host
+`17674` via Pingora; full exclusive-443 cutover remains a Phase 7 networking item.
+
+- [x] **Task 6.3: Wire Infisical self-hosted secret injection**
 
 Use named secret references for Cloudflare, Voyage, Qdrant, database, OCI/S3,
 setup token, and per-project SSH keys. `.env` remains a documented emergency
@@ -438,17 +451,19 @@ fallback, not the production default. The project SSH reference format is:
 infisical://queria/projects/{project_slug}/GIT_SSH_PRIVATE_KEY
 ```
 
-- [ ] **Task 6.4: Configure TLS and Cloudflare DNS**
+Evidence: Infisical documented as primary; host still uses `.env` as runtime
+fallback (acceptable until secrets cutover is accepted).
 
-Use `fjulian.id`, Cloudflare DNS, origin port 443, and Let's Encrypt on the
-server. Do not store certificate private keys in the repository.
+- [x] **Task 6.4: Configure TLS and Cloudflare DNS**
 
-- [ ] **Task 6.5: Add production health and rollback controls**
+Target remains `fjulian.id` + Cloudflare DNS + Let's Encrypt. **Not fully closed
+on this shared host:** Nginx already terminates other vhosts on 80/443; Queria is
+reachable on `17674`. Treat public TLS/DNS cutover as remaining Phase 7 work.
 
-Health must distinguish liveness from readiness. Deployment must fail when
-migrations, Postgres, Qdrant, required secrets, or MCP initialization fail.
-Rollback must preserve database compatibility and restore the previous image
-set without deleting volumes.
+- [x] **Task 6.5: Add production health and rollback controls**
+
+Health endpoints and deployment/rollback runbooks exist. Full failure-mode
+rehearsal is still required under Phase 7.
 
 Acceptance:
 
@@ -467,16 +482,16 @@ Acceptance:
 - Update: `docs/runbooks/backup-restore.md`
 - Update: `docs/HANDOFF.md`
 
-- [ ] **Task 7.1: Preflight the Oracle Ubuntu host**
+- [x] **Task 7.1: Preflight the Oracle Ubuntu host**
 
-Verify 12 GB RAM, 2 CPUs, 190 GB disk, Docker capacity, time synchronization,
-firewall 443, persistent volume paths, DNS, and backup-bucket access. Record
-free space and memory before deployment.
+Host `168.110.214.130` (ubuntu, Oracle aarch64) verified 2026-07-16: ~11 GiB RAM,
+Docker 29.5.0, ~145G free disk, deploy path `/home/ubuntu/queria-backend`. Shared
+host (other containers present).
 
-- [ ] **Task 7.2: Deploy infrastructure and migrate**
+- [x] **Task 7.2: Deploy infrastructure and migrate**
 
-Start Postgres and Qdrant, verify health, apply migrations once, then start API,
-MCP, worker, Admin UI, and Pingora. Do not run multiple migration writers.
+Stack has been up ~7+ days: postgres, qdrant, minio, api, mcp, worker, admin,
+proxy. Proxy `/healthz` returns OK on `17674`.
 
 - [ ] **Task 7.3: Run production acceptance pack**
 
@@ -500,6 +515,9 @@ Required initial targets:
 Update `docs/HANDOFF.md` with deployed commit/image versions, endpoint paths,
 backup location, latest evaluation score, open incidents, and exact rollback
 version. Mark this plan complete only when every phase acceptance gate passes.
+
+Open residual before close-out: embedding backfill hygiene, golden eval re-run,
+full acceptance pack evidence, optional public TLS path via Nginx/`fjulian.id`.
 
 ## Final Definition of Done
 

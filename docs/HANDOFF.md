@@ -1,11 +1,13 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-08
+> Last verified: 2026-07-16
 > Branch: `main`
-> Verified commit: `11ca3ef` (feat(admin): add galaxy-style 3d knowledge graph and create project dialog)
+> Verified commit: `4e7cb37` (docs: update handoff with dashboard 3d galaxy graph and project modal details)
+> Docs sync: README status matrix and plan Phase 5–7 notes aligned this date.
 
 This is the canonical continuation document for Queria backend work. It
-separates implemented behavior from approved target-state design.
+separates implemented behavior from approved target-state design. When other
+product docs disagree with this file, prefer this handoff.
 
 ## Product Contract
 
@@ -50,8 +52,12 @@ flowchart LR
     Worker --> Qdrant
     Worker --> Repo["Allowlisted Git repository"]
     Worker --> TruffleHog["TruffleHog"]
-    Proxy["queria-proxy :17674"] -. "health skeleton only" .-> API
-    MinIO[(MinIO :17678)] -. "configured, backup flow not implemented" .-> Worker
+    Proxy["queria-proxy :17674 (Pingora)"] --> API
+    Proxy --> MCP
+    Proxy --> Admin["queria-admin :4321"]
+    Worker --> MinIO[(MinIO / S3-compatible)]
+    CLI["queria-cli / queria-backup"] --> MinIO
+    CLI --> PG
 ```
 
 The Rust workspace uses edition 2024 and contains eleven crates:
@@ -68,7 +74,7 @@ The Rust workspace uses edition 2024 and contains eleven crates:
 | Rust workspace and binaries | `COMPLETED` | API, MCP, worker, proxy, and CLI binaries compile in one workspace. |
 | Runtime config and JSON logging | `COMPLETED` | Environment-driven config and tracing JSON are implemented. |
 | Postgres, Qdrant, MinIO local infrastructure | `COMPLETED` | `docker-compose.yml` exposes ports `17675`-`17679`. |
-| Baseline schema and migrations | `COMPLETED` | Seven bundled migrations cover baseline, sessions, source indexes, ingestion, hybrid retrieval, retry backoff, and evaluation reports. |
+| Baseline schema and migrations | `COMPLETED` | Eight bundled migrations cover baseline, sessions, source indexes, ingestion, hybrid retrieval, retry backoff, evaluation reports, and backup records. |
 | First-run setup and local login/session | `COMPLETED` | Setup token, first admin, password hashing, login, cookie session, and `/me` exist. |
 | Projects and source registry API | `COMPLETED` | List/create/get project and register/list/get source are DB-backed. |
 | Approval flow | `COMPLETED` | List/detail/approve/reject, initial chunk creation, and audit events exist. |
@@ -78,30 +84,79 @@ The Rust workspace uses edition 2024 and contains eleven crates:
 | Embedding pacing and graceful stop | `COMPLETED` | Paced batches requeue and unlock jobs instead of sleeping while holding a running job. |
 | Evaluation baseline | `COMPLETED` | Shared evaluation executor handles runs from both API and CLI and persists reports. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
-| MCP tools | `COMPLETED` | `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, and `get_source` have real handlers. |
+| MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`. Maintainer actions (approve/reject, reindex, token admin) stay on session Admin HTTP API by design, not MCP. |
 | Admin-oriented API | `COMPLETED` | Complete set of admin APIs for dashboard, audit logs, evaluations, approvals, and jobs. |
-| Pingora reverse proxy | `COMPLETED` | Integrated Pingora reverse proxy with upstream routing and path rules. |
-| Astro Admin UI | `COMPLETED` | Fully built with Sahara Design System, integrated, and verified with Playwright. |
-| S3 backup and restore drill | `COMPLETED` | S3 backup/restore for PG/Qdrant and automated restoration drill. |
-| Production OCI deployment | `COMPLETED` | Dockerfiles, production Compose stacks, and deployment runbooks are ready. |
+| Pingora reverse proxy | `COMPLETED` | Path router for `/api/`, `/mcp`, admin, and health; live on host port `17674`. |
+| Astro Admin UI | `COMPLETED` | Sahara Design System, SSR pages, React islands, Playwright smoke coverage. |
+| S3 backup and restore drill | `COMPLETED` | `queria-backup` crate + CLI/runbook; live empty-volume restore remains an acceptance item. |
+| Production OCI packaging | `COMPLETED` | Dockerfiles, production Compose, deployment/rollback runbooks. Stack is deployed; Phase 7 acceptance pack still open. |
 
 ### Human UI Screens
 
-| Screen | Status | Backend readiness |
+| Screen / surface | Status | Entry point / honesty note |
 |---|---|---|
-| Setup Wizard | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Dashboard | `COMPLETED` | Fully implemented, featuring interactive 3D Galaxy-Style Knowledge Graph visualizer using InstancedMesh & lineSegments, camera fly-to, and content detail panel. |
-| Projects | `COMPLETED` | Fully implemented, styled with Sahara tokens, featuring functional dialog modal to create projects. |
-| Sources | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Knowledge Items | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Approval Queue | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Ingestion Jobs | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Embedding Status | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Retrieval Probe | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Agent Tokens | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Audit Logs | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Evaluation | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
-| Backup/Restore | `COMPLETED` | Fully implemented, styled with Sahara tokens, and validated. |
+| Setup Wizard | `COMPLETED` | `/admin/setup` |
+| Login / Logout | `COMPLETED` | `/admin/login`, `/admin/logout` |
+| Dashboard | `COMPLETED` | `/admin/dashboard` including 3D galaxy knowledge graph |
+| Projects | `COMPLETED` | `/admin/projects` with create-project dialog |
+| Sources | `COMPLETED` | `/admin/sources`, `/admin/sources/detail` (embedding counts on source detail) |
+| Knowledge Items | `COMPLETED` | `/admin/knowledge` |
+| Approval Queue | `COMPLETED` | `/admin/approvals` |
+| Ingestion Jobs | `COMPLETED` | `/admin/jobs` (primary place for job lifecycle; embedding work shows up as jobs) |
+| Embedding Status | `EMBEDDED` | No dedicated `/admin/embedding` route. Visible via dashboard summary, source detail chunk-state counts, jobs list, and CLI `embeddings status`. |
+| Retrieval Probe | `EMBEDDED` | No dedicated `/admin/retrieval-probe` route. Operator probe/eval path is Evaluation + CLI `retrieval probe`. |
+| Agent Tokens | `COMPLETED` | `/admin/tokens` |
+| Audit Logs | `COMPLETED` | `/admin/audit` |
+| Evaluation | `COMPLETED` | `/admin/evaluation` |
+| Backup/Restore | `API/CLI` | No dedicated Admin UI page. Backup/restore is CLI + `queria-backup` + runbook. |
+
+## Production Host
+
+| Field | Value |
+|---|---|
+| Public IP | `168.110.214.130` |
+| SSH user | `ubuntu` |
+| Hostname | `instance-20260518-2039` (Oracle Cloud aarch64) |
+| OS | Ubuntu 24.04 (kernel `6.17.0-1016-oracle`) |
+| Deploy path | `/home/ubuntu/queria-backend` |
+| Compose file | `docker-compose.production.yml` (also legacy copy under `/home/ubuntu/queria`) |
+| Local SSH private key | workspace root `ssh-key-2026-04-16.key` (mode `600`; never commit) |
+| Local SSH public key | workspace root `ssh-key-2026-04-16.key.pub` |
+
+Connect:
+
+```bash
+ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key ubuntu@168.110.214.130
+```
+
+Verified live stack on 2026-07-16 (containers up ~7 days):
+
+| Service | Notes |
+|---|---|
+| `queria-backend-queria-proxy-1` | Public host port `17674` (Pingora path router) |
+| `queria-backend-queria-api-1` | Internal only |
+| `queria-backend-queria-mcp-1` | Internal only |
+| `queria-backend-queria-worker-1` | Internal only |
+| `queria-backend-queria-admin-1` | Internal (`4321` in container) |
+| `queria-backend-postgres-1` | Healthy |
+| `queria-backend-qdrant-1` | Healthy |
+| `queria-backend-minio-1` | Running |
+
+Proxy health on the host:
+
+```bash
+curl -sS http://127.0.0.1:17674/healthz   # OK / HTTP 200
+```
+
+Host resource snapshot (2026-07-16): ~11 GiB RAM, ~188G disk with ~145G free, Docker 29.5.0.
+
+Same host also runs unrelated shared workloads (monitoring, other app DBs, `grok2api`, etc.). Do not treat the box as Queria-only when planning ports, disk, or restarts.
+
+Security:
+
+- Never paste the RSA private key into git, chat history, or docs beyond the local path above.
+- Workspace `.gitignore` already ignores `*.key`.
+- Prefer Infisical for app secrets; host `.env` files are emergency/runtime only.
 
 ## Current Local State
 
@@ -130,30 +185,22 @@ are already ready.
 
 ## Latest Verified Retrieval Finding
 
-The golden query `deployment and site build notes` currently fails lexical
-retrieval because Postgres uses:
+Historical gap (pre-Phase-1): the golden query `deployment and site build notes`
+failed under strict-only `websearch_to_tsquery('simple', $query)` because
+`simple` kept `and` and AND-combined every term.
 
-```sql
-websearch_to_tsquery('simple', $query)
-```
+**Resolved in code:** hybrid lexical SQL now uses strict-weighted matches plus a
+bounded relaxed OR path; RRF still combines lexical and semantic rankings.
+Auth, approved status, active source, organization, project, and global-scope
+filters remain inside both SQL paths.
 
-Postgres parses that query as:
-
-```text
-'deployment' & 'and' & 'site' & 'build' & 'notes'
-```
-
-The `simple` dictionary keeps `and`, and web-search terms are combined strictly.
-No single chunk contains every lexeme, so lexical candidate count is zero.
-The source content is valid and contains a Deployment section; this is a
-retrieval-query strategy gap, not a bad golden question.
-
-Required fix: preserve strict ranking but add a bounded relaxed OR candidate
-path, then let RRF combine lexical and semantic rankings. Authorization,
-approved status, active source, organization, project, and global-scope filters
-must remain inside both SQL paths.
+Re-verify on current production data after embedding backfill; do not treat the
+old 2/3 failure as the live default without a fresh probe.
 
 ## Latest Evaluation Result
+
+Historical local observation (2026-07-05, pre-shared executor and pre-relaxed
+lexical path):
 
 Command:
 
@@ -161,20 +208,17 @@ Command:
 rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
 ```
 
-Observed result:
+Observed then:
 
 - total: 3
 - passed: 2
 - failed: 1
 - regression score: `0.77777773`
 - failed question: `deployment and site build notes`
-- retrieval mode: `lexical_fallback`
-- returned candidates/items: 0
 
-The CLI prints a report but does not persist it. The HTTP `run` endpoint runs
-and persists a separate report, while `latest` returns the newest persisted
-row. Therefore CLI output and HTTP `latest` can legitimately differ today.
-The active plan makes evaluation execution shared and persistence explicit.
+**Code status since then:** CLI and HTTP share `EvaluationExecutor` and both
+persist reports. Fresh production acceptance must re-run eval and record the
+new score here; do not close Phase 7 on this historical 2/3 result alone.
 
 ## Operational Commands
 
@@ -225,21 +269,27 @@ rtk git diff --check
 - Global retrieval requires both `include_global=true` and token permission.
 - Database writes, migrations, dependency additions, pushes, and deployments require explicit approval.
 
+## Residual Gaps (current)
+
+| Gap | Priority | Notes |
+|---|---|---|
+| Embedding backfill residual | High | Last local snapshot (2026-07-05) had many pending/failed chunks. Re-measure on production and finish bounded backfill. |
+| Production acceptance pack | High | Stack is live; Phase 7 DoD (eval 3/3, MCP client accept, backup restore drill, SLO spot-check, handoff close) still open. |
+| Admin UI dedicated routes | Low | Embedding / retrieval probe / backup are embedded or CLI-only (see screen matrix). Optional polish only. |
+| Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP stays five tools. |
+
 ## Continue From Here
 
 Use [`superpowers/plans/2026-07-05-queria-end-to-end.md`](./superpowers/plans/2026-07-05-queria-end-to-end.md).
-The immediate phase is retrieval and evaluation consistency. Do not start the
-large Admin UI until that phase passes its acceptance gate.
+Phases 1–6 implementation work is done. Immediate work is residual ops and
+Phase 7 acceptance, not feature scaffolding.
 
-The execution order is:
+Execution order:
 
-1. Fix strict-only lexical candidate generation and add regression coverage.
-2. Share evaluation execution and persist CLI runs.
-3. Run bounded backfill and acceptance; do not wait interactively for all chunks.
-4. Fill Admin UI API gaps.
-5. Build the Astro Admin UI from the approved Sahara mockups.
-6. Implement S3-compatible backup, retention, and restore drill.
-7. Replace the proxy skeleton with Pingora and package all services.
-8. Deploy to OCI behind Cloudflare DNS and Let's Encrypt.
-9. Run production acceptance and SLO checks.
+1. Measure embedding status on production; classify and retry failed chunks.
+2. Re-run golden evaluation; target 3/3 with a persisted report.
+3. Run the production acceptance pack (health, login, probe, MCP, scopes, backup/restore).
+4. Record deploy commit/image, endpoints, eval score, and open issues in this handoff.
+5. Optionally add dedicated Admin routes only if operators need them daily.
+6. Keep maintainer tools off the agent MCP surface unless product requires otherwise.
 

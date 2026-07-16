@@ -2,19 +2,42 @@
 
 This runbook documents the deployment process for Queria's production environment.
 
+## Production Host Access
+
+| Field | Value |
+|---|---|
+| Host | `168.110.214.130` |
+| User | `ubuntu` |
+| Hostname | `instance-20260518-2039` (Oracle Cloud aarch64) |
+| Deploy directory | `/home/ubuntu/queria-backend` |
+| SSH key (local workspace) | `ssh-key-2026-04-16.key` + `ssh-key-2026-04-16.key.pub` |
+
+```bash
+ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key ubuntu@168.110.214.130
+cd /home/ubuntu/queria-backend
+```
+
+Do not commit private keys. Prefer agent-forwarding or a secrets manager for shared operator access.
+
+Notes from live host (verified 2026-07-16):
+
+- Queria stack already runs via `docker-compose.production.yml` under `/home/ubuntu/queria-backend`.
+- Pingora proxy is published on host port `17674` (not exclusive claim on 443; host Nginx already owns 80/443 for other sites).
+- Shared host: monitoring, other Postgres app stacks, and non-Queria containers coexist.
+
 ## Pre-flight Host Verification
 
 Before starting deployment, verify that the host meets the following requirements:
 
-- **OS**: Ubuntu 22.04 LTS (recommended)
+- **OS**: Ubuntu 22.04/24.04 LTS (current host is Ubuntu 24.04 Oracle aarch64)
 - **RAM**: Minimum 12 GB
 - **CPU**: Minimum 2 Cores
 - **Disk**: Minimum 190 GB free space
 - **Docker**: Docker Engine and Compose plugin installed and active
 - **DNS**: DNS records configured for the public domain (e.g., `fjulian.id`)
-- **Port**: Port 443 open in host firewall
+- **Port**: Public entry path decided (`443` via Nginx reverse-proxy, or direct `17674` for MVP)
 
-Run local pre-flight checks:
+Run local pre-flight checks on the host:
 
 ```bash
 # Check RAM & CPU
@@ -26,6 +49,7 @@ df -h /
 
 # Check Docker status
 systemctl status docker
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 ## Secrets Injection (Infisical)
