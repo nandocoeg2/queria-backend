@@ -20,11 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Copy TruffleHog from the official TruffleSecurity image
 COPY --from=trufflesecurity/trufflehog:latest /usr/bin/trufflehog /usr/local/bin/trufflehog
-# Copy all 5 binaries from the builder
+# Copy release binaries from the builder
 COPY --from=builder /usr/src/queria/target/release/queria-api /usr/local/bin/queria-api
 COPY --from=builder /usr/src/queria/target/release/queria-mcp /usr/local/bin/queria-mcp
 COPY --from=builder /usr/src/queria/target/release/queria-worker /usr/local/bin/queria-worker
-COPY --from=builder /usr/src/queria/target/release/queria-proxy /usr/local/bin/queria-proxy
 COPY --from=builder /usr/src/queria/target/release/queria-cli /usr/local/bin/queria-cli
 
 # Copy entrypoint script
@@ -33,8 +32,8 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # Run as non-root UID
 USER 10001:10001
 
-# Expose ports
-EXPOSE 17671 17672 17673 17674
+# Expose ports (edge/Caddy is a separate container on 17674)
+EXPOSE 17671 17672 17673
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

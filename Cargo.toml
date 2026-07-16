@@ -5,12 +5,10 @@ members = [
   "crates/queria-auth",
   "crates/queria-db",
   "crates/queria-search",
-  "crates/queria-observability",
   "crates/queria-api",
   "crates/queria-mcp",
   "crates/queria-worker",
   "crates/queria-ingestion",
-  "crates/queria-proxy",
   "crates/queria-cli",
   "crates/queria-backup",
 ]
@@ -49,4 +47,3 @@ toml = "0.8"
 url = "2"
 uuid = { version = "1", features = ["v7", "serde"] }
 rust-s3 = { version = "0.37", default-features = false, features = ["tokio-rustls-tls"] }
-pingora = { version = "0.8.1", features = ["lb"] }

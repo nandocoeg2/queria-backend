@@ -19,7 +19,7 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env()?;
-    queria_observability::init_json_tracing("queria-worker", &config.log_level);
+    queria_core::init_json_tracing("queria-worker", &config.log_level);
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&config.database_url)

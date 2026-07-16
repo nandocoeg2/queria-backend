@@ -166,15 +166,6 @@ export async function listJobs(astroRequest: Request) {
   return res.json();
 }
 
-export async function listEvaluations(astroRequest: Request, projectSlug: string) {
-  const res = await fetchFromBackend(`/api/v1/projects/${projectSlug}/evaluations`, astroRequest);
-  if (!res.ok) {
-    if (res.status === 401) return null;
-    throw new Error(`Failed to fetch evaluations: ${res.statusText}`);
-  }
-  return res.json();
-}
-
 export async function createProject(
   astroRequest: Request,
   payload: {

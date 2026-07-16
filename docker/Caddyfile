@@ -1,0 +1,20 @@
+# Queria edge: path router replacing queria-proxy (Pingora).
+# Public host port 17674 -> this container :17674
+
+:17674 {
+	handle /healthz {
+		respond "OK" 200
+	}
+	handle /health {
+		respond "OK" 200
+	}
+	handle /api/* {
+		reverse_proxy {$QUERIA_API_UPSTREAM:queria-api:17671}
+	}
+	handle /mcp* {
+		reverse_proxy {$QUERIA_MCP_UPSTREAM:queria-mcp:17672}
+	}
+	handle {
+		reverse_proxy {$QUERIA_ADMIN_UPSTREAM:queria-admin:4321}
+	}
+}

@@ -10,7 +10,6 @@ pub struct AppConfig {
     pub api_addr: String,
     pub mcp_addr: String,
     pub worker_health_addr: String,
-    pub proxy_addr: String,
     pub database_url: String,
     pub qdrant_url: String,
     #[serde(skip_serializing)]
@@ -69,7 +68,6 @@ impl fmt::Debug for AppConfig {
             .field("api_addr", &self.api_addr)
             .field("mcp_addr", &self.mcp_addr)
             .field("worker_health_addr", &self.worker_health_addr)
-            .field("proxy_addr", &self.proxy_addr)
             .field("qdrant_url", &self.qdrant_url)
             .field("qdrant_collection", &self.qdrant_collection)
             .field("qdrant_vector_name", &self.qdrant_vector_name)
@@ -112,7 +110,6 @@ impl AppConfig {
             api_addr: read_env("QUERIA_API_ADDR", &defaults.api_addr),
             mcp_addr: read_env("QUERIA_MCP_ADDR", &defaults.mcp_addr),
             worker_health_addr: read_env("QUERIA_WORKER_HEALTH_ADDR", &defaults.worker_health_addr),
-            proxy_addr: read_env("QUERIA_PROXY_ADDR", &defaults.proxy_addr),
             database_url: read_env("QUERIA_DATABASE_URL", &defaults.database_url),
             qdrant_url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant_url),
             qdrant_api_key: read_env("QDRANT_API_KEY", &defaults.qdrant_api_key),
@@ -244,7 +241,6 @@ impl AppConfig {
             api_addr: "127.0.0.1:17671".to_owned(),
             mcp_addr: "127.0.0.1:17672".to_owned(),
             worker_health_addr: "127.0.0.1:17673".to_owned(),
-            proxy_addr: "127.0.0.1:17674".to_owned(),
             database_url: "postgres://queria:queria@127.0.0.1:17675/queria".to_owned(),
             qdrant_url: "http://127.0.0.1:17676".to_owned(),
             qdrant_api_key: String::new(),
@@ -304,7 +300,6 @@ impl AppConfig {
         parse_addr("QUERIA_API_ADDR", &self.api_addr)?;
         parse_addr("QUERIA_MCP_ADDR", &self.mcp_addr)?;
         parse_addr("QUERIA_WORKER_HEALTH_ADDR", &self.worker_health_addr)?;
-        parse_addr("QUERIA_PROXY_ADDR", &self.proxy_addr)?;
         parse_url("QUERIA_PUBLIC_BASE_URL", &self.public_base_url)?;
         parse_url("QUERIA_QDRANT_URL", &self.qdrant_url)?;
         parse_url("QUERIA_MINIO_ENDPOINT", &self.minio_endpoint)?;
@@ -478,7 +473,6 @@ mod tests {
         assert_eq!(config.api_addr, "127.0.0.1:17671");
         assert_eq!(config.mcp_addr, "127.0.0.1:17672");
         assert_eq!(config.worker_health_addr, "127.0.0.1:17673");
-        assert_eq!(config.proxy_addr, "127.0.0.1:17674");
         assert!(config.database_url.contains("17675"));
         assert!(config.qdrant_url.ends_with(":17676"));
         assert_eq!(config.git_chunk_max_lines, 120);
@@ -511,7 +505,6 @@ mod tests {
             &config.api_addr,
             &config.mcp_addr,
             &config.worker_health_addr,
-            &config.proxy_addr,
         ] {
             addr.parse::<std::net::SocketAddr>()
                 .expect("default service address must bind locally");

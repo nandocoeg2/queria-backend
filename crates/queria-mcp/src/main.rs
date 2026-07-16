@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    queria_observability::init_json_tracing("queria-mcp", "info");
+    queria_core::init_json_tracing("queria-mcp", "info");
     let config = AppConfig::from_env()?;
     let db_pool = pool::connect(&config.database_url).await?;
     migrate::run_migrations(&db_pool).await?;

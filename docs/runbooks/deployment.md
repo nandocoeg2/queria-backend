@@ -22,7 +22,7 @@ Do not commit private keys. Prefer agent-forwarding or a secrets manager for sha
 Notes from live host (verified 2026-07-16):
 
 - Queria stack already runs via `docker-compose.production.yml` under `/home/ubuntu/queria-backend`.
-- Pingora proxy is published on host port `17674` (not exclusive claim on 443; host Nginx already owns 80/443 for other sites).
+- Public edge is Caddy (`queria-edge`) on host port `17674` (not exclusive claim on 443; host Nginx already owns 80/443 for other sites). Path routing lives in `docker/Caddyfile`.
 - Shared host: monitoring, other Postgres app stacks, and non-Queria containers coexist.
 
 ## Pre-flight Host Verification

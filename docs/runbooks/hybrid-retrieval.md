@@ -91,6 +91,9 @@ rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/retrieval
   -H 'cookie: queria_session=<session-token>' \
   -d '{"query":"Astro markdown content flow","include_global":true,"limit":5}'
 
+# Preferred operator path (Admin evaluation UI deferred):
+# rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
+# Optional API still exists for automation:
 rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/run \
   -H 'cookie: queria_session=<session-token>'
 

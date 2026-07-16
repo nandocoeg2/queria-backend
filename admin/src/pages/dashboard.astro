@@ -1,7 +1,6 @@
 ---
 import AdminLayout from '../layouts/AdminLayout.astro';
 import { getDashboardSummary } from '../lib/api';
-import ThreeCanvas from '@/components/ThreeCanvas';
 
 const summary = await getDashboardSummary(Astro.request);
 if (!summary) {
@@ -59,14 +58,7 @@ const formatDate = (dateStr?: string) => {
     </div>
   </div>
 
-  <!-- 3D Knowledge Graph Visualization -->
   <div class="content-row">
-    <ThreeCanvas client:only="react" />
-  </div>
-
-  <div class="content-row">
-    <!-- Chunk Embedding Summary -->
-
     <div class="card main-panel">
       <div class="panel-header">
         <h2>Knowledge Chunks Embedding Status</h2>
@@ -141,7 +133,7 @@ const formatDate = (dateStr?: string) => {
       )}
     </div>
 
-    <!-- Latest Evaluation baseline -->
+    <!-- Latest Evaluation baseline (CLI-driven; Admin UI deferred) -->
     <div class="card sub-panel">
       <div class="panel-header">
         <h2>Latest Evaluation Baseline</h2>
@@ -173,7 +165,7 @@ const formatDate = (dateStr?: string) => {
           </div>
         </div>
       ) : (
-        <p class="muted-text">No evaluations run yet.</p>
+        <p class="muted-text">No reports yet. Run via CLI: <code>queria-cli eval run --project &lt;slug&gt;</code></p>
       )}
     </div>
   </div>

@@ -129,18 +129,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  queria-proxy:
-    build: .
-    command: queria-proxy
+  queria-edge:
+    image: caddy:2.10-alpine
     ports:
       - "17674:17674"
-    env_file:
-      - .env
     environment:
-      - QUERIA_PROXY_ADDR=0.0.0.0:17674
-      - QUERIA_API_UPSTREAM=queria-api:17671
-      - QUERIA_MCP_UPSTREAM=queria-mcp:17672
-      - QUERIA_ADMIN_UPSTREAM=host.docker.internal:4321
+      QUERIA_API_UPSTREAM: queria-api:17671
+      QUERIA_MCP_UPSTREAM: queria-mcp:17672
+      QUERIA_ADMIN_UPSTREAM: host.docker.internal:4321
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

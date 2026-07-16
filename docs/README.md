@@ -1,63 +1,41 @@
 # Queria Backend Documentation
 
 > Status: CURRENT
-> Last verified: 2026-07-05
+> Last verified: 2026-07-16
 > Canonical repository: `https://github.com/nandocoeg2/queria-backend`
 
-This index defines which Queria documents are authoritative. Start with
-[`HANDOFF.md`](./HANDOFF.md), then follow the active implementation plan.
+**Start here:** [`HANDOFF.md`](./HANDOFF.md) is the only source of truth for what is implemented.
 
-## Status Legend
+## Read order
 
-| Status | Meaning |
-|---|---|
-| `CURRENT` | Matches the current implementation and operating model. |
-| `PARTIAL` | Some documented behavior exists; listed gaps remain. |
-| `COMPLETED` | The scoped plan has been implemented and verified. |
-| `PLANNED` | Approved direction that has not been implemented. |
-| `SUPERSEDED` | Kept for decision history; do not execute as the active plan. |
-| `REFERENCE` | Design or research input, not an implementation-status claim. |
+1. [`HANDOFF.md`](./HANDOFF.md) — current implementation, production host, residual gaps  
+2. [`PRODUCT.md`](./PRODUCT.md) — product contract and post-cut boundaries  
+3. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — as-is vs post-hard-cut target  
+4. [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) — ranked hard cut plan from ponytail-audit  
+5. [`DOCS_POLICY.md`](./DOCS_POLICY.md) — status tags and update rules  
+6. [`runbooks/`](./runbooks/) — local-dev, hybrid retrieval, deployment, rollback, backup-restore  
 
-## Read Order
-
-1. [`HANDOFF.md`](./HANDOFF.md) - current implementation, runtime state, known gaps, and continuation rules.
-2. [`superpowers/plans/2026-07-05-queria-end-to-end.md`](./superpowers/plans/2026-07-05-queria-end-to-end.md) - active roadmap from retrieval hardening through production acceptance.
-3. [`runbooks/local-development.md`](./runbooks/local-development.md) - local startup and verification commands.
-4. [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) - embedding, Qdrant, FTS, evaluation, and rate-limit operations.
-
-## Document Inventory
+## Living documents
 
 | Document | Status | Purpose |
 |---|---|---|
-| [`HANDOFF.md`](./HANDOFF.md) | `CURRENT` | Canonical current-state handoff. |
-| [`superpowers/plans/2026-07-05-queria-end-to-end.md`](./superpowers/plans/2026-07-05-queria-end-to-end.md) | `CURRENT` | Active execution order and acceptance gates. |
-| [`runbooks/local-development.md`](./runbooks/local-development.md) | `CURRENT` | Local infrastructure and command reference. |
-| [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) | `PARTIAL` | Implemented hybrid retrieval; relaxed FTS and CLI evaluation persistence remain. |
-| [`superpowers/specs/2026-07-04-hybrid-retrieval-design.md`](./superpowers/specs/2026-07-04-hybrid-retrieval-design.md) | `PARTIAL` | Implemented design with remaining reliability work. |
-| [`superpowers/plans/2026-07-04-hybrid-retrieval.md`](./superpowers/plans/2026-07-04-hybrid-retrieval.md) | `PARTIAL` | Tasks 1-4 and 6 completed; lexical reliability and real backfill remain partial. |
-| [`superpowers/plans/2026-07-04-git-ingestion-indexing-mvp.md`](./superpowers/plans/2026-07-04-git-ingestion-indexing-mvp.md) | `COMPLETED` | Git ingestion, parsing, stale cleanup, and trusted auto-approval MVP. |
+| [`HANDOFF.md`](./HANDOFF.md) | `CURRENT` | Canonical current-state handoff |
+| [`PRODUCT.md`](./PRODUCT.md) | `CURRENT` | Product contract |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | `CURRENT` / planned target | As-is and post-cut architecture |
+| [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) | `CURRENT` | Executable over-engineering cut list |
+| [`DOCS_POLICY.md`](./DOCS_POLICY.md) | `CURRENT` | Doc ownership and archive rules |
+| [`runbooks/local-development.md`](./runbooks/local-development.md) | `CURRENT` | Local infrastructure and commands |
+| [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) | `PARTIAL` | Hybrid retrieval ops |
+| [`runbooks/deployment.md`](./runbooks/deployment.md) | `CURRENT` | Production deploy |
+| [`runbooks/rollback.md`](./runbooks/rollback.md) | `CURRENT` | Rollback |
+| [`runbooks/backup-restore.md`](./runbooks/backup-restore.md) | `CURRENT` | Backup and restore |
 
-## Product-Level References Outside This Repository
+## Archive
 
-The parent workspace is not a Git repository. These documents are useful but
-are not shipped when someone clones `queria-backend` alone:
+Historical plans, specs, and walkthroughs: [`archive/`](./archive/).
 
-- `../../README.md` - product overview.
-- `../../../docs/centralized-team-knowledge-rag.md` - architecture and research decisions.
-- `../../../docs/queria-mvp-implementation-spec.md` - detailed target-state specification.
-- `../../../docs/queria-ui-mockup-flow.md` - approved UI flow and Stitch references.
-- `../../../docs/mcp-clients/` - Codex and Claude MCP configuration.
-- `../../../DESIGN.md` - Sahara visual design rules.
+Do not execute archived plans as the active roadmap. Prefer [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) for next engineering cuts, and HANDOFF residual gaps for ops acceptance.
 
-The current implementation state must always be taken from `HANDOFF.md`, not
-from a target-state section in those product references.
+## Parent workspace references
 
-## Update Rules
-
-When behavior changes:
-
-1. Update code and tests.
-2. Update the relevant runbook.
-3. Update `HANDOFF.md` current state and known gaps.
-4. Mark the corresponding roadmap checkbox only after current verification.
-5. Include the verification command and observed result in the commit message or handoff log.
+The parent workspace is not a Git repository. Product REFERENCE docs (research, UI flow, MCP client notes) live under workspace `docs/` and always defer status to this HANDOFF.
