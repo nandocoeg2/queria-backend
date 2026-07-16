@@ -101,13 +101,6 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fju
 
 The baseline reads `tests/golden_questions/fjulian-me.jsonl` and reports pass/fail, expected scope hits, expected citation hits, and a regression score.
 
-Current limitation: the CLI report is not persisted. Only the admin API run is
-stored in `evaluation_report`. The active roadmap unifies both runners and makes
-CLI persistence explicit.
-
-The admin API can run and persist the same baseline:
-
-```bash
-rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/run \
-  -H 'cookie: queria_session=<session-token>'
-```
+CLI is the only evaluation operator path (Admin evaluation UI/API removed).
+`queria-cli eval run` persists reports when the DB is available; dashboard may
+show the latest report afterward.

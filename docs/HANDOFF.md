@@ -89,10 +89,10 @@ The Rust workspace uses edition 2024 and contains ten crates (post P1):
 | Voyage-4 and Qdrant clients | `COMPLETED` | Provider clients, collection setup, durable jobs, and backfill are implemented. |
 | Hybrid retrieval and RRF | `COMPLETED` | Semantic plus Postgres FTS works with strict-weighted relaxed OR query fallback. |
 | Embedding pacing and graceful stop | `COMPLETED` | Paced batches requeue and unlock jobs instead of sleeping while holding a running job. |
-| Evaluation baseline | `COMPLETED` | Shared evaluation executor handles runs from both API and CLI and persists reports. |
+| Evaluation baseline | `COMPLETED` (CLI) | Shared executor via `queria-cli eval run`; Admin evaluation HTTP routes removed. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`. Maintainer actions (approve/reject, reindex, token admin) stay on session Admin HTTP API by design, not MCP. |
-| Admin-oriented API | `COMPLETED` | Complete set of admin APIs for dashboard, audit logs, evaluations, approvals, and jobs. |
+| Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
 | S3 backup and restore drill | `COMPLETED` (drill deferrable) | `queria-backup` crate + CLI/runbook; live empty-volume restore remains acceptance. Restore-drill module is SIMPLIFICATION P2 defer. |
@@ -114,7 +114,7 @@ The Rust workspace uses edition 2024 and contains ten crates (post P1):
 | Retrieval Probe | `EMBEDDED` | No dedicated `/admin/retrieval-probe` route. Operator probe/eval path is Evaluation + CLI `retrieval probe`. |
 | Agent Tokens | `COMPLETED` | `/admin/tokens` |
 | Audit Logs | `COMPLETED` | `/admin/audit` |
-| Evaluation | `CLI` | Admin page removed (P2). Run `queria-cli eval run --project <slug>`; dashboard may show last report if present |
+| Evaluation | `CLI` | Admin page + evaluation HTTP removed. Run `queria-cli eval run --project <slug>`; dashboard may show last report if present |
 | Backup/Restore | `API/CLI` | No dedicated Admin UI page. Backup/restore is CLI + `queria-backup` + runbook. |
 
 ## Production Host
@@ -295,8 +295,9 @@ Ponytail-audit (over-engineering) findings are tracked in
 |---|---|---|
 | P0 | Drop dead shadcn kit + Three.js dashboard graph | **DONE** 2026-07-16 |
 | P1 | Replace Pingora with Caddy; fold observability; prune dead db traits | **DONE** 2026-07-16 |
-| P2 | Defer evaluation Admin UI; restore-drill CLI-only; drop `proxy_addr` | **DONE** 2026-07-16 |
+| P2 | Defer evaluation Admin UI + HTTP; restore-drill CLI-only; drop `proxy_addr` | **DONE** 2026-07-16 |
 | P3 | enowx-rag Qdrant-only; remove Chroma/pgvector/OpenAI stubs | **DONE** 2026-07-16 |
+| Closeouts | mockall demotion, runbook sync, leftover trait/cfg work | **DONE** 2026-07-16 |
 
 Do not treat archived e2e plans under [`archive/superpowers/`](./archive/superpowers/)
 as the active roadmap.

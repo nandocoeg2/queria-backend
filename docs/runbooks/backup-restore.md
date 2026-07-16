@@ -175,13 +175,10 @@ rtk curl -X POST http://127.0.0.1:17671/api/v1/projects/{project_slug}/retrieval
 # Should return relevant results
 ```
 
-### 3. Run evaluation suite
+### 3. Run evaluation suite (CLI only)
 
 ```bash
-rtk curl -X POST http://127.0.0.1:17671/api/v1/projects/{project_slug}/evaluations/run \
-  -H "Content-Type: application/json" \
-  -H "Cookie: session=..." \
-  -d '{"dataset_path": "tests/golden_questions/{project_slug}.jsonl"}'
+rtk cargo run -p queria-cli -- eval run --project {project_slug}
 # Verify scores match pre-restore baseline
 ```
 

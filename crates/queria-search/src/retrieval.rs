@@ -4,7 +4,6 @@ use crate::qdrant::{QdrantClient, QdrantConfig};
 use crate::voyage::VoyageClient;
 use async_trait::async_trait;
 use chrono::Utc;
-use mockall::automock;
 use queria_core::contracts::{
     RetrievalDiagnostics, RetrievalMode, RetrieveContextRequest, RetrieveContextResponse,
     RetrievedContextItem,
@@ -37,7 +36,7 @@ pub struct RetrievalConfig {
     pub candidate_cap: u32,
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait HybridRetrievalStore: Send + Sync {
     async fn authorize(

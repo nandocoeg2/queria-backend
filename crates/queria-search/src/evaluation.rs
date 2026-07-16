@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[mockall::automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EvaluationRetriever: Send + Sync {
     async fn retrieve(

@@ -22,7 +22,7 @@ Centralize organization-wide and project-specific knowledge for humans and AI ag
 |---|---|---|
 | Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs |
 | MCP (`queria-mcp`) | Agents | `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source` |
-| CLI | Operators | Migrate, embeddings status, retrieval probe, eval script, backup |
+| CLI | Operators | Migrate, embeddings status, retrieval probe, eval (only eval path), backup/restore-drill |
 
 Maintainer actions (approve/reject, reindex, token admin) stay on session Admin HTTP by design, not MCP.
 

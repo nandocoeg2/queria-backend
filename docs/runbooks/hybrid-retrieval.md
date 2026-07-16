@@ -1,7 +1,7 @@
 # Hybrid Retrieval Runbook
 
-> Status: PARTIAL - provider integration, RRF, fallback, jobs, and evaluation API are implemented; relaxed lexical candidates and CLI evaluation persistence remain.
-> Last verified: 2026-07-05.
+> Status: CURRENT for hybrid retrieval ops; evaluation is CLI-only (Admin evaluation HTTP removed P2).
+> Last verified: 2026-07-16.
 > Current evidence: [`../HANDOFF.md`](../HANDOFF.md).
 
 ## Retrieval Path
@@ -90,15 +90,12 @@ rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/retrieval
   -H 'content-type: application/json' \
   -H 'cookie: queria_session=<session-token>' \
   -d '{"query":"Astro markdown content flow","include_global":true,"limit":5}'
+```
 
-# Preferred operator path (Admin evaluation UI deferred):
-# rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
-# Optional API still exists for automation:
-rtk curl -sS -X POST http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/run \
-  -H 'cookie: queria_session=<session-token>'
+Evaluation (CLI only):
 
-rtk curl -sS http://127.0.0.1:17671/api/v1/projects/fjulian-me/evaluations/latest \
-  -H 'cookie: queria_session=<session-token>'
+```bash
+rtk infisical run --env=dev -- cargo run -p queria-cli -- eval run --project fjulian-me
 ```
 
 Pass criteria:
@@ -108,8 +105,7 @@ Pass criteria:
 - at least one chunk is `ready`
 - retrieval probe returns at least one cited item
 - retrieval diagnostics include lexical and semantic candidate counts
-- evaluation report has `passed=true` for the project baseline
-- evaluation API persists an `evaluation_report` row with the full JSON report
+- CLI evaluation report has `passed=true` for the project baseline
 
 ## Evaluation Baseline
 
@@ -145,8 +141,4 @@ The report includes:
 - retrieval mode and candidate counts
 - regression score from 0.0 to 1.0
 
-Admin UI reads persisted reports from:
-
-- `POST /api/v1/projects/:slug/evaluations/run`
-- `GET /api/v1/projects/:slug/evaluations`
-- `GET /api/v1/projects/:slug/evaluations/latest`
+Operator path is CLI only (`queria-cli eval run`). Evaluation HTTP routes and the Admin evaluations page were removed in SIMPLIFICATION P2. The dashboard may still show the latest report row if CLI persisted one.

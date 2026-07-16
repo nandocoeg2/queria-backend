@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use mockall::automock;
 use queria_core::ids::{ChunkId, IngestionJobId};
 use queria_core::{QueriaError, QueriaResult};
 use queria_db::embedding::{
@@ -41,7 +40,7 @@ impl Default for EmbeddingWorkerConfig {
     }
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EmbeddingJobStore: Send + Sync {
     async fn claim_next(&self, worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>>;

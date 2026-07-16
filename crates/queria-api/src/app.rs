@@ -1,11 +1,10 @@
 use crate::http::{
-    approvals, audit_logs, auth, dashboard, embedding_jobs, evaluations, health, ingestion_jobs,
-    knowledge_items, projects, retrieval, setup, sources, tokens,
+    approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs, knowledge_items,
+    projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
 use queria_db::admin_queries::PgAdminQueriesRepository;
-use queria_db::evaluation::PgEvaluationRepository;
 use queria_db::ingestion::PgIngestionRepository;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
 use sqlx::PgPool;
@@ -34,11 +33,6 @@ impl ApiState {
     }
 
     #[must_use]
-    pub fn evaluation_repository(&self) -> Option<PgEvaluationRepository> {
-        self.pool.clone().map(PgEvaluationRepository::new)
-    }
-
-    #[must_use]
     pub fn admin_queries_repository(&self) -> Option<PgAdminQueriesRepository> {
         self.pool.clone().map(PgAdminQueriesRepository::new)
     }
@@ -64,8 +58,7 @@ fn build_app_with_state(state: ApiState) -> Router {
             "/api/v1/projects",
             projects::router()
                 .merge(embedding_jobs::project_router())
-                .merge(retrieval::project_router())
-                .merge(evaluations::project_router()),
+                .merge(retrieval::project_router()),
         )
         .nest(
             "/api/v1/sources",
@@ -239,35 +232,6 @@ mod tests {
             .expect("request should complete");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn evaluation_endpoints_require_session_cookie() {
-        let requests = [
-            ("POST", "/api/v1/projects/fjulian-me/evaluations/run"),
-            ("GET", "/api/v1/projects/fjulian-me/evaluations"),
-            ("GET", "/api/v1/projects/fjulian-me/evaluations/latest"),
-        ];
-
-        for (method, uri) in requests {
-            let response = build_app(AppConfig::default_local())
-                .oneshot(
-                    Request::builder()
-                        .method(method)
-                        .uri(uri)
-                        .header("content-type", "application/json")
-                        .body(Body::empty())
-                        .expect("request should build"),
-                )
-                .await
-                .expect("request should complete");
-
-            assert_eq!(
-                response.status(),
-                StatusCode::UNAUTHORIZED,
-                "{method} {uri}"
-            );
-        }
     }
 
     #[tokio::test]

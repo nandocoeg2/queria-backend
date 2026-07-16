@@ -1,11 +1,10 @@
 use async_trait::async_trait;
-use mockall::automock;
 use queria_core::QueriaResult;
 use queria_db::ingestion::{ApplyManifestResult, GitIngestionSourceRecord, IngestionJobRecord};
 use queria_ingestion::model::PreparedGitManifest;
 use queria_ingestion::service::{GitIngestionService, GitIngestionSource};
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait JobStore: Send + Sync {
     async fn claim_next(&self, worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>>;
@@ -30,7 +29,7 @@ pub trait JobStore: Send + Sync {
     ) -> QueriaResult<bool>;
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ManifestPreparer: Send + Sync {
     async fn prepare(&self, source: GitIngestionSourceRecord) -> QueriaResult<PreparedGitManifest>;

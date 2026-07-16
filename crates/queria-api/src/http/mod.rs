@@ -3,7 +3,6 @@ pub mod audit_logs;
 pub mod auth;
 pub mod dashboard;
 pub mod embedding_jobs;
-pub mod evaluations;
 pub mod health;
 pub mod ingestion_jobs;
 pub mod knowledge_items;
