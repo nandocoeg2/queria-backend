@@ -1,4 +1,4 @@
-use queria_auth::permissions::{AgentTokenPermissions, AgentToolPermission};
+use queria_core::auth::permissions::{AgentTokenPermissions, AgentToolPermission};
 use serde_json::{Value, json};
 
 pub fn tool_definitions(permissions: &AgentTokenPermissions) -> Vec<Value> {

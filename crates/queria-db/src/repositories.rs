@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use queria_auth::permissions::AgentTokenPermissions;
+use queria_core::auth::permissions::AgentTokenPermissions;
 use queria_core::QueriaError;
 use queria_core::QueriaResult;
 use queria_core::contracts::{Citation, RetrievedContextItem};

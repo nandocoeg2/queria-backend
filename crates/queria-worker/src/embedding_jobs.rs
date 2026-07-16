@@ -470,20 +470,80 @@ mod tests {
     use chrono::Utc;
     use mockall::Sequence;
     use queria_core::model::KnowledgeScope;
-    use queria_search::embedding::EmbeddingVector;
+    use queria_search::embedding::{
+        EmbeddingDocument, EmbeddingVector, VectorIndexHealth, VectorPoint, VectorSearchRequest,
+    };
+
+    struct OkProvider;
+    #[async_trait]
+    impl EmbeddingProvider for OkProvider {
+        async fn embed_documents(
+            &self,
+            inputs: &[EmbeddingDocument],
+        ) -> QueriaResult<Vec<EmbeddingVector>> {
+            inputs
+                .iter()
+                .map(|_| EmbeddingVector::new(vec![0.1, 0.2], 2))
+                .collect()
+        }
+        async fn embed_query(&self, _query: &str) -> QueriaResult<EmbeddingVector> {
+            EmbeddingVector::new(vec![0.1, 0.2], 2)
+        }
+    }
+
+    struct FailProvider;
+    #[async_trait]
+    impl EmbeddingProvider for FailProvider {
+        async fn embed_documents(
+            &self,
+            _inputs: &[EmbeddingDocument],
+        ) -> QueriaResult<Vec<EmbeddingVector>> {
+            Err(QueriaError::Infrastructure(
+                "Voyage request failed with status 429 Too Many Requests; request_id=test"
+                    .to_owned(),
+            ))
+        }
+        async fn embed_query(&self, _query: &str) -> QueriaResult<EmbeddingVector> {
+            Err(QueriaError::Infrastructure("unused".to_owned()))
+        }
+    }
+
+    struct OkIndex;
+    #[async_trait]
+    impl VectorIndex for OkIndex {
+        async fn ensure_collection(&self) -> QueriaResult<()> {
+            Ok(())
+        }
+        async fn upsert(&self, _points: &[VectorPoint]) -> QueriaResult<()> {
+            Ok(())
+        }
+        async fn search(
+            &self,
+            _request: VectorSearchRequest,
+        ) -> QueriaResult<Vec<queria_search::embedding::VectorCandidate>> {
+            Ok(Vec::new())
+        }
+        async fn delete(&self, _point_ids: &[Uuid]) -> QueriaResult<()> {
+            Ok(())
+        }
+        async fn health(&self) -> QueriaResult<VectorIndexHealth> {
+            Ok(VectorIndexHealth {
+                collection: "test".to_owned(),
+                points_count: 0,
+            })
+        }
+    }
 
     #[tokio::test]
     async fn no_embedding_job_returns_idle() {
         let mut store = MockEmbeddingJobStore::new();
         store.expect_claim_next().once().returning(|_| Ok(None));
-        let provider = queria_search::embedding::MockEmbeddingProvider::new();
-        let index = queria_search::embedding::MockVectorIndex::new();
 
         assert!(
             !run_one(
                 &store,
-                &provider,
-                &index,
+                &OkProvider,
+                &OkIndex,
                 &EmbeddingWorkerConfig::default(),
                 "worker-1"
             )
@@ -532,18 +592,6 @@ mod tests {
                 *seen_job_id == job_id && result["processed_chunks"] == 1
             })
             .returning(|_, _| Ok(true));
-        let mut provider = queria_search::embedding::MockEmbeddingProvider::new();
-        provider
-            .expect_embed_documents()
-            .once()
-            .withf(|documents| documents.len() == 1 && documents[0].text.contains("Deploy SOP"))
-            .returning(|_| Ok(vec![EmbeddingVector::new(vec![0.1, 0.2], 2)?]));
-        let mut index = queria_search::embedding::MockVectorIndex::new();
-        index
-            .expect_upsert()
-            .once()
-            .withf(move |points| points.len() == 1 && points[0].id == chunk_id)
-            .returning(|_| Ok(()));
         let config = EmbeddingWorkerConfig {
             dimension: 2,
             profile_version: "test-v1".to_owned(),
@@ -551,7 +599,7 @@ mod tests {
         };
 
         assert!(
-            run_one(&store, &provider, &index, &config, "worker-1")
+            run_one(&store, &OkProvider, &OkIndex, &config, "worker-1")
                 .await
                 .expect("backfill should succeed")
         );
@@ -591,13 +639,6 @@ mod tests {
             })
             .returning(|_, _, _| Ok(true));
         store.expect_complete_job().never();
-        let mut provider = queria_search::embedding::MockEmbeddingProvider::new();
-        provider
-            .expect_embed_documents()
-            .once()
-            .returning(|_| Ok(vec![EmbeddingVector::new(vec![0.1, 0.2], 2)?]));
-        let mut index = queria_search::embedding::MockVectorIndex::new();
-        index.expect_upsert().once().returning(|_| Ok(()));
         let config = EmbeddingWorkerConfig {
             dimension: 2,
             profile_version: "test-v1".to_owned(),
@@ -607,7 +648,7 @@ mod tests {
 
         tokio::time::timeout(
             Duration::from_millis(25),
-            run_one(&store, &provider, &index, &config, "worker-1"),
+            run_one(&store, &OkProvider, &OkIndex, &config, "worker-1"),
         )
         .await
         .expect("paced worker should not sleep while holding a running job")
@@ -650,20 +691,12 @@ mod tests {
             })
             .returning(|_, _, _| Ok(true));
         store.expect_fail_job().never();
-        let mut provider = queria_search::embedding::MockEmbeddingProvider::new();
-        provider.expect_embed_documents().once().returning(|_| {
-            Err(QueriaError::Infrastructure(
-                "Voyage request failed with status 429 Too Many Requests; request_id=test"
-                    .to_owned(),
-            ))
-        });
-        let index = queria_search::embedding::MockVectorIndex::new();
 
         assert!(
             run_one(
                 &store,
-                &provider,
-                &index,
+                &FailProvider,
+                &OkIndex,
                 &EmbeddingWorkerConfig::default(),
                 "worker-1"
             )

@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-mockall.workspace = true
 queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
 reqwest.workspace = true
@@ -19,3 +18,6 @@ sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+mockall.workspace = true

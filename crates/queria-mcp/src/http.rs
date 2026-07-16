@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use queria_auth::agent_token::AgentTokenIssuer;
+use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
 use queria_core::ids::{ProjectId, SourceDocumentId};
 use queria_db::repositories::{

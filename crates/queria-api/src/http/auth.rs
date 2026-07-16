@@ -6,8 +6,8 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{Duration, Utc};
-use queria_auth::password::PasswordHasher;
-use queria_auth::session::SessionIssuer;
+use queria_core::auth::password::PasswordHasher;
+use queria_core::auth::session::SessionIssuer;
 use queria_db::repositories::AuthenticatedSession;
 use serde::{Deserialize, Serialize};
 

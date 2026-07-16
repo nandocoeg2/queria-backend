@@ -84,3 +84,4 @@ Then update HANDOFF completion matrix and residual gaps.
 | 2026-07-16 | P2 Defer + shrink | Admin evaluation page removed (CLI eval kept); restore_drill marked CLI-only; dropped dead `proxy_addr` / `QUERIA_PROXY_ADDR` |
 | 2026-07-16 | P3 enowx-rag | Qdrant-only; deleted chroma/pgvector + OpenAI stubs; `go mod tidy` dropped pgx; build green |
 | 2026-07-16 | Closeouts | Removed eval HTTP routes; mockall demoted (cfg test / dev-deps) for worker+ingestion+most search; unused auth mockall removed; runbooks CLI-only eval |
+| 2026-07-16 | Impact | Folded `queria-auth` into `queria-core::auth`; search mockall is dev-only; worker embedding tests use hand fakes |

@@ -5,8 +5,8 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use queria_auth::agent_token::AgentTokenIssuer;
-use queria_auth::password::PasswordHasher;
+use queria_core::auth::agent_token::AgentTokenIssuer;
+use queria_core::auth::password::PasswordHasher;
 use queria_core::QueriaError;
 use queria_db::repositories::CompleteSetupParams;
 use serde::{Deserialize, Serialize};

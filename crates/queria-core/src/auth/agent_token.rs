@@ -1,9 +1,9 @@
-use crate::permissions::{AgentTokenPermissions, AgentToolPermission};
+use super::permissions::{AgentTokenPermissions, AgentToolPermission};
+use crate::ids::AgentTokenId;
+use crate::{QueriaError, QueriaResult};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Utc};
-use queria_core::ids::AgentTokenId;
-use queria_core::{QueriaError, QueriaResult};
 use rand::RngCore;
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};

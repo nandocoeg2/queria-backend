@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use mockall::automock;
 use queria_core::ids::ChunkId;
 use queria_core::model::KnowledgeScope;
 use queria_core::{QueriaError, QueriaResult};
@@ -38,7 +37,7 @@ impl EmbeddingVector {
     }
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     async fn embed_documents(
@@ -86,7 +85,7 @@ pub struct VectorIndexHealth {
     pub points_count: u64,
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait VectorIndex: Send + Sync {
     async fn ensure_collection(&self) -> QueriaResult<()>;

@@ -66,11 +66,11 @@ flowchart LR
     CLI --> PG
 ```
 
-The Rust workspace uses edition 2024 and contains ten crates (post P1):
-`queria-core` (includes observability), `queria-auth`, `queria-db`,
-`queria-search`, `queria-api`, `queria-mcp`, `queria-worker`,
-`queria-ingestion`, `queria-cli`, and `queria-backup`. Public edge is Caddy
-(`docker/Caddyfile`), not a Rust proxy crate.
+The Rust workspace uses edition 2024 and contains nine crates:
+`queria-core` (auth + observability), `queria-db`, `queria-search`,
+`queria-api`, `queria-mcp`, `queria-worker`, `queria-ingestion`,
+`queria-cli`, and `queria-backup`. Public edge is Caddy (`docker/Caddyfile`),
+not a Rust proxy crate.
 
 ## Completion Matrix
 
@@ -298,6 +298,7 @@ Ponytail-audit (over-engineering) findings are tracked in
 | P2 | Defer evaluation Admin UI + HTTP; restore-drill CLI-only; drop `proxy_addr` | **DONE** 2026-07-16 |
 | P3 | enowx-rag Qdrant-only; remove Chroma/pgvector/OpenAI stubs | **DONE** 2026-07-16 |
 | Closeouts | mockall demotion, runbook sync, leftover trait/cfg work | **DONE** 2026-07-16 |
+| Impact | Fold auth into core; demote search mockall to dev-deps via hand fakes | **DONE** 2026-07-16 |
 
 Do not treat archived e2e plans under [`archive/superpowers/`](./archive/superpowers/)
 as the active roadmap.

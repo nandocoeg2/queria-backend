@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
   "crates/queria-core",
-  "crates/queria-auth",
   "crates/queria-db",
   "crates/queria-search",
   "crates/queria-api",

@@ -34,8 +34,7 @@ flowchart LR
 
 | Crate | Role | Notes |
 |---|---|---|
-| `queria-core` | Config, IDs, contracts, evaluation, JSON tracing | `proxy_addr` removed (P2); config still env-heavy but usable |
-| `queria-auth` | Password, session, agent token | Still thin; optional later fold |
+| `queria-core` | Config, IDs, contracts, evaluation, auth, JSON tracing | Auth folded from `queria-auth`; config still env-heavy |
 | `queria-db` | SQLx repos, migrations helpers | Dead traits removed (P1); god-file remains |
 | `queria-search` | Voyage, Qdrant, hybrid RRF, evaluation executor | |
 | `queria-api` | Axum Admin + agent HTTP | |
@@ -78,7 +77,7 @@ flowchart LR
 | `queria-api`, `queria-mcp`, `queria-worker`, `queria-cli` | Unchanged role |
 | `queria-backup` | Keep backup/restore paths; quarantine restore-drill until ops needs it |
 | `queria-observability` | **Done (P1):** `queria_core::init_json_tracing` |
-| `queria-auth` | Optional later fold |
+| `queria-auth` | **Done:** `queria_core::auth` |
 | `queria-proxy` | **Done (P1):** deleted; Caddy edge |
 
 Admin: stat cards and SSR tables only (P0 applied).

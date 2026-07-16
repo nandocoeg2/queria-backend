@@ -8,7 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 chrono.workspace = true
-queria-auth = { path = "../queria-auth" }
 queria-core = { path = "../queria-core" }
 queria-ingestion = { path = "../queria-ingestion" }
 serde.workspace = true

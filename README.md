@@ -1,8 +1,8 @@
 # queria-backend
 
-> Status: CURRENT - core product live; residual ops acceptance + hard simplification.
+> Status: CURRENT - core product live; residual ops acceptance.
 > Last verified: 2026-07-16.
-> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Next cuts: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md).
+> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Cuts applied: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md).
 
 Queria backend workspace for centralized team and agent knowledge.
 
