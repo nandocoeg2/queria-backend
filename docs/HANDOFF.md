@@ -95,7 +95,7 @@ not a Rust proxy crate.
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
-| S3 backup and restore drill | `COMPLETED` (drill deferrable) | `queria-backup` crate + CLI/runbook; live empty-volume restore remains acceptance. Restore-drill module is SIMPLIFICATION P2 defer. |
+| S3 backup and restore drill | `COMPLETED` | Backup in `queria-backup`; restore-drill lives only in `queria-cli` (removed from lib). Live empty-volume restore remains acceptance. |
 | Production OCI packaging | `COMPLETED` | Dockerfiles, production Compose, deployment/rollback runbooks. Stack is deployed; Phase 7 acceptance pack still open. |
 
 ### Human UI Screens
@@ -299,6 +299,7 @@ Ponytail-audit (over-engineering) findings are tracked in
 | P3 | enowx-rag Qdrant-only; remove Chroma/pgvector/OpenAI stubs | **DONE** 2026-07-16 |
 | Closeouts | mockall demotion, runbook sync, leftover trait/cfg work | **DONE** 2026-07-16 |
 | Impact | Fold auth into core; demote search mockall to dev-deps via hand fakes | **DONE** 2026-07-16 |
+| Deep cuts | Kill mockall; nest AppConfig; split repositories; move restore_drill to CLI | **DONE** 2026-07-16 |
 
 Do not treat archived e2e plans under [`archive/superpowers/`](./archive/superpowers/)
 as the active roadmap.

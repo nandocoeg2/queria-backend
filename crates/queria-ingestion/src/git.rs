@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use mockall::automock;
 use queria_core::{QueriaError, QueriaResult};
 use std::path::{Component, Path, PathBuf};
 use tokio::process::Command;
@@ -18,7 +17,6 @@ pub struct GitSnapshot {
     pub files: Vec<GitFile>,
 }
 
-#[automock]
 #[async_trait]
 pub trait GitRepositoryGateway: Send + Sync {
     async fn snapshot(&self, repository_path: &Path) -> QueriaResult<GitSnapshot>;

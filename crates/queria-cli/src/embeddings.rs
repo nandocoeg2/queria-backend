@@ -8,7 +8,7 @@ pub async fn backfill(project_slug: &str) -> anyhow::Result<()> {
     let (config, pool, user_id, project_id) = context(project_slug).await?;
     let repository = PgEmbeddingRepository::new(pool);
     let job = repository
-        .enqueue_backfill(user_id, project_id, &config.embedding_profile_version)
+        .enqueue_backfill(user_id, project_id, &config.embedding.profile_version)
         .await?
         .ok_or_else(|| anyhow::anyhow!("project is not accessible"))?;
     println!("{}", serde_json::to_string_pretty(&job)?);
@@ -18,13 +18,13 @@ pub async fn backfill(project_slug: &str) -> anyhow::Result<()> {
 pub async fn status(project_slug: &str) -> anyhow::Result<()> {
     let (config, pool, _, project_id) = context(project_slug).await?;
     let counts = PgEmbeddingRepository::new(pool)
-        .status_counts(project_id, &config.embedding_profile_version)
+        .status_counts(project_id, &config.embedding.profile_version)
         .await?;
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
             "project": project_slug,
-            "embedding_profile_version": config.embedding_profile_version,
+            "embedding_profile_version": config.embedding.profile_version,
             "counts": counts
         }))?
     );

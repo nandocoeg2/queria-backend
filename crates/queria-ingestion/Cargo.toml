@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 async-trait.workspace = true
 json5.workspace = true
-mockall.workspace = true
 queria-core = { path = "../queria-core" }
 serde.workspace = true
 serde_json.workspace = true

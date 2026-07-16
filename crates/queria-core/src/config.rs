@@ -3,6 +3,76 @@ use serde::{Deserialize, Serialize};
 use std::{env, fmt, net::SocketAddr};
 use url::Url;
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct QdrantSettings {
+    pub url: String,
+    #[serde(skip_serializing)]
+    pub api_key: String,
+    pub collection: String,
+    pub vector_name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EmbeddingSettings {
+    #[serde(skip_serializing)]
+    pub voyage_api_key: String,
+    pub model: String,
+    pub dimension: u32,
+    pub profile_version: String,
+    pub batch_size: u32,
+    pub timeout_seconds: u64,
+    pub max_retries: u32,
+    pub request_interval_ms: u64,
+    pub retry_backoff_base_seconds: u64,
+    pub retry_backoff_max_seconds: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RetrievalSettings {
+    pub rrf_k: u32,
+    pub candidate_multiplier: u32,
+    pub candidate_cap: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MinioSettings {
+    pub endpoint: String,
+    pub bucket: String,
+    #[serde(skip_serializing)]
+    pub access_key: String,
+    #[serde(skip_serializing)]
+    pub secret_key: String,
+    pub region: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BackupSettings {
+    pub retention_days: u32,
+    pub cron_hour_utc: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GitSettings {
+    pub allowed_roots: Vec<String>,
+    pub allowed_ssh_hosts: Vec<String>,
+    pub allowed_ssh_repositories: Vec<String>,
+    pub excluded_directories: Vec<String>,
+    pub max_file_bytes: u64,
+    pub chunk_max_lines: u32,
+    pub chunk_overlap_lines: u32,
+    pub trufflehog_executable: String,
+    pub trufflehog_include_paths_file: String,
+    pub trufflehog_exclude_paths_file: String,
+    pub trufflehog_timeout_seconds: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkerSettings {
+    pub poll_interval_ms: u64,
+    pub lease_seconds: u64,
+    pub identity: String,
+}
+
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub environment: String,
@@ -11,52 +81,17 @@ pub struct AppConfig {
     pub mcp_addr: String,
     pub worker_health_addr: String,
     pub database_url: String,
-    pub qdrant_url: String,
-    #[serde(skip_serializing)]
-    pub qdrant_api_key: String,
-    pub qdrant_collection: String,
-    pub qdrant_vector_name: String,
-    #[serde(skip_serializing)]
-    pub voyage_api_key: String,
-    pub embedding_model: String,
-    pub embedding_dimension: u32,
-    pub embedding_profile_version: String,
-    pub embedding_batch_size: u32,
-    pub embedding_timeout_seconds: u64,
-    pub embedding_max_retries: u32,
-    pub embedding_request_interval_ms: u64,
-    pub embedding_retry_backoff_base_seconds: u64,
-    pub embedding_retry_backoff_max_seconds: u64,
-    pub retrieval_rrf_k: u32,
-    pub retrieval_candidate_multiplier: u32,
-    pub retrieval_candidate_cap: u32,
-    pub minio_endpoint: String,
-    pub minio_bucket: String,
-    #[serde(skip_serializing)]
-    pub minio_access_key: String,
-    #[serde(skip_serializing)]
-    pub minio_secret_key: String,
-    pub minio_region: String,
-    pub backup_retention_days: u32,
-    pub backup_cron_hour_utc: u32,
+    pub log_level: String,
     pub setup_token: String,
     pub first_admin_email: String,
     pub first_org_slug: String,
-    pub log_level: String,
-    pub git_allowed_roots: Vec<String>,
-    pub git_allowed_ssh_hosts: Vec<String>,
-    pub git_allowed_ssh_repositories: Vec<String>,
-    pub git_excluded_directories: Vec<String>,
-    pub git_max_file_bytes: u64,
-    pub git_chunk_max_lines: u32,
-    pub git_chunk_overlap_lines: u32,
-    pub worker_poll_interval_ms: u64,
-    pub worker_lease_seconds: u64,
-    pub worker_identity: String,
-    pub trufflehog_executable: String,
-    pub trufflehog_include_paths_file: String,
-    pub trufflehog_exclude_paths_file: String,
-    pub trufflehog_timeout_seconds: u64,
+    pub qdrant: QdrantSettings,
+    pub embedding: EmbeddingSettings,
+    pub retrieval: RetrievalSettings,
+    pub minio: MinioSettings,
+    pub backup: BackupSettings,
+    pub git: GitSettings,
+    pub worker: WorkerSettings,
 }
 
 impl fmt::Debug for AppConfig {
@@ -68,34 +103,11 @@ impl fmt::Debug for AppConfig {
             .field("api_addr", &self.api_addr)
             .field("mcp_addr", &self.mcp_addr)
             .field("worker_health_addr", &self.worker_health_addr)
-            .field("qdrant_url", &self.qdrant_url)
-            .field("qdrant_collection", &self.qdrant_collection)
-            .field("qdrant_vector_name", &self.qdrant_vector_name)
-            .field("embedding_model", &self.embedding_model)
-            .field("embedding_dimension", &self.embedding_dimension)
-            .field("embedding_profile_version", &self.embedding_profile_version)
-            .field("embedding_batch_size", &self.embedding_batch_size)
-            .field(
-                "embedding_request_interval_ms",
-                &self.embedding_request_interval_ms,
-            )
-            .field(
-                "embedding_retry_backoff_base_seconds",
-                &self.embedding_retry_backoff_base_seconds,
-            )
-            .field(
-                "embedding_retry_backoff_max_seconds",
-                &self.embedding_retry_backoff_max_seconds,
-            )
-            .field("retrieval_rrf_k", &self.retrieval_rrf_k)
-            .field(
-                "retrieval_candidate_multiplier",
-                &self.retrieval_candidate_multiplier,
-            )
-            .field("retrieval_candidate_cap", &self.retrieval_candidate_cap)
-            .field("minio_region", &self.minio_region)
-            .field("backup_retention_days", &self.backup_retention_days)
-            .field("backup_cron_hour_utc", &self.backup_cron_hour_utc)
+            .field("qdrant", &self.qdrant)
+            .field("embedding", &self.embedding)
+            .field("retrieval", &self.retrieval)
+            .field("minio", &self.minio)
+            .field("backup", &self.backup)
             .field("log_level", &self.log_level)
             .finish_non_exhaustive()
     }
@@ -111,123 +123,137 @@ impl AppConfig {
             mcp_addr: read_env("QUERIA_MCP_ADDR", &defaults.mcp_addr),
             worker_health_addr: read_env("QUERIA_WORKER_HEALTH_ADDR", &defaults.worker_health_addr),
             database_url: read_env("QUERIA_DATABASE_URL", &defaults.database_url),
-            qdrant_url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant_url),
-            qdrant_api_key: read_env("QDRANT_API_KEY", &defaults.qdrant_api_key),
-            qdrant_collection: read_env("QUERIA_QDRANT_COLLECTION", &defaults.qdrant_collection),
-            qdrant_vector_name: read_env("QUERIA_QDRANT_VECTOR_NAME", &defaults.qdrant_vector_name),
-            voyage_api_key: read_env("VOYAGE_API_KEY", &defaults.voyage_api_key),
-            embedding_model: read_env("QUERIA_EMBEDDING_MODEL", &defaults.embedding_model),
-            embedding_dimension: read_number_env(
-                "QUERIA_EMBEDDING_DIMENSION",
-                defaults.embedding_dimension,
-            )?,
-            embedding_profile_version: read_env(
-                "QUERIA_EMBEDDING_PROFILE_VERSION",
-                &defaults.embedding_profile_version,
-            ),
-            embedding_batch_size: read_number_env(
-                "QUERIA_EMBEDDING_BATCH_SIZE",
-                defaults.embedding_batch_size,
-            )?,
-            embedding_timeout_seconds: read_number_env(
-                "QUERIA_EMBEDDING_TIMEOUT_SECONDS",
-                defaults.embedding_timeout_seconds,
-            )?,
-            embedding_max_retries: read_number_env(
-                "QUERIA_EMBEDDING_MAX_RETRIES",
-                defaults.embedding_max_retries,
-            )?,
-            embedding_request_interval_ms: read_number_env(
-                "QUERIA_EMBEDDING_REQUEST_INTERVAL_MS",
-                defaults.embedding_request_interval_ms,
-            )?,
-            embedding_retry_backoff_base_seconds: read_number_env(
-                "QUERIA_EMBEDDING_RETRY_BACKOFF_BASE_SECONDS",
-                defaults.embedding_retry_backoff_base_seconds,
-            )?,
-            embedding_retry_backoff_max_seconds: read_number_env(
-                "QUERIA_EMBEDDING_RETRY_BACKOFF_MAX_SECONDS",
-                defaults.embedding_retry_backoff_max_seconds,
-            )?,
-            retrieval_rrf_k: read_number_env("QUERIA_RETRIEVAL_RRF_K", defaults.retrieval_rrf_k)?,
-            retrieval_candidate_multiplier: read_number_env(
-                "QUERIA_RETRIEVAL_CANDIDATE_MULTIPLIER",
-                defaults.retrieval_candidate_multiplier,
-            )?,
-            retrieval_candidate_cap: read_number_env(
-                "QUERIA_RETRIEVAL_CANDIDATE_CAP",
-                defaults.retrieval_candidate_cap,
-            )?,
-            minio_endpoint: read_env("QUERIA_MINIO_ENDPOINT", &defaults.minio_endpoint),
-            minio_bucket: read_env("QUERIA_MINIO_BUCKET", &defaults.minio_bucket),
-            minio_access_key: read_env("QUERIA_MINIO_ACCESS_KEY", &defaults.minio_access_key),
-            minio_secret_key: read_env("QUERIA_MINIO_SECRET_KEY", &defaults.minio_secret_key),
-            minio_region: read_env("QUERIA_MINIO_REGION", &defaults.minio_region),
-            backup_retention_days: read_number_env(
-                "QUERIA_BACKUP_RETENTION_DAYS",
-                defaults.backup_retention_days,
-            )?,
-            backup_cron_hour_utc: read_number_env(
-                "QUERIA_BACKUP_CRON_HOUR_UTC",
-                defaults.backup_cron_hour_utc,
-            )?,
+            log_level: read_env("QUERIA_LOG_LEVEL", &defaults.log_level),
             setup_token: read_env("QUERIA_SETUP_TOKEN", &defaults.setup_token),
             first_admin_email: read_env("QUERIA_FIRST_ADMIN_EMAIL", &defaults.first_admin_email),
             first_org_slug: read_env("QUERIA_FIRST_ORG_SLUG", &defaults.first_org_slug),
-            log_level: read_env("QUERIA_LOG_LEVEL", &defaults.log_level),
-            git_allowed_roots: read_csv_env(
-                "QUERIA_GIT_ALLOWED_ROOTS",
-                &defaults.git_allowed_roots,
-            ),
-            git_allowed_ssh_hosts: read_csv_env(
-                "QUERIA_GIT_ALLOWED_SSH_HOSTS",
-                &defaults.git_allowed_ssh_hosts,
-            ),
-            git_allowed_ssh_repositories: read_csv_env(
-                "QUERIA_GIT_ALLOWED_SSH_REPOSITORIES",
-                &defaults.git_allowed_ssh_repositories,
-            ),
-            git_excluded_directories: read_csv_env(
-                "QUERIA_GIT_EXCLUDED_DIRECTORIES",
-                &defaults.git_excluded_directories,
-            ),
-            git_max_file_bytes: read_number_env(
-                "QUERIA_GIT_MAX_FILE_BYTES",
-                defaults.git_max_file_bytes,
-            )?,
-            git_chunk_max_lines: read_number_env(
-                "QUERIA_GIT_CHUNK_MAX_LINES",
-                defaults.git_chunk_max_lines,
-            )?,
-            git_chunk_overlap_lines: read_number_env(
-                "QUERIA_GIT_CHUNK_OVERLAP_LINES",
-                defaults.git_chunk_overlap_lines,
-            )?,
-            worker_poll_interval_ms: read_number_env(
-                "QUERIA_WORKER_POLL_INTERVAL_MS",
-                defaults.worker_poll_interval_ms,
-            )?,
-            worker_lease_seconds: read_number_env(
-                "QUERIA_WORKER_LEASE_SECONDS",
-                defaults.worker_lease_seconds,
-            )?,
-            worker_identity: read_env("QUERIA_WORKER_IDENTITY", &defaults.worker_identity),
-            trufflehog_executable: read_env(
-                "QUERIA_TRUFFLEHOG_EXECUTABLE",
-                &defaults.trufflehog_executable,
-            ),
-            trufflehog_include_paths_file: read_env(
-                "QUERIA_TRUFFLEHOG_INCLUDE_PATHS_FILE",
-                &defaults.trufflehog_include_paths_file,
-            ),
-            trufflehog_exclude_paths_file: read_env(
-                "QUERIA_TRUFFLEHOG_EXCLUDE_PATHS_FILE",
-                &defaults.trufflehog_exclude_paths_file,
-            ),
-            trufflehog_timeout_seconds: read_number_env(
-                "QUERIA_TRUFFLEHOG_TIMEOUT_SECONDS",
-                defaults.trufflehog_timeout_seconds,
-            )?,
+            qdrant: QdrantSettings {
+                url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant.url),
+                api_key: read_env("QDRANT_API_KEY", &defaults.qdrant.api_key),
+                collection: read_env("QUERIA_QDRANT_COLLECTION", &defaults.qdrant.collection),
+                vector_name: read_env("QUERIA_QDRANT_VECTOR_NAME", &defaults.qdrant.vector_name),
+            },
+            embedding: EmbeddingSettings {
+                voyage_api_key: read_env("VOYAGE_API_KEY", &defaults.embedding.voyage_api_key),
+                model: read_env("QUERIA_EMBEDDING_MODEL", &defaults.embedding.model),
+                dimension: read_number_env(
+                    "QUERIA_EMBEDDING_DIMENSION",
+                    defaults.embedding.dimension,
+                )?,
+                profile_version: read_env(
+                    "QUERIA_EMBEDDING_PROFILE_VERSION",
+                    &defaults.embedding.profile_version,
+                ),
+                batch_size: read_number_env(
+                    "QUERIA_EMBEDDING_BATCH_SIZE",
+                    defaults.embedding.batch_size,
+                )?,
+                timeout_seconds: read_number_env(
+                    "QUERIA_EMBEDDING_TIMEOUT_SECONDS",
+                    defaults.embedding.timeout_seconds,
+                )?,
+                max_retries: read_number_env(
+                    "QUERIA_EMBEDDING_MAX_RETRIES",
+                    defaults.embedding.max_retries,
+                )?,
+                request_interval_ms: read_number_env(
+                    "QUERIA_EMBEDDING_REQUEST_INTERVAL_MS",
+                    defaults.embedding.request_interval_ms,
+                )?,
+                retry_backoff_base_seconds: read_number_env(
+                    "QUERIA_EMBEDDING_RETRY_BACKOFF_BASE_SECONDS",
+                    defaults.embedding.retry_backoff_base_seconds,
+                )?,
+                retry_backoff_max_seconds: read_number_env(
+                    "QUERIA_EMBEDDING_RETRY_BACKOFF_MAX_SECONDS",
+                    defaults.embedding.retry_backoff_max_seconds,
+                )?,
+            },
+            retrieval: RetrievalSettings {
+                rrf_k: read_number_env("QUERIA_RETRIEVAL_RRF_K", defaults.retrieval.rrf_k)?,
+                candidate_multiplier: read_number_env(
+                    "QUERIA_RETRIEVAL_CANDIDATE_MULTIPLIER",
+                    defaults.retrieval.candidate_multiplier,
+                )?,
+                candidate_cap: read_number_env(
+                    "QUERIA_RETRIEVAL_CANDIDATE_CAP",
+                    defaults.retrieval.candidate_cap,
+                )?,
+            },
+            minio: MinioSettings {
+                endpoint: read_env("QUERIA_MINIO_ENDPOINT", &defaults.minio.endpoint),
+                bucket: read_env("QUERIA_MINIO_BUCKET", &defaults.minio.bucket),
+                access_key: read_env("QUERIA_MINIO_ACCESS_KEY", &defaults.minio.access_key),
+                secret_key: read_env("QUERIA_MINIO_SECRET_KEY", &defaults.minio.secret_key),
+                region: read_env("QUERIA_MINIO_REGION", &defaults.minio.region),
+            },
+            backup: BackupSettings {
+                retention_days: read_number_env(
+                    "QUERIA_BACKUP_RETENTION_DAYS",
+                    defaults.backup.retention_days,
+                )?,
+                cron_hour_utc: read_number_env(
+                    "QUERIA_BACKUP_CRON_HOUR_UTC",
+                    defaults.backup.cron_hour_utc,
+                )?,
+            },
+            git: GitSettings {
+                allowed_roots: read_csv_env(
+                    "QUERIA_GIT_ALLOWED_ROOTS",
+                    &defaults.git.allowed_roots,
+                ),
+                allowed_ssh_hosts: read_csv_env(
+                    "QUERIA_GIT_ALLOWED_SSH_HOSTS",
+                    &defaults.git.allowed_ssh_hosts,
+                ),
+                allowed_ssh_repositories: read_csv_env(
+                    "QUERIA_GIT_ALLOWED_SSH_REPOSITORIES",
+                    &defaults.git.allowed_ssh_repositories,
+                ),
+                excluded_directories: read_csv_env(
+                    "QUERIA_GIT_EXCLUDED_DIRECTORIES",
+                    &defaults.git.excluded_directories,
+                ),
+                max_file_bytes: read_number_env(
+                    "QUERIA_GIT_MAX_FILE_BYTES",
+                    defaults.git.max_file_bytes,
+                )?,
+                chunk_max_lines: read_number_env(
+                    "QUERIA_GIT_CHUNK_MAX_LINES",
+                    defaults.git.chunk_max_lines,
+                )?,
+                chunk_overlap_lines: read_number_env(
+                    "QUERIA_GIT_CHUNK_OVERLAP_LINES",
+                    defaults.git.chunk_overlap_lines,
+                )?,
+                trufflehog_executable: read_env(
+                    "QUERIA_TRUFFLEHOG_EXECUTABLE",
+                    &defaults.git.trufflehog_executable,
+                ),
+                trufflehog_include_paths_file: read_env(
+                    "QUERIA_TRUFFLEHOG_INCLUDE_PATHS_FILE",
+                    &defaults.git.trufflehog_include_paths_file,
+                ),
+                trufflehog_exclude_paths_file: read_env(
+                    "QUERIA_TRUFFLEHOG_EXCLUDE_PATHS_FILE",
+                    &defaults.git.trufflehog_exclude_paths_file,
+                ),
+                trufflehog_timeout_seconds: read_number_env(
+                    "QUERIA_TRUFFLEHOG_TIMEOUT_SECONDS",
+                    defaults.git.trufflehog_timeout_seconds,
+                )?,
+            },
+            worker: WorkerSettings {
+                poll_interval_ms: read_number_env(
+                    "QUERIA_WORKER_POLL_INTERVAL_MS",
+                    defaults.worker.poll_interval_ms,
+                )?,
+                lease_seconds: read_number_env(
+                    "QUERIA_WORKER_LEASE_SECONDS",
+                    defaults.worker.lease_seconds,
+                )?,
+                identity: read_env("QUERIA_WORKER_IDENTITY", &defaults.worker.identity),
+            },
         };
 
         config.validate()?;
@@ -242,57 +268,71 @@ impl AppConfig {
             mcp_addr: "127.0.0.1:17672".to_owned(),
             worker_health_addr: "127.0.0.1:17673".to_owned(),
             database_url: "postgres://queria:queria@127.0.0.1:17675/queria".to_owned(),
-            qdrant_url: "http://127.0.0.1:17676".to_owned(),
-            qdrant_api_key: String::new(),
-            qdrant_collection: "queria_local_chunks_v1".to_owned(),
-            qdrant_vector_name: "dense_v1".to_owned(),
-            voyage_api_key: String::new(),
-            embedding_model: "voyage-4".to_owned(),
-            embedding_dimension: 1024,
-            embedding_profile_version: "voyage-4-1024-v1".to_owned(),
-            embedding_batch_size: 64,
-            embedding_timeout_seconds: 30,
-            embedding_max_retries: 3,
-            embedding_request_interval_ms: 0,
-            embedding_retry_backoff_base_seconds: 30,
-            embedding_retry_backoff_max_seconds: 600,
-            retrieval_rrf_k: 60,
-            retrieval_candidate_multiplier: 4,
-            retrieval_candidate_cap: 100,
-            minio_endpoint: "http://127.0.0.1:17678".to_owned(),
-            minio_bucket: "queria-local".to_owned(),
-            minio_access_key: "queria".to_owned(),
-            minio_secret_key: "queria-local-dev-only".to_owned(),
-            minio_region: "us-east-1".to_owned(),
-            backup_retention_days: 30,
-            backup_cron_hour_utc: 2,
+            log_level: "info".to_owned(),
             setup_token: "change-me-one-time-setup-token".to_owned(),
             first_admin_email: "nando@fjulian.id".to_owned(),
             first_org_slug: "fjulian".to_owned(),
-            log_level: "info".to_owned(),
-            git_allowed_roots: vec!["/Users/fernandojulian/project/fjulian/fjulian.me".to_owned()],
-            git_allowed_ssh_hosts: vec!["github.com".to_owned()],
-            git_allowed_ssh_repositories: vec!["nandocoeg2/fjulian.me.git".to_owned()],
-            git_excluded_directories: vec![
-                ".git".to_owned(),
-                ".astro".to_owned(),
-                ".next".to_owned(),
-                "node_modules".to_owned(),
-                "dist".to_owned(),
-                "build".to_owned(),
-                "coverage".to_owned(),
-                "target".to_owned(),
-            ],
-            git_max_file_bytes: 1_000_000,
-            git_chunk_max_lines: 120,
-            git_chunk_overlap_lines: 20,
-            worker_poll_interval_ms: 2_000,
-            worker_lease_seconds: 900,
-            worker_identity: "queria-git-ingestion".to_owned(),
-            trufflehog_executable: "trufflehog".to_owned(),
-            trufflehog_include_paths_file: "config/trufflehog-include-paths.txt".to_owned(),
-            trufflehog_exclude_paths_file: "config/trufflehog-exclude-paths.txt".to_owned(),
-            trufflehog_timeout_seconds: 300,
+            qdrant: QdrantSettings {
+                url: "http://127.0.0.1:17676".to_owned(),
+                api_key: String::new(),
+                collection: "queria_local_chunks_v1".to_owned(),
+                vector_name: "dense_v1".to_owned(),
+            },
+            embedding: EmbeddingSettings {
+                voyage_api_key: String::new(),
+                model: "voyage-4".to_owned(),
+                dimension: 1024,
+                profile_version: "voyage-4-1024-v1".to_owned(),
+                batch_size: 64,
+                timeout_seconds: 30,
+                max_retries: 3,
+                request_interval_ms: 0,
+                retry_backoff_base_seconds: 30,
+                retry_backoff_max_seconds: 600,
+            },
+            retrieval: RetrievalSettings {
+                rrf_k: 60,
+                candidate_multiplier: 4,
+                candidate_cap: 100,
+            },
+            minio: MinioSettings {
+                endpoint: "http://127.0.0.1:17678".to_owned(),
+                bucket: "queria-local".to_owned(),
+                access_key: "queria".to_owned(),
+                secret_key: "queria-local-dev-only".to_owned(),
+                region: "us-east-1".to_owned(),
+            },
+            backup: BackupSettings {
+                retention_days: 30,
+                cron_hour_utc: 2,
+            },
+            git: GitSettings {
+                allowed_roots: vec!["/Users/fernandojulian/project/fjulian/fjulian.me".to_owned()],
+                allowed_ssh_hosts: vec!["github.com".to_owned()],
+                allowed_ssh_repositories: vec!["nandocoeg2/fjulian.me.git".to_owned()],
+                excluded_directories: vec![
+                    ".git".to_owned(),
+                    ".astro".to_owned(),
+                    ".next".to_owned(),
+                    "node_modules".to_owned(),
+                    "dist".to_owned(),
+                    "build".to_owned(),
+                    "coverage".to_owned(),
+                    "target".to_owned(),
+                ],
+                max_file_bytes: 1_000_000,
+                chunk_max_lines: 120,
+                chunk_overlap_lines: 20,
+                trufflehog_executable: "trufflehog".to_owned(),
+                trufflehog_include_paths_file: "config/trufflehog-include-paths.txt".to_owned(),
+                trufflehog_exclude_paths_file: "config/trufflehog-exclude-paths.txt".to_owned(),
+                trufflehog_timeout_seconds: 300,
+            },
+            worker: WorkerSettings {
+                poll_interval_ms: 2_000,
+                lease_seconds: 900,
+                identity: "queria-git-ingestion".to_owned(),
+            },
         }
     }
 
@@ -301,41 +341,42 @@ impl AppConfig {
         parse_addr("QUERIA_MCP_ADDR", &self.mcp_addr)?;
         parse_addr("QUERIA_WORKER_HEALTH_ADDR", &self.worker_health_addr)?;
         parse_url("QUERIA_PUBLIC_BASE_URL", &self.public_base_url)?;
-        parse_url("QUERIA_QDRANT_URL", &self.qdrant_url)?;
-        parse_url("QUERIA_MINIO_ENDPOINT", &self.minio_endpoint)?;
+        parse_url("QUERIA_QDRANT_URL", &self.qdrant.url)?;
+        parse_url("QUERIA_MINIO_ENDPOINT", &self.minio.endpoint)?;
 
         if self.environment != "local"
-            && (self.voyage_api_key.trim().is_empty() || self.qdrant_api_key.trim().is_empty())
+            && (self.embedding.voyage_api_key.trim().is_empty()
+                || self.qdrant.api_key.trim().is_empty())
         {
             return Err(QueriaError::Config(
                 "VOYAGE_API_KEY and QDRANT_API_KEY are required outside local".to_owned(),
             ));
         }
-        if self.embedding_model.trim().is_empty()
-            || self.embedding_profile_version.trim().is_empty()
-            || self.qdrant_collection.trim().is_empty()
-            || self.qdrant_vector_name.trim().is_empty()
+        if self.embedding.model.trim().is_empty()
+            || self.embedding.profile_version.trim().is_empty()
+            || self.qdrant.collection.trim().is_empty()
+            || self.qdrant.vector_name.trim().is_empty()
         {
             return Err(QueriaError::Config(
                 "embedding and Qdrant identifiers must not be blank".to_owned(),
             ));
         }
-        if !matches!(self.embedding_dimension, 256 | 512 | 1024 | 2048) {
+        if !matches!(self.embedding.dimension, 256 | 512 | 1024 | 2048) {
             return Err(QueriaError::Config(
                 "QUERIA_EMBEDDING_DIMENSION must be 256, 512, 1024, or 2048".to_owned(),
             ));
         }
-        if self.embedding_batch_size == 0
-            || self.embedding_batch_size > 128
-            || self.embedding_timeout_seconds == 0
-            || self.embedding_max_retries > 10
-            || self.embedding_request_interval_ms > 3_600_000
-            || self.embedding_retry_backoff_base_seconds == 0
-            || self.embedding_retry_backoff_max_seconds < self.embedding_retry_backoff_base_seconds
-            || self.embedding_retry_backoff_max_seconds > 3_600
-            || self.retrieval_rrf_k == 0
-            || self.retrieval_candidate_multiplier == 0
-            || self.retrieval_candidate_cap < 20
+        if self.embedding.batch_size == 0
+            || self.embedding.batch_size > 128
+            || self.embedding.timeout_seconds == 0
+            || self.embedding.max_retries > 10
+            || self.embedding.request_interval_ms > 3_600_000
+            || self.embedding.retry_backoff_base_seconds == 0
+            || self.embedding.retry_backoff_max_seconds < self.embedding.retry_backoff_base_seconds
+            || self.embedding.retry_backoff_max_seconds > 3_600
+            || self.retrieval.rrf_k == 0
+            || self.retrieval.candidate_multiplier == 0
+            || self.retrieval.candidate_cap < 20
         {
             return Err(QueriaError::Config(
                 "embedding and retrieval numeric limits are invalid".to_owned(),
@@ -363,29 +404,29 @@ impl AppConfig {
         }
 
         validate_slug("QUERIA_FIRST_ORG_SLUG", &self.first_org_slug)?;
-        if self.git_allowed_roots.is_empty()
-            || self.git_allowed_ssh_hosts.is_empty()
-            || self.git_allowed_ssh_repositories.is_empty()
+        if self.git.allowed_roots.is_empty()
+            || self.git.allowed_ssh_hosts.is_empty()
+            || self.git.allowed_ssh_repositories.is_empty()
         {
             return Err(QueriaError::Config(
                 "Git ingestion allowlists must not be empty".to_owned(),
             ));
         }
-        if self.git_max_file_bytes == 0
-            || self.git_chunk_max_lines == 0
-            || self.git_chunk_overlap_lines >= self.git_chunk_max_lines
-            || self.worker_poll_interval_ms == 0
-            || self.worker_lease_seconds == 0
+        if self.git.max_file_bytes == 0
+            || self.git.chunk_max_lines == 0
+            || self.git.chunk_overlap_lines >= self.git.chunk_max_lines
+            || self.worker.poll_interval_ms == 0
+            || self.worker.lease_seconds == 0
         {
             return Err(QueriaError::Config(
                 "Git ingestion numeric limits are invalid".to_owned(),
             ));
         }
-        if self.worker_identity.trim().is_empty()
-            || self.trufflehog_executable.trim().is_empty()
-            || self.trufflehog_include_paths_file.trim().is_empty()
-            || self.trufflehog_exclude_paths_file.trim().is_empty()
-            || self.trufflehog_timeout_seconds == 0
+        if self.worker.identity.trim().is_empty()
+            || self.git.trufflehog_executable.trim().is_empty()
+            || self.git.trufflehog_include_paths_file.trim().is_empty()
+            || self.git.trufflehog_exclude_paths_file.trim().is_empty()
+            || self.git.trufflehog_timeout_seconds == 0
         {
             return Err(QueriaError::Config(
                 "worker identity and TruffleHog configuration are required".to_owned(),
@@ -474,25 +515,26 @@ mod tests {
         assert_eq!(config.mcp_addr, "127.0.0.1:17672");
         assert_eq!(config.worker_health_addr, "127.0.0.1:17673");
         assert!(config.database_url.contains("17675"));
-        assert!(config.qdrant_url.ends_with(":17676"));
-        assert_eq!(config.git_chunk_max_lines, 120);
-        assert_eq!(config.git_chunk_overlap_lines, 20);
-        assert_eq!(config.git_max_file_bytes, 1_000_000);
-        assert_eq!(config.embedding_model, "voyage-4");
-        assert_eq!(config.embedding_dimension, 1024);
-        assert_eq!(config.embedding_profile_version, "voyage-4-1024-v1");
-        assert_eq!(config.embedding_batch_size, 64);
-        assert_eq!(config.embedding_request_interval_ms, 0);
-        assert_eq!(config.embedding_retry_backoff_base_seconds, 30);
-        assert_eq!(config.embedding_retry_backoff_max_seconds, 600);
-        assert_eq!(config.qdrant_collection, "queria_local_chunks_v1");
-        assert_eq!(config.qdrant_vector_name, "dense_v1");
-        assert_eq!(config.retrieval_rrf_k, 60);
-        assert_eq!(config.retrieval_candidate_multiplier, 4);
-        assert_eq!(config.retrieval_candidate_cap, 100);
+        assert!(config.qdrant.url.ends_with(":17676"));
+        assert_eq!(config.git.chunk_max_lines, 120);
+        assert_eq!(config.git.chunk_overlap_lines, 20);
+        assert_eq!(config.git.max_file_bytes, 1_000_000);
+        assert_eq!(config.embedding.model, "voyage-4");
+        assert_eq!(config.embedding.dimension, 1024);
+        assert_eq!(config.embedding.profile_version, "voyage-4-1024-v1");
+        assert_eq!(config.embedding.batch_size, 64);
+        assert_eq!(config.embedding.request_interval_ms, 0);
+        assert_eq!(config.embedding.retry_backoff_base_seconds, 30);
+        assert_eq!(config.embedding.retry_backoff_max_seconds, 600);
+        assert_eq!(config.qdrant.collection, "queria_local_chunks_v1");
+        assert_eq!(config.qdrant.vector_name, "dense_v1");
+        assert_eq!(config.retrieval.rrf_k, 60);
+        assert_eq!(config.retrieval.candidate_multiplier, 4);
+        assert_eq!(config.retrieval.candidate_cap, 100);
         assert!(
             config
-                .git_allowed_ssh_repositories
+                .git
+                .allowed_ssh_repositories
                 .contains(&"nandocoeg2/fjulian.me.git".to_owned())
         );
     }
@@ -525,8 +567,8 @@ mod tests {
     #[test]
     fn validation_rejects_unsupported_embedding_dimension() {
         let mut config = AppConfig::default_local();
-        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
-        config.embedding_dimension = 768;
+        config.setup_token = "********************************".to_owned();
+        config.embedding.dimension = 768;
 
         let err = config
             .validate()
@@ -539,7 +581,7 @@ mod tests {
     fn validation_requires_provider_keys_outside_local() {
         let mut config = AppConfig::default_local();
         config.environment = "dev".to_owned();
-        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
+        config.setup_token = "********************************".to_owned();
 
         let err = config
             .validate()
@@ -551,8 +593,8 @@ mod tests {
     #[test]
     fn validation_rejects_invalid_embedding_retry_backoff() {
         let mut config = AppConfig::default_local();
-        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
-        config.embedding_retry_backoff_base_seconds = 0;
+        config.setup_token = "********************************".to_owned();
+        config.embedding.retry_backoff_base_seconds = 0;
 
         let err = config
             .validate()
@@ -561,9 +603,9 @@ mod tests {
         assert!(matches!(err, QueriaError::Config(_)));
 
         let mut config = AppConfig::default_local();
-        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
-        config.embedding_retry_backoff_base_seconds = 60;
-        config.embedding_retry_backoff_max_seconds = 30;
+        config.setup_token = "********************************".to_owned();
+        config.embedding.retry_backoff_base_seconds = 60;
+        config.embedding.retry_backoff_max_seconds = 30;
 
         let err = config
             .validate()
@@ -575,8 +617,8 @@ mod tests {
     #[test]
     fn validation_rejects_excessive_embedding_request_interval() {
         let mut config = AppConfig::default_local();
-        config.setup_token = "strong-setup-token-with-32-bytes".to_owned();
-        config.embedding_request_interval_ms = 3_600_001;
+        config.setup_token = "********************************".to_owned();
+        config.embedding.request_interval_ms = 3_600_001;
 
         let err = config
             .validate()

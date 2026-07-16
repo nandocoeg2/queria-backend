@@ -34,15 +34,15 @@ flowchart LR
 
 | Crate | Role | Notes |
 |---|---|---|
-| `queria-core` | Config, IDs, contracts, evaluation, auth, JSON tracing | Auth folded from `queria-auth`; config still env-heavy |
-| `queria-db` | SQLx repos, migrations helpers | Dead traits removed (P1); god-file remains |
+| `queria-core` | Nested AppConfig groups, IDs, contracts, evaluation, auth, tracing | Auth folded; config split into domain settings |
+| `queria-db` | SQLx repos, migrations helpers | repositories split: types/projects/auth |
 | `queria-search` | Voyage, Qdrant, hybrid RRF, evaluation executor | |
 | `queria-api` | Axum Admin + agent HTTP | |
 | `queria-mcp` | MCP over HTTP | |
 | `queria-worker` | Ingestion + embedding + backup jobs | |
 | `queria-ingestion` | Git allowlist, parse, TruffleHog gate | |
 | `queria-cli` | Ops binary | |
-| `queria-backup` | S3 backup, retention, restore drill | Drill is deferrable (P2) |
+| `queria-backup` | S3 backup + retention | restore_drill moved to queria-cli |
 | edge | Caddy `docker/Caddyfile` | Replaces deleted `queria-proxy` / Pingora |
 
 Admin: pure Astro SSR + CSS tokens (P0: React/Three.js/shadcn removed 2026-07-16).

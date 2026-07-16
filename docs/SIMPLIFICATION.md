@@ -85,3 +85,6 @@ Then update HANDOFF completion matrix and residual gaps.
 | 2026-07-16 | P3 enowx-rag | Qdrant-only; deleted chroma/pgvector + OpenAI stubs; `go mod tidy` dropped pgx; build green |
 | 2026-07-16 | Closeouts | Removed eval HTTP routes; mockall demoted (cfg test / dev-deps) for worker+ingestion+most search; unused auth mockall removed; runbooks CLI-only eval |
 | 2026-07-16 | Impact | Folded `queria-auth` into `queria-core::auth`; search mockall is dev-only; worker embedding tests use hand fakes |
+| 2026-07-16 | mockall kill | Removed all mockall/automock; hand-written fakes in worker/search/ingestion tests |
+| 2026-07-16 | restore_drill move | Deleted queria-backup restore_drill; lives in queria-cli only |
+| 2026-07-16 | config/repos split | AppConfig nested settings groups; repositories split into types/projects/auth |

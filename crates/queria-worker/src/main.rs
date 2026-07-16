@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let repository = PgIngestionRepository::new(pool.clone());
     let embedding_repository = PgEmbeddingRepository::new(pool.clone());
     let recovered = repository
-        .recover_expired_leases(i64::try_from(config.worker_lease_seconds)?)
+        .recover_expired_leases(i64::try_from(config.worker.lease_seconds)?)
         .await?;
     if recovered > 0 {
         tracing::warn!(
@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     let recovered_embedding = embedding_repository
-        .recover_expired_leases(i64::try_from(config.worker_lease_seconds)?)
+        .recover_expired_leases(i64::try_from(config.worker.lease_seconds)?)
         .await?;
     if recovered_embedding > 0 {
         tracing::warn!(
@@ -47,75 +47,75 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let policy = GitSecurityPolicy::new(
-        config.git_allowed_roots.iter().map(PathBuf::from).collect(),
-        config.git_allowed_ssh_hosts.clone(),
-        config.git_allowed_ssh_repositories.clone(),
-        config.git_excluded_directories.clone(),
-        config.git_max_file_bytes,
+        config.git.allowed_roots.iter().map(PathBuf::from).collect(),
+        config.git.allowed_ssh_hosts.clone(),
+        config.git.allowed_ssh_repositories.clone(),
+        config.git.excluded_directories.clone(),
+        config.git.max_file_bytes,
     )?;
     let service = GitIngestionService::new(
         GitCliGateway::new(policy.clone()),
         TruffleHogScanner::new(
-            config.trufflehog_executable.clone(),
-            PathBuf::from(&config.trufflehog_include_paths_file),
-            PathBuf::from(&config.trufflehog_exclude_paths_file),
-            Duration::from_secs(config.trufflehog_timeout_seconds),
+            config.git.trufflehog_executable.clone(),
+            PathBuf::from(&config.git.trufflehog_include_paths_file),
+            PathBuf::from(&config.git.trufflehog_exclude_paths_file),
+            Duration::from_secs(config.git.trufflehog_timeout_seconds),
         ),
         policy,
-        usize::try_from(config.git_chunk_max_lines)?,
-        usize::try_from(config.git_chunk_overlap_lines)?,
+        usize::try_from(config.git.chunk_max_lines)?,
+        usize::try_from(config.git.chunk_overlap_lines)?,
     );
-    let poll_interval = Duration::from_millis(config.worker_poll_interval_ms);
+    let poll_interval = Duration::from_millis(config.worker.poll_interval_ms);
     let embedding_config = embedding_jobs::EmbeddingWorkerConfig {
         provider: "voyage".to_owned(),
-        model: config.embedding_model.clone(),
-        dimension: usize::try_from(config.embedding_dimension)?,
-        profile_version: config.embedding_profile_version.clone(),
-        batch_size: i64::from(config.embedding_batch_size),
-        request_interval_ms: config.embedding_request_interval_ms,
-        retry_backoff_base_seconds: i64::try_from(config.embedding_retry_backoff_base_seconds)?,
-        retry_backoff_max_seconds: i64::try_from(config.embedding_retry_backoff_max_seconds)?,
+        model: config.embedding.model.clone(),
+        dimension: usize::try_from(config.embedding.dimension)?,
+        profile_version: config.embedding.profile_version.clone(),
+        batch_size: i64::from(config.embedding.batch_size),
+        request_interval_ms: config.embedding.request_interval_ms,
+        retry_backoff_base_seconds: i64::try_from(config.embedding.retry_backoff_base_seconds)?,
+        retry_backoff_max_seconds: i64::try_from(config.embedding.retry_backoff_max_seconds)?,
     };
     let voyage = VoyageClient::new(
-        config.voyage_api_key.clone(),
-        config.embedding_model.clone(),
-        usize::try_from(config.embedding_dimension)?,
-        Duration::from_secs(config.embedding_timeout_seconds),
-        config.embedding_max_retries,
+        config.embedding.voyage_api_key.clone(),
+        config.embedding.model.clone(),
+        usize::try_from(config.embedding.dimension)?,
+        Duration::from_secs(config.embedding.timeout_seconds),
+        config.embedding.max_retries,
     )?;
     let qdrant = QdrantClient::new(QdrantConfig {
-        url: config.qdrant_url.clone(),
-        api_key: config.qdrant_api_key.clone(),
-        collection: config.qdrant_collection.clone(),
-        vector_name: config.qdrant_vector_name.clone(),
-        dimension: usize::try_from(config.embedding_dimension)?,
+        url: config.qdrant.url.clone(),
+        api_key: config.qdrant.api_key.clone(),
+        collection: config.qdrant.collection.clone(),
+        vector_name: config.qdrant.vector_name.clone(),
+        dimension: usize::try_from(config.embedding.dimension)?,
     })?;
     qdrant.ensure_collection().await?;
 
     // Initialize object store for backups
     let object_store = ObjectStore::new(
-        &config.minio_endpoint,
-        &config.minio_bucket,
-        &config.minio_access_key,
-        &config.minio_secret_key,
-        &config.minio_region,
+        &config.minio.endpoint,
+        &config.minio.bucket,
+        &config.minio.access_key,
+        &config.minio.secret_key,
+        &config.minio.region,
     )?;
     object_store.ensure_bucket().await.unwrap_or_else(|error| {
         tracing::warn!(error = %error, "failed to ensure S3 bucket (will retry on backup)");
     });
 
     tracing::info!(
-        worker_id = %config.worker_identity,
-        embedding_profile = %config.embedding_profile_version,
-        qdrant_collection = %config.qdrant_collection,
-        embedding_request_interval_ms = config.embedding_request_interval_ms,
-        backup_cron_hour_utc = config.backup_cron_hour_utc,
-        backup_retention_days = config.backup_retention_days,
+        worker_id = %config.worker.identity,
+        embedding_profile = %config.embedding.profile_version,
+        qdrant_collection = %config.qdrant.collection,
+        embedding_request_interval_ms = config.embedding.request_interval_ms,
+        backup_cron_hour_utc = config.backup.cron_hour_utc,
+        backup_retention_days = config.backup.retention_days,
         "ingestion, embedding, and backup worker started"
     );
 
     loop {
-        match jobs::run_one(&repository, &service, &config.worker_identity).await {
+        match jobs::run_one(&repository, &service, &config.worker.identity).await {
             Ok(true) => continue,
             Ok(false) => {}
             Err(error) => tracing::error!(error = %error, "ingestion worker iteration failed"),
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
             &voyage,
             &qdrant,
             &embedding_config,
-            &config.worker_identity,
+            &config.worker.identity,
         )
         .await
         {
@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Check if it's time for a scheduled backup
-        if backup_jobs::should_run_backup(&pool, config.backup_cron_hour_utc).await {
+        if backup_jobs::should_run_backup(&pool, config.backup.cron_hour_utc).await {
             if let Err(error) = backup_jobs::run_backup(&object_store, &pool, &config).await {
                 tracing::error!(error = %error, "scheduled backup failed");
             }

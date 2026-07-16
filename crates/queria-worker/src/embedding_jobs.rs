@@ -40,7 +40,6 @@ impl Default for EmbeddingWorkerConfig {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EmbeddingJobStore: Send + Sync {
     async fn claim_next(&self, worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>>;
@@ -468,11 +467,11 @@ impl EmbeddingJobStore for PgEmbeddingRepository {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use mockall::Sequence;
     use queria_core::model::KnowledgeScope;
     use queria_search::embedding::{
         EmbeddingDocument, EmbeddingVector, VectorIndexHealth, VectorPoint, VectorSearchRequest,
     };
+    use std::sync::Mutex;
 
     struct OkProvider;
     #[async_trait]
@@ -534,10 +533,149 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct FakeEmbeddingJobStore {
+        claim_next: Mutex<Option<QueriaResult<Option<IngestionJobRecord>>>>,
+        claim_chunk_batches: Mutex<Vec<QueriaResult<Vec<EmbeddingChunkRecord>>>>,
+        mark_batch_ready_calls: Mutex<Vec<(Vec<Uuid>, i32)>>,
+        mark_batch_failed_calls: Mutex<Vec<(Vec<Uuid>, String, bool)>>,
+        complete_job_calls: Mutex<Vec<(IngestionJobId, Value)>>,
+        fail_job_calls: Mutex<Vec<(IngestionJobId, String)>>,
+        release_job_calls: Mutex<Vec<(IngestionJobId, String, i64)>>,
+        pause_job_calls: Mutex<Vec<(IngestionJobId, i64, u64)>>,
+        cancellation_results: Mutex<Vec<bool>>,
+    }
+
+    #[async_trait]
+    impl EmbeddingJobStore for FakeEmbeddingJobStore {
+        async fn claim_next(
+            &self,
+            _worker_id: &str,
+        ) -> QueriaResult<Option<IngestionJobRecord>> {
+            self.claim_next
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or(Ok(None))
+        }
+
+        async fn claim_chunk_batch(
+            &self,
+            _job_id: IngestionJobId,
+            _batch_size: i64,
+            _profile_version: &str,
+        ) -> QueriaResult<Vec<EmbeddingChunkRecord>> {
+            let mut batches = self.claim_chunk_batches.lock().expect("lock");
+            if batches.is_empty() {
+                Ok(Vec::new())
+            } else {
+                batches.remove(0)
+            }
+        }
+
+        async fn mark_batch_ready(
+            &self,
+            completions: &[EmbeddingCompletion],
+            _provider: &str,
+            _model: &str,
+            dimension: i32,
+            _profile_version: &str,
+        ) -> QueriaResult<()> {
+            self.mark_batch_ready_calls.lock().expect("lock").push((
+                completions.iter().map(|c| c.chunk_id).collect(),
+                dimension,
+            ));
+            Ok(())
+        }
+
+        async fn mark_batch_failed(
+            &self,
+            chunk_ids: &[Uuid],
+            error: &str,
+            retryable: bool,
+        ) -> QueriaResult<()> {
+            self.mark_batch_failed_calls.lock().expect("lock").push((
+                chunk_ids.to_vec(),
+                error.to_owned(),
+                retryable,
+            ));
+            Ok(())
+        }
+
+        async fn qdrant_delete_points(
+            &self,
+            _job_id: IngestionJobId,
+        ) -> QueriaResult<Vec<Uuid>> {
+            Ok(Vec::new())
+        }
+
+        async fn complete_job(
+            &self,
+            job_id: IngestionJobId,
+            result: Value,
+        ) -> QueriaResult<bool> {
+            self.complete_job_calls
+                .lock()
+                .expect("lock")
+                .push((job_id, result));
+            Ok(true)
+        }
+
+        async fn fail_job(&self, job_id: IngestionJobId, error: &str) -> QueriaResult<bool> {
+            self.fail_job_calls
+                .lock()
+                .expect("lock")
+                .push((job_id, error.to_owned()));
+            Ok(true)
+        }
+
+        async fn release_job_for_retry(
+            &self,
+            job_id: IngestionJobId,
+            error: &str,
+            backoff_seconds: i64,
+        ) -> QueriaResult<bool> {
+            self.release_job_calls.lock().expect("lock").push((
+                job_id,
+                error.to_owned(),
+                backoff_seconds,
+            ));
+            Ok(true)
+        }
+
+        async fn pause_job_for_request_interval(
+            &self,
+            job_id: IngestionJobId,
+            delay_millis: i64,
+            processed_chunks: u64,
+        ) -> QueriaResult<bool> {
+            self.pause_job_calls.lock().expect("lock").push((
+                job_id,
+                delay_millis,
+                processed_chunks,
+            ));
+            Ok(true)
+        }
+
+        async fn cancellation_requested(
+            &self,
+            _job_id: IngestionJobId,
+        ) -> QueriaResult<bool> {
+            let mut results = self.cancellation_results.lock().expect("lock");
+            if results.is_empty() {
+                Ok(false)
+            } else {
+                Ok(results.remove(0))
+            }
+        }
+    }
+
     #[tokio::test]
     async fn no_embedding_job_returns_idle() {
-        let mut store = MockEmbeddingJobStore::new();
-        store.expect_claim_next().once().returning(|_| Ok(None));
+        let store = FakeEmbeddingJobStore {
+            claim_next: Mutex::new(Some(Ok(None))),
+            ..Default::default()
+        };
 
         assert!(
             !run_one(
@@ -558,40 +696,12 @@ mod tests {
         let job_id = IngestionJobId::from_uuid(job.id);
         let chunk = embedding_chunk();
         let chunk_id = chunk.chunk_id;
-        let mut sequence = Sequence::new();
-        let mut store = MockEmbeddingJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_cancellation_requested()
-            .times(2)
-            .returning(|_| Ok(false));
-        store
-            .expect_claim_chunk_batch()
-            .once()
-            .in_sequence(&mut sequence)
-            .return_once(move |_, _, _| Ok(vec![chunk]));
-        store
-            .expect_claim_chunk_batch()
-            .once()
-            .in_sequence(&mut sequence)
-            .returning(|_, _, _| Ok(Vec::new()));
-        store
-            .expect_mark_batch_ready()
-            .once()
-            .withf(move |completions, _, _, dimension, _| {
-                completions.len() == 1 && completions[0].chunk_id == chunk_id && *dimension == 2
-            })
-            .returning(|_, _, _, _, _| Ok(()));
-        store
-            .expect_complete_job()
-            .once()
-            .withf(move |seen_job_id, result| {
-                *seen_job_id == job_id && result["processed_chunks"] == 1
-            })
-            .returning(|_, _| Ok(true));
+        let store = FakeEmbeddingJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            claim_chunk_batches: Mutex::new(vec![Ok(vec![chunk]), Ok(Vec::new())]),
+            cancellation_results: Mutex::new(vec![false, false]),
+            ..Default::default()
+        };
         let config = EmbeddingWorkerConfig {
             dimension: 2,
             profile_version: "test-v1".to_owned(),
@@ -603,6 +713,15 @@ mod tests {
                 .await
                 .expect("backfill should succeed")
         );
+
+        let ready = store.mark_batch_ready_calls.lock().expect("lock");
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].0, vec![chunk_id]);
+        assert_eq!(ready[0].1, 2);
+        let completed = store.complete_job_calls.lock().expect("lock");
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].0, job_id);
+        assert_eq!(completed[0].1["processed_chunks"], 1);
     }
 
     #[tokio::test]
@@ -611,34 +730,12 @@ mod tests {
         let job_id = IngestionJobId::from_uuid(job.id);
         let chunk = embedding_chunk();
         let chunk_id = chunk.chunk_id;
-        let mut store = MockEmbeddingJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_cancellation_requested()
-            .once()
-            .returning(|_| Ok(false));
-        store
-            .expect_claim_chunk_batch()
-            .once()
-            .return_once(move |_, _, _| Ok(vec![chunk]));
-        store
-            .expect_mark_batch_ready()
-            .once()
-            .withf(move |completions, _, _, dimension, _| {
-                completions.len() == 1 && completions[0].chunk_id == chunk_id && *dimension == 2
-            })
-            .returning(|_, _, _, _, _| Ok(()));
-        store
-            .expect_pause_job_for_request_interval()
-            .once()
-            .withf(move |seen_job_id, delay_millis, processed_chunks| {
-                *seen_job_id == job_id && *delay_millis == 60_000 && *processed_chunks == 1
-            })
-            .returning(|_, _, _| Ok(true));
-        store.expect_complete_job().never();
+        let store = FakeEmbeddingJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            claim_chunk_batches: Mutex::new(vec![Ok(vec![chunk])]),
+            cancellation_results: Mutex::new(vec![false]),
+            ..Default::default()
+        };
         let config = EmbeddingWorkerConfig {
             dimension: 2,
             profile_version: "test-v1".to_owned(),
@@ -653,6 +750,17 @@ mod tests {
         .await
         .expect("paced worker should not sleep while holding a running job")
         .expect("backfill should release iteration cleanly");
+
+        let ready = store.mark_batch_ready_calls.lock().expect("lock");
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].0, vec![chunk_id]);
+        assert_eq!(ready[0].1, 2);
+        let pauses = store.pause_job_calls.lock().expect("lock");
+        assert_eq!(pauses.len(), 1);
+        assert_eq!(pauses[0].0, job_id);
+        assert_eq!(pauses[0].1, 60_000);
+        assert_eq!(pauses[0].2, 1);
+        assert!(store.complete_job_calls.lock().expect("lock").is_empty());
     }
 
     #[tokio::test]
@@ -661,36 +769,12 @@ mod tests {
         let job_id = IngestionJobId::from_uuid(job.id);
         let chunk = embedding_chunk();
         let chunk_id = chunk.chunk_id;
-        let mut store = MockEmbeddingJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_cancellation_requested()
-            .once()
-            .returning(|_| Ok(false));
-        store
-            .expect_claim_chunk_batch()
-            .once()
-            .return_once(move |_, _, _| Ok(vec![chunk]));
-        store
-            .expect_mark_batch_failed()
-            .once()
-            .withf(move |chunk_ids, error, retryable| {
-                chunk_ids == [chunk_id] && error.contains("429 Too Many Requests") && *retryable
-            })
-            .returning(|_, _, _| Ok(()));
-        store
-            .expect_release_job_for_retry()
-            .once()
-            .withf(move |seen_job_id, error, backoff_seconds| {
-                *seen_job_id == job_id
-                    && error.contains("429 Too Many Requests")
-                    && *backoff_seconds > 0
-            })
-            .returning(|_, _, _| Ok(true));
-        store.expect_fail_job().never();
+        let store = FakeEmbeddingJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            claim_chunk_batches: Mutex::new(vec![Ok(vec![chunk])]),
+            cancellation_results: Mutex::new(vec![false]),
+            ..Default::default()
+        };
 
         assert!(
             run_one(
@@ -703,6 +787,18 @@ mod tests {
             .await
             .expect("retryable provider error should requeue the job")
         );
+
+        let failed = store.mark_batch_failed_calls.lock().expect("lock");
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].0, vec![chunk_id]);
+        assert!(failed[0].1.contains("429 Too Many Requests"));
+        assert!(failed[0].2);
+        let released = store.release_job_calls.lock().expect("lock");
+        assert_eq!(released.len(), 1);
+        assert_eq!(released[0].0, job_id);
+        assert!(released[0].1.contains("429 Too Many Requests"));
+        assert!(released[0].2 > 0);
+        assert!(store.fail_job_calls.lock().expect("lock").is_empty());
     }
 
     #[test]

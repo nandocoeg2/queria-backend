@@ -1,7 +1,6 @@
 use queria_backup::manifest::{BackupManifest, artifact_key, manifest_key, sha256_hex};
 use queria_backup::object_store::ObjectStore;
 use queria_backup::postgres::{backup_postgres, pg_dump_version};
-use queria_backup::restore_drill::run_restore_drill;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::test]
@@ -125,17 +124,17 @@ async fn test_postgres_backup_and_drill() {
         .await
         .expect("failed to upload manifest");
 
-    // 3. Run restore drill
-    let drill = run_restore_drill(&store, org_slug, secret_key)
+    // 3. Verify artifacts without restore_drill (module lives in queria-cli)
+    let loaded = store
+        .get_object(&m_key)
         .await
-        .expect("run_restore_drill failed");
-
-    assert!(drill.manifest_found);
-    assert!(drill.pg_dump_exists);
-    assert!(drill.pg_dump_checksum_ok);
-    assert!(drill.all_passed);
-    assert!(drill.errors.is_empty());
+        .expect("download manifest");
+    let verified = BackupManifest::from_json_bytes(&loaded).expect("parse manifest");
+    assert!(verified.verify_signature(secret_key));
+    let pg_bytes = store.get_object(&pg_key).await.expect("download pg dump");
+    assert!(verified.verify_checksum(&pg_key, &pg_bytes));
 }
+
 
 #[tokio::test]
 async fn test_database_retention() {

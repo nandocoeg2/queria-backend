@@ -37,7 +37,6 @@ impl EmbeddingVector {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     async fn embed_documents(
@@ -85,7 +84,6 @@ pub struct VectorIndexHealth {
     pub points_count: u64,
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait VectorIndex: Send + Sync {
     async fn ensure_collection(&self) -> QueriaResult<()>;

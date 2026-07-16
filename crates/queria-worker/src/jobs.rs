@@ -4,7 +4,6 @@ use queria_db::ingestion::{ApplyManifestResult, GitIngestionSourceRecord, Ingest
 use queria_ingestion::model::PreparedGitManifest;
 use queria_ingestion::service::{GitIngestionService, GitIngestionSource};
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait JobStore: Send + Sync {
     async fn claim_next(&self, worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>>;
@@ -29,7 +28,6 @@ pub trait JobStore: Send + Sync {
     ) -> QueriaResult<bool>;
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait ManifestPreparer: Send + Sync {
     async fn prepare(&self, source: GitIngestionSourceRecord) -> QueriaResult<PreparedGitManifest>;
@@ -143,19 +141,144 @@ mod tests {
     use chrono::Utc;
     use queria_core::QueriaError;
     use std::path::PathBuf;
+    use std::sync::Mutex;
     use uuid::Uuid;
+
+    #[derive(Default)]
+    struct FakeJobStore {
+        claim_next: Mutex<Option<QueriaResult<Option<IngestionJobRecord>>>>,
+        load_source: Mutex<Option<QueriaResult<Option<GitIngestionSourceRecord>>>>,
+        cancellation_results: Mutex<Vec<bool>>,
+        apply_result: Mutex<Option<QueriaResult<ApplyManifestResult>>>,
+        mark_failed_errors: Mutex<Vec<String>>,
+        apply_called: Mutex<bool>,
+    }
+
+    #[async_trait]
+    impl JobStore for FakeJobStore {
+        async fn claim_next(
+            &self,
+            _worker_id: &str,
+        ) -> QueriaResult<Option<IngestionJobRecord>> {
+            self.claim_next
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or(Ok(None))
+        }
+
+        async fn load_source(
+            &self,
+            _job_id: queria_core::ids::IngestionJobId,
+        ) -> QueriaResult<Option<GitIngestionSourceRecord>> {
+            self.load_source
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or(Ok(None))
+        }
+
+        async fn cancellation_requested(
+            &self,
+            _job_id: queria_core::ids::IngestionJobId,
+        ) -> QueriaResult<bool> {
+            let mut results = self.cancellation_results.lock().expect("lock");
+            if results.is_empty() {
+                Ok(false)
+            } else {
+                Ok(results.remove(0))
+            }
+        }
+
+        async fn apply_manifest(
+            &self,
+            _job_id: queria_core::ids::IngestionJobId,
+            _pipeline_identity: &str,
+            _manifest: &PreparedGitManifest,
+        ) -> QueriaResult<ApplyManifestResult> {
+            *self.apply_called.lock().expect("lock") = true;
+            self.apply_result
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or(Ok(ApplyManifestResult {
+                    indexed_files: 1,
+                    knowledge_items: 1,
+                    chunks: 1,
+                    ..Default::default()
+                }))
+        }
+
+        async fn mark_failed(
+            &self,
+            _job_id: queria_core::ids::IngestionJobId,
+            error: &str,
+        ) -> QueriaResult<bool> {
+            self.mark_failed_errors
+                .lock()
+                .expect("lock")
+                .push(error.to_owned());
+            Ok(true)
+        }
+    }
+
+    struct FakeManifestPreparer {
+        result: Mutex<Option<QueriaResult<PreparedGitManifest>>>,
+        prepare_called: Mutex<bool>,
+    }
+
+    impl FakeManifestPreparer {
+        fn ok(manifest: PreparedGitManifest) -> Self {
+            Self {
+                result: Mutex::new(Some(Ok(manifest))),
+                prepare_called: Mutex::new(false),
+            }
+        }
+
+        fn err(error: QueriaError) -> Self {
+            Self {
+                result: Mutex::new(Some(Err(error))),
+                prepare_called: Mutex::new(false),
+            }
+        }
+
+        fn unused() -> Self {
+            Self {
+                result: Mutex::new(None),
+                prepare_called: Mutex::new(false),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ManifestPreparer for FakeManifestPreparer {
+        async fn prepare(
+            &self,
+            _source: GitIngestionSourceRecord,
+        ) -> QueriaResult<PreparedGitManifest> {
+            *self.prepare_called.lock().expect("lock") = true;
+            self.result
+                .lock()
+                .expect("lock")
+                .take()
+                .expect("prepare should not be called")
+        }
+    }
 
     #[tokio::test]
     async fn no_queued_job_returns_idle() {
-        let mut store = MockJobStore::new();
-        store.expect_claim_next().once().returning(|_| Ok(None));
-        let preparer = MockManifestPreparer::new();
+        let store = FakeJobStore {
+            claim_next: Mutex::new(Some(Ok(None))),
+            ..Default::default()
+        };
+        let preparer = FakeManifestPreparer::unused();
 
         assert!(
             !run_one(&store, &preparer, "worker-1")
                 .await
                 .expect("worker should run")
         );
+        assert!(!*preparer.prepare_called.lock().expect("lock"));
     }
 
     #[tokio::test]
@@ -164,38 +287,28 @@ mod tests {
         let job_id = queria_core::ids::IngestionJobId::from_uuid(job.id);
         let source = source(job.source_document_id.expect("source id"));
         let manifest = manifest();
-        let mut store = MockJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_load_source()
-            .once()
-            .return_once(move |_| Ok(Some(source)));
-        store
-            .expect_cancellation_requested()
-            .times(2)
-            .returning(|_| Ok(false));
-        store.expect_apply_manifest().once().returning(|_, _, _| {
-            Ok(ApplyManifestResult {
+        let store = FakeJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            load_source: Mutex::new(Some(Ok(Some(source)))),
+            cancellation_results: Mutex::new(vec![false, false]),
+            apply_result: Mutex::new(Some(Ok(ApplyManifestResult {
                 indexed_files: 1,
                 knowledge_items: 1,
                 chunks: 1,
                 ..Default::default()
-            })
-        });
-        let mut preparer = MockManifestPreparer::new();
-        preparer
-            .expect_prepare()
-            .once()
-            .return_once(move |_| Ok(manifest));
+            }))),
+            ..Default::default()
+        };
+        let preparer = FakeManifestPreparer::ok(manifest);
 
         assert!(
             run_one(&store, &preparer, "worker-1")
                 .await
                 .expect("worker should run")
         );
+        assert!(*store.apply_called.lock().expect("lock"));
+        assert!(*preparer.prepare_called.lock().expect("lock"));
+        assert!(store.mark_failed_errors.lock().expect("lock").is_empty());
         assert_eq!(job_id.as_uuid(), job_id.as_uuid());
     }
 
@@ -203,62 +316,45 @@ mod tests {
     async fn preparation_failure_marks_job_failed() {
         let job = job();
         let source = source(job.source_document_id.expect("source id"));
-        let mut store = MockJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_load_source()
-            .once()
-            .return_once(move |_| Ok(Some(source)));
-        store
-            .expect_cancellation_requested()
-            .once()
-            .returning(|_| Ok(false));
-        store
-            .expect_mark_failed()
-            .once()
-            .withf(|_, error| error.contains("secret scan failed"))
-            .returning(|_, _| Ok(true));
-        let mut preparer = MockManifestPreparer::new();
-        preparer
-            .expect_prepare()
-            .once()
-            .returning(|_| Err(QueriaError::Validation("secret scan failed".to_owned())));
+        let store = FakeJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            load_source: Mutex::new(Some(Ok(Some(source)))),
+            cancellation_results: Mutex::new(vec![false]),
+            ..Default::default()
+        };
+        let preparer =
+            FakeManifestPreparer::err(QueriaError::Validation("secret scan failed".to_owned()));
 
         assert!(
             run_one(&store, &preparer, "worker-1")
                 .await
                 .expect("worker should survive job failure")
         );
+        let errors = store.mark_failed_errors.lock().expect("lock");
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("secret scan failed"));
+        assert!(!*store.apply_called.lock().expect("lock"));
     }
 
     #[tokio::test]
     async fn cancelled_job_never_reaches_manifest_preparation() {
         let job = job();
         let source = source(job.source_document_id.expect("source id"));
-        let mut store = MockJobStore::new();
-        store
-            .expect_claim_next()
-            .once()
-            .return_once(move |_| Ok(Some(job)));
-        store
-            .expect_load_source()
-            .once()
-            .return_once(move |_| Ok(Some(source)));
-        store
-            .expect_cancellation_requested()
-            .once()
-            .returning(|_| Ok(true));
-        store.expect_mark_failed().once().returning(|_, _| Ok(true));
-        let preparer = MockManifestPreparer::new();
+        let store = FakeJobStore {
+            claim_next: Mutex::new(Some(Ok(Some(job)))),
+            load_source: Mutex::new(Some(Ok(Some(source)))),
+            cancellation_results: Mutex::new(vec![true]),
+            ..Default::default()
+        };
+        let preparer = FakeManifestPreparer::unused();
 
         assert!(
             run_one(&store, &preparer, "worker-1")
                 .await
                 .expect("worker should cancel job")
         );
+        assert!(!*preparer.prepare_called.lock().expect("lock"));
+        assert_eq!(store.mark_failed_errors.lock().expect("lock").len(), 1);
     }
 
     fn job() -> IngestionJobRecord {

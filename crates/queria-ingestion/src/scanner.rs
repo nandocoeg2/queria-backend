@@ -1,12 +1,10 @@
 use async_trait::async_trait;
-use mockall::automock;
 use queria_core::{QueriaError, QueriaResult};
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
 
-#[automock]
 #[async_trait]
 pub trait SecretScanner: Send + Sync {
     async fn scan(&self, repository_path: &Path) -> QueriaResult<()>;

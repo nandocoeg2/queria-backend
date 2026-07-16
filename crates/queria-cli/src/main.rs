@@ -4,6 +4,7 @@ mod database;
 mod doctor_mcp;
 mod embeddings;
 mod evaluation;
+mod restore_drill;
 mod retrieval;
 
 use clap::{Parser, Subcommand};

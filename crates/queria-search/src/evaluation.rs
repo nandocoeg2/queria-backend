@@ -9,7 +9,6 @@ use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait EvaluationRetriever: Send + Sync {
     async fn retrieve(
@@ -118,6 +117,39 @@ fn should_retry(response: &RetrieveContextResponse) -> bool {
 mod tests {
     use super::*;
     use queria_core::contracts::RetrievalDiagnostics;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct ScriptedRetriever {
+        responses: Mutex<Vec<QueriaResult<RetrieveContextResponse>>>,
+        calls: AtomicUsize,
+    }
+
+    impl ScriptedRetriever {
+        fn new(responses: Vec<QueriaResult<RetrieveContextResponse>>) -> Self {
+            Self {
+                responses: Mutex::new(responses),
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EvaluationRetriever for ScriptedRetriever {
+        async fn retrieve(
+            &self,
+            _user_id: Uuid,
+            _request: RetrieveContextRequest,
+        ) -> QueriaResult<RetrieveContextResponse> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut responses = self.responses.lock().expect("lock");
+            assert!(
+                !responses.is_empty(),
+                "unexpected retrieve call"
+            );
+            responses.remove(0)
+        }
+    }
 
     fn test_response(mode: RetrievalMode, has_items: bool) -> RetrieveContextResponse {
         RetrieveContextResponse {
@@ -153,11 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve_immediate_success() {
-        let mut mock = MockEvaluationRetriever::new();
-        mock.expect_retrieve()
-            .once()
-            .returning(|_, _| Ok(test_response(RetrievalMode::Hybrid, true)));
-
+        let mock = ScriptedRetriever::new(vec![Ok(test_response(RetrievalMode::Hybrid, true))]);
         let executor = EvaluationExecutor::new(mock, 3, Duration::from_millis(1));
         let res = executor
             .retrieve_with_retry(
@@ -178,18 +206,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve_retry_then_success() {
-        let mut mock = MockEvaluationRetriever::new();
-        // First returns empty lexical fallback (triggers retry)
-        // Second returns hybrid success
-        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        mock.expect_retrieve().times(2).returning(move |_, _| {
-            let count = call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if count == 0 {
-                Ok(test_response(RetrievalMode::LexicalFallback, false))
-            } else {
-                Ok(test_response(RetrievalMode::Hybrid, true))
-            }
-        });
+        let mock = ScriptedRetriever::new(vec![
+            Ok(test_response(RetrievalMode::LexicalFallback, false)),
+            Ok(test_response(RetrievalMode::Hybrid, true)),
+        ]);
 
         let executor = EvaluationExecutor::new(mock, 3, Duration::from_millis(1));
         let res = executor
@@ -211,10 +231,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_retrieve_exhausted_retries() {
-        let mut mock = MockEvaluationRetriever::new();
-        mock.expect_retrieve()
-            .times(3)
-            .returning(|_, _| Ok(test_response(RetrievalMode::LexicalFallback, false)));
+        let mock = ScriptedRetriever::new(vec![
+            Ok(test_response(RetrievalMode::LexicalFallback, false)),
+            Ok(test_response(RetrievalMode::LexicalFallback, false)),
+            Ok(test_response(RetrievalMode::LexicalFallback, false)),
+        ]);
 
         let executor = EvaluationExecutor::new(mock, 3, Duration::from_millis(1));
         let res = executor

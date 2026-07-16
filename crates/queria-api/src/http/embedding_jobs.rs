@@ -44,7 +44,7 @@ async fn trigger_backfill(
         .enqueue_backfill(
             session.user_id,
             project_id,
-            &state.config.embedding_profile_version,
+            &state.config.embedding.profile_version,
         )
         .await
         .map_err(map_error)?
@@ -86,12 +86,12 @@ async fn retrieval_status(
     let session = require_session(&state, &headers).await?;
     let (project_id, repository) = project_and_repository(&state, session.user_id, &slug).await?;
     let counts = repository
-        .status_counts(project_id, &state.config.embedding_profile_version)
+        .status_counts(project_id, &state.config.embedding.profile_version)
         .await
         .map_err(map_error)?;
     Ok(Json(json!({
         "project_id": project_id,
-        "embedding_profile_version": state.config.embedding_profile_version,
+        "embedding_profile_version": state.config.embedding.profile_version,
         "counts": counts
     })))
 }

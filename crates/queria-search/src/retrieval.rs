@@ -36,7 +36,6 @@ pub struct RetrievalConfig {
     pub candidate_cap: u32,
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait HybridRetrievalStore: Send + Sync {
     async fn authorize(
@@ -72,29 +71,29 @@ pub fn build_pg_retrieval_service(
     config: &AppConfig,
     pool: PgPool,
 ) -> QueriaResult<PgRetrievalService> {
-    let dimension = usize::try_from(config.embedding_dimension)
+    let dimension = usize::try_from(config.embedding.dimension)
         .map_err(|_| QueriaError::Config("embedding dimension is invalid".to_owned()))?;
     Ok(RetrievalService::new(
         PgHybridRetrievalRepository::new(pool),
         VoyageClient::new(
-            config.voyage_api_key.clone(),
-            config.embedding_model.clone(),
+            config.embedding.voyage_api_key.clone(),
+            config.embedding.model.clone(),
             dimension,
-            Duration::from_secs(config.embedding_timeout_seconds),
-            config.embedding_max_retries,
+            Duration::from_secs(config.embedding.timeout_seconds),
+            config.embedding.max_retries,
         )?,
         QdrantClient::new(QdrantConfig {
-            url: config.qdrant_url.clone(),
-            api_key: config.qdrant_api_key.clone(),
-            collection: config.qdrant_collection.clone(),
-            vector_name: config.qdrant_vector_name.clone(),
+            url: config.qdrant.url.clone(),
+            api_key: config.qdrant.api_key.clone(),
+            collection: config.qdrant.collection.clone(),
+            vector_name: config.qdrant.vector_name.clone(),
             dimension,
         })?,
         RetrievalConfig {
-            embedding_profile_version: config.embedding_profile_version.clone(),
-            rrf_k: config.retrieval_rrf_k,
-            candidate_multiplier: config.retrieval_candidate_multiplier,
-            candidate_cap: config.retrieval_candidate_cap,
+            embedding_profile_version: config.embedding.profile_version.clone(),
+            rrf_k: config.retrieval.rrf_k,
+            candidate_multiplier: config.retrieval.candidate_multiplier,
+            candidate_cap: config.retrieval.candidate_cap,
         },
     ))
 }
@@ -283,15 +282,166 @@ fn sanitized_provider_error(error: &QueriaError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::{EmbeddingDocument, EmbeddingVector, VectorCandidate, VectorPoint};
     use queria_core::contracts::Citation;
     use queria_core::ids::SourceDocumentId;
     use queria_core::model::KnowledgeScope;
-    use queria_search_test_support::*;
+    use std::sync::Mutex;
 
-    mod queria_search_test_support {
-        pub use crate::embedding::{
-            EmbeddingVector, MockEmbeddingProvider, MockVectorIndex, VectorCandidate,
-        };
+    struct FakeHybridStore {
+        access: RetrievalAccess,
+        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool)>>,
+        lexical: Mutex<Option<Vec<DbRankedChunk>>>,
+        hydrate_items: Mutex<Option<Vec<RetrievedContextItem>>>,
+    }
+
+    impl FakeHybridStore {
+        fn new(
+            access: RetrievalAccess,
+            lexical: Vec<DbRankedChunk>,
+            hydrate_items: Vec<RetrievedContextItem>,
+        ) -> Self {
+            Self {
+                access,
+                authorize_checks: Mutex::new(Vec::new()),
+                lexical: Mutex::new(Some(lexical)),
+                hydrate_items: Mutex::new(Some(hydrate_items)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl HybridRetrievalStore for FakeHybridStore {
+        async fn authorize(
+            &self,
+            principal: &RetrievalPrincipal,
+            project_id: ProjectId,
+            include_global: bool,
+        ) -> QueriaResult<RetrievalAccess> {
+            self.authorize_checks.lock().expect("lock").push((
+                principal.clone(),
+                project_id,
+                include_global,
+            ));
+            Ok(self.access.clone())
+        }
+
+        async fn lexical_search(
+            &self,
+            _access: &RetrievalAccess,
+            _query: &str,
+            _limit: i64,
+        ) -> QueriaResult<Vec<DbRankedChunk>> {
+            Ok(self
+                .lexical
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or_default())
+        }
+
+        async fn hydrate(
+            &self,
+            _access: &RetrievalAccess,
+            _chunk_ids: &[ChunkId],
+        ) -> QueriaResult<Vec<RetrievedContextItem>> {
+            Ok(self
+                .hydrate_items
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or_default())
+        }
+    }
+
+    struct FailProvider;
+    #[async_trait]
+    impl EmbeddingProvider for FailProvider {
+        async fn embed_documents(
+            &self,
+            _inputs: &[EmbeddingDocument],
+        ) -> QueriaResult<Vec<EmbeddingVector>> {
+            Err(QueriaError::Infrastructure(
+                "provider unavailable".to_owned(),
+            ))
+        }
+
+        async fn embed_query(&self, _query: &str) -> QueriaResult<EmbeddingVector> {
+            Err(QueriaError::Infrastructure(
+                "provider unavailable".to_owned(),
+            ))
+        }
+    }
+
+    struct OkProvider;
+    #[async_trait]
+    impl EmbeddingProvider for OkProvider {
+        async fn embed_documents(
+            &self,
+            inputs: &[EmbeddingDocument],
+        ) -> QueriaResult<Vec<EmbeddingVector>> {
+            inputs
+                .iter()
+                .map(|_| EmbeddingVector::new(vec![0.1, 0.2], 2))
+                .collect()
+        }
+
+        async fn embed_query(&self, _query: &str) -> QueriaResult<EmbeddingVector> {
+            EmbeddingVector::new(vec![0.1, 0.2], 2)
+        }
+    }
+
+    struct FakeIndex {
+        candidates: Mutex<Option<Vec<VectorCandidate>>>,
+        last_search: Mutex<Option<VectorSearchRequest>>,
+    }
+
+    impl FakeIndex {
+        fn new(candidates: Vec<VectorCandidate>) -> Self {
+            Self {
+                candidates: Mutex::new(Some(candidates)),
+                last_search: Mutex::new(None),
+            }
+        }
+
+        fn empty() -> Self {
+            Self::new(Vec::new())
+        }
+    }
+
+    #[async_trait]
+    impl VectorIndex for FakeIndex {
+        async fn ensure_collection(&self) -> QueriaResult<()> {
+            Ok(())
+        }
+
+        async fn upsert(&self, _points: &[VectorPoint]) -> QueriaResult<()> {
+            Ok(())
+        }
+
+        async fn search(
+            &self,
+            request: VectorSearchRequest,
+        ) -> QueriaResult<Vec<VectorCandidate>> {
+            *self.last_search.lock().expect("lock") = Some(request);
+            Ok(self
+                .candidates
+                .lock()
+                .expect("lock")
+                .take()
+                .unwrap_or_default())
+        }
+
+        async fn delete(&self, _point_ids: &[Uuid]) -> QueriaResult<()> {
+            Ok(())
+        }
+
+        async fn health(&self) -> QueriaResult<crate::embedding::VectorIndexHealth> {
+            Ok(crate::embedding::VectorIndexHealth {
+                collection: "test".to_owned(),
+                points_count: 0,
+            })
+        }
     }
 
     #[tokio::test]
@@ -300,25 +450,17 @@ mod tests {
         let organization_id = Uuid::now_v7();
         let chunk_id = ChunkId::new();
         let source_document_id = SourceDocumentId::new();
-        let mut store = MockHybridRetrievalStore::new();
-        store.expect_authorize().once().return_once(move |_, _, _| {
-            Ok(RetrievalAccess {
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
                 organization_id,
                 project_id,
                 include_global: true,
-            })
-        });
-        store
-            .expect_lexical_search()
-            .once()
-            .return_once(move |_, _, _| {
-                Ok(vec![DbRankedChunk {
-                    chunk_id,
-                    score: 0.8,
-                }])
-            });
-        store.expect_hydrate().once().return_once(move |_, _| {
-            Ok(vec![RetrievedContextItem {
+            },
+            vec![DbRankedChunk {
+                chunk_id,
+                score: 0.8,
+            }],
+            vec![RetrievedContextItem {
                 chunk_id,
                 source_document_id,
                 scope: KnowledgeScope::Project,
@@ -331,16 +473,9 @@ mod tests {
                     line_end: Some(5),
                 },
                 score: 0.0,
-            }])
-        });
-        let mut provider = MockEmbeddingProvider::new();
-        provider.expect_embed_query().once().returning(|_| {
-            Err(QueriaError::Infrastructure(
-                "provider unavailable".to_owned(),
-            ))
-        });
-        let index = MockVectorIndex::new();
-        let service = RetrievalService::new(store, provider, index, config());
+            }],
+        );
+        let service = RetrievalService::new(store, FailProvider, FakeIndex::empty(), config());
 
         let response = service
             .retrieve_context(
@@ -368,22 +503,17 @@ mod tests {
         let organization_id = Uuid::now_v7();
         let shared = ChunkId::new();
         let source_document_id = SourceDocumentId::new();
-        let mut store = MockHybridRetrievalStore::new();
-        store.expect_authorize().return_once(move |_, _, _| {
-            Ok(RetrievalAccess {
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
                 organization_id,
                 project_id,
                 include_global: false,
-            })
-        });
-        store.expect_lexical_search().return_once(move |_, _, _| {
-            Ok(vec![DbRankedChunk {
+            },
+            vec![DbRankedChunk {
                 chunk_id: shared,
                 score: 0.8,
-            }])
-        });
-        store.expect_hydrate().return_once(move |_, _| {
-            Ok(vec![RetrievedContextItem {
+            }],
+            vec![RetrievedContextItem {
                 chunk_id: shared,
                 source_document_id,
                 scope: KnowledgeScope::Project,
@@ -396,20 +526,13 @@ mod tests {
                     line_end: Some(3),
                 },
                 score: 0.0,
-            }])
-        });
-        let mut provider = MockEmbeddingProvider::new();
-        provider
-            .expect_embed_query()
-            .returning(|_| EmbeddingVector::new(vec![0.1, 0.2], 2));
-        let mut index = MockVectorIndex::new();
-        index.expect_search().return_once(move |_| {
-            Ok(vec![VectorCandidate {
-                chunk_id: shared,
-                score: 0.9,
-            }])
-        });
-        let service = RetrievalService::new(store, provider, index, config());
+            }],
+        );
+        let index = FakeIndex::new(vec![VectorCandidate {
+            chunk_id: shared,
+            score: 0.9,
+        }]);
+        let service = RetrievalService::new(store, OkProvider, index, config());
 
         let response = service
             .retrieve_context(
@@ -437,35 +560,14 @@ mod tests {
         let organization_id = Uuid::now_v7();
         let chunk_id = ChunkId::new();
         let source_document_id = SourceDocumentId::new();
-        let mut store = MockHybridRetrievalStore::new();
-        store
-            .expect_authorize()
-            .once()
-            .withf(move |principal, seen_project_id, include_global| {
-                matches!(
-                    principal,
-                    RetrievalPrincipal::Agent {
-                        organization_id: seen_organization_id,
-                        project_slugs,
-                        allow_global_knowledge: false,
-                    } if *seen_organization_id == organization_id
-                        && project_slugs == &vec!["fjulian-me".to_owned()]
-                ) && *seen_project_id == project_id
-                    && *include_global
-            })
-            .return_once(move |_, _, _| {
-                Ok(RetrievalAccess {
-                    organization_id,
-                    project_id,
-                    include_global: false,
-                })
-            });
-        store
-            .expect_lexical_search()
-            .once()
-            .returning(|_, _, _| Ok(Vec::new()));
-        store.expect_hydrate().once().return_once(move |_, _| {
-            Ok(vec![RetrievedContextItem {
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
+                organization_id,
+                project_id,
+                include_global: false,
+            },
+            Vec::new(),
+            vec![RetrievedContextItem {
                 chunk_id,
                 source_document_id,
                 scope: KnowledgeScope::Project,
@@ -478,37 +580,22 @@ mod tests {
                     line_end: Some(8),
                 },
                 score: 0.0,
-            }])
-        });
-        let mut provider = MockEmbeddingProvider::new();
-        provider
-            .expect_embed_query()
-            .once()
-            .returning(|_| EmbeddingVector::new(vec![0.1, 0.2], 2));
-        let mut index = MockVectorIndex::new();
-        index
-            .expect_search()
-            .once()
-            .withf(move |request| {
-                request.organization_id == organization_id
-                    && request.project_id == project_id.as_uuid()
-                    && !request.include_global
-            })
-            .return_once(move |_| {
-                Ok(vec![VectorCandidate {
-                    chunk_id,
-                    score: 0.9,
-                }])
-            });
-        let service = RetrievalService::new(store, provider, index, config());
+            }],
+        );
+        let index = FakeIndex::new(vec![VectorCandidate {
+            chunk_id,
+            score: 0.9,
+        }]);
+        let service = RetrievalService::new(store, OkProvider, index, config());
 
+        let principal = RetrievalPrincipal::Agent {
+            organization_id,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            allow_global_knowledge: false,
+        };
         let response = service
             .retrieve_context(
-                &RetrievalPrincipal::Agent {
-                    organization_id,
-                    project_slugs: vec!["fjulian-me".to_owned()],
-                    allow_global_knowledge: false,
-                },
+                &principal,
                 RetrieveContextRequest {
                     project_id,
                     query: "integration".to_owned(),
@@ -518,6 +605,31 @@ mod tests {
             )
             .await
             .expect("agent retrieval should succeed");
+
+        let checks = service.store.authorize_checks.lock().expect("lock");
+        assert_eq!(checks.len(), 1);
+        assert!(matches!(
+            &checks[0].0,
+            RetrievalPrincipal::Agent {
+                organization_id: seen_organization_id,
+                project_slugs,
+                allow_global_knowledge: false,
+            } if *seen_organization_id == organization_id
+                && project_slugs == &vec!["fjulian-me".to_owned()]
+        ));
+        assert_eq!(checks[0].1, project_id);
+        assert!(checks[0].2);
+
+        let last_search = service
+            .vector_index
+            .last_search
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("search should have been called");
+        assert_eq!(last_search.organization_id, organization_id);
+        assert_eq!(last_search.project_id, project_id.as_uuid());
+        assert!(!last_search.include_global);
 
         assert_eq!(response.retrieval.mode, RetrievalMode::Hybrid);
         assert_eq!(response.items[0].scope, KnowledgeScope::Project);

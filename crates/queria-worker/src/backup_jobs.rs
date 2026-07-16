@@ -58,7 +58,7 @@ pub async fn run_backup(
     let mut manifest = BackupManifest::new(
         &config.first_org_slug,
         &schema_version,
-        &config.embedding_profile_version,
+        &config.embedding.profile_version,
     );
 
     // Get pg_dump version
@@ -86,9 +86,9 @@ pub async fn run_backup(
     // 2. Qdrant snapshot
     match backup_qdrant(
         store,
-        &config.qdrant_url,
-        &config.qdrant_api_key,
-        &config.qdrant_collection,
+        &config.qdrant.url,
+        &config.qdrant.api_key,
+        &config.qdrant.collection,
         &config.first_org_slug,
     )
     .await
@@ -108,7 +108,7 @@ pub async fn run_backup(
 
     // 3. Upload manifest
     let m_key = manifest_key(&config.first_org_slug);
-    manifest.sign(&config.minio_secret_key);
+    manifest.sign(&config.minio.secret_key);
     let manifest_bytes = manifest.to_json_bytes();
     let manifest_checksum = queria_backup::manifest::sha256_hex(&manifest_bytes);
     total_size += i64::try_from(manifest_bytes.len()).unwrap_or(0);
@@ -151,7 +151,7 @@ pub async fn run_backup(
         pool,
         store,
         &config.first_org_slug,
-        config.backup_retention_days,
+        config.backup.retention_days,
     )
     .await
     {

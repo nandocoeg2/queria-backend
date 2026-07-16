@@ -1,5 +1,5 @@
-use crate::manifest::{BackupManifest, sha256_hex};
-use crate::object_store::ObjectStore;
+use queria_backup::manifest::{BackupManifest, sha256_hex};
+use queria_backup::object_store::ObjectStore;
 use queria_core::{QueriaError, QueriaResult};
 use std::process::Stdio;
 use tokio::process::Command;
@@ -40,6 +40,7 @@ pub struct RestoreDrillOptions {
 }
 
 impl RestoreDrillOptions {
+    #[allow(dead_code)]
     pub fn should_restore_postgres(&self) -> bool {
         self.target_database_url
             .as_deref()
@@ -61,6 +62,7 @@ impl RestoreDrillOptions {
 /// checksums without actually restoring anything.
 ///
 /// This is a non-destructive read-only verification.
+#[allow(dead_code)]
 pub async fn run_restore_drill(
     store: &ObjectStore,
     org_slug: &str,
