@@ -53,10 +53,14 @@ fn response_with_items(items: Vec<RetrievedContextItem>) -> RetrieveContextRespo
 }
 
 fn item(scope: KnowledgeScope, source_path: &str) -> RetrievedContextItem {
+    use queria_core::contracts::KnowledgeLane;
+    use queria_core::model::KnowledgeStatus;
     RetrievedContextItem {
         chunk_id: ChunkId::new(),
         source_document_id: SourceDocumentId::new(),
         scope,
+        status: KnowledgeStatus::Approved,
+        lane: KnowledgeLane::Trusted,
         title: "title".to_owned(),
         body: "body".to_owned(),
         citation: Citation {

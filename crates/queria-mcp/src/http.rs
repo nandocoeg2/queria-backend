@@ -40,6 +40,8 @@ struct RetrievalArgs {
     project_id: ProjectId,
     query: String,
     include_global: Option<bool>,
+    /// Agent default true (IMP-14); omit or true for dual-lane, false for trusted-only.
+    include_scratch: Option<bool>,
     limit: Option<u32>,
 }
 
@@ -174,6 +176,8 @@ async fn call_tool(
                 project_id: args.project_id,
                 query: args.query,
                 include_global: args.include_global.unwrap_or(true),
+                // VAL-DL-026: agent default include_scratch=true
+                include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(5),
             };
             let response = hybrid_retrieve(state, agent, request).await?;
@@ -186,6 +190,7 @@ async fn call_tool(
                 project_id: args.project_id,
                 query: args.query,
                 include_global: args.include_global.unwrap_or(true),
+                include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(10),
             };
             let response = hybrid_retrieve(state, agent, request).await?;

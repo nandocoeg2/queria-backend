@@ -1,22 +1,27 @@
-use queria_core::contracts::{Citation, RetrievedContextItem};
+use queria_core::contracts::{Citation, KnowledgeLane, RetrievedContextItem};
 use queria_core::ids::{ChunkId, ProjectId, SourceDocumentId};
-use queria_core::model::KnowledgeScope;
+use queria_core::model::{KnowledgeScope, KnowledgeStatus};
 use queria_core::{QueriaError, QueriaResult};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+/// Dual-lane lexical search (IMP-14): approved always; project scratch when include_scratch.
+/// Bind order: $1 org, $2 project, $3 include_global, $4 include_scratch, $5 query, $6 limit.
 pub const LEXICAL_SEARCH_SQL: &str = "
 with access as (
-  select $1::uuid as organization_id, $2::uuid as project_id, $3::boolean as include_global
+  select $1::uuid as organization_id,
+         $2::uuid as project_id,
+         $3::boolean as include_global,
+         $4::boolean as include_scratch
 ),
 strict_query as (
-  select websearch_to_tsquery('simple', $4) as value
+  select websearch_to_tsquery('simple', $5) as value
 ),
 relaxed_query as (
   select case
-    when array_to_string(tsvector_to_array(to_tsvector('simple', $4)), ' | ') = '' then null
-    else to_tsquery('simple', array_to_string(tsvector_to_array(to_tsvector('simple', $4)), ' | '))
+    when array_to_string(tsvector_to_array(to_tsvector('simple', $5)), ' | ') = '' then null
+    else to_tsquery('simple', array_to_string(tsvector_to_array(to_tsvector('simple', $5)), ' | '))
   end as value
 )
 select c.id as chunk_id,
@@ -26,39 +31,64 @@ from access, strict_query, relaxed_query, chunk c
 join knowledge_item k on k.id = c.knowledge_item_id
 left join source_document sd on sd.id = c.source_document_id
 where k.organization_id = access.organization_id
-  and k.status = 'approved'
+  and (
+    k.status = 'approved'
+    or (
+      access.include_scratch
+      and k.status = 'scratch'
+      and k.scope = 'project'
+      and k.project_id = access.project_id
+    )
+  )
   and (sd.id is null or sd.is_active)
   and (
     k.project_id = access.project_id
-    or (access.include_global and k.scope = 'global')
+    or (access.include_global and k.scope = 'global' and k.status = 'approved')
   )
   and (
     c.search_vector @@ strict_query.value
     or (relaxed_query.value is not null and c.search_vector @@ relaxed_query.value)
   )
-order by score desc, c.id
-limit $5";
+order by
+  case when k.status = 'approved' then 0 else 1 end,
+  score desc,
+  c.id
+limit $6";
 
+/// Dual-lane hydrate: same status/lane gate as lexical; returns lean status for citations.
+/// Bind order: $1 org, $2 chunk_ids, $3 project, $4 include_global, $5 include_scratch.
 pub const HYDRATE_SQL: &str = "
 with access as (
-  select $1::uuid as organization_id, $3::uuid as project_id, $4::boolean as include_global
+  select $1::uuid as organization_id,
+         $3::uuid as project_id,
+         $4::boolean as include_global,
+         $5::boolean as include_scratch
 ),
 requested as (
   select chunk_id, ordinal
   from unnest($2::uuid[]) with ordinality as ranked(chunk_id, ordinal)
 )
 select c.id as chunk_id, c.source_document_id, k.scope::text as scope,
+       k.status::text as status,
        k.title, c.body, sd.uri as source_uri, sd.source_path, c.metadata
 from access, requested
 join chunk c on c.id = requested.chunk_id
 join knowledge_item k on k.id = c.knowledge_item_id
 join source_document sd on sd.id = c.source_document_id
 where k.organization_id = access.organization_id
-  and k.status = 'approved'
+  and (
+    k.status = 'approved'
+    or (
+      access.include_scratch
+      and k.status = 'scratch'
+      and k.scope = 'project'
+      and k.project_id = access.project_id
+    )
+  )
   and sd.is_active
   and (
     k.project_id = access.project_id
-    or (access.include_global and k.scope = 'global')
+    or (access.include_global and k.scope = 'global' and k.status = 'approved')
   )
 order by requested.ordinal";
 
@@ -67,6 +97,7 @@ pub struct RetrievalAccess {
     pub organization_id: Uuid,
     pub project_id: ProjectId,
     pub include_global: bool,
+    pub include_scratch: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -91,6 +122,7 @@ impl PgHybridRetrievalRepository {
         user_id: Uuid,
         project_id: ProjectId,
         include_global: bool,
+        include_scratch: bool,
     ) -> QueriaResult<RetrievalAccess> {
         let organization_id = sqlx::query_scalar::<_, Uuid>(
             "select p.organization_id
@@ -108,6 +140,7 @@ impl PgHybridRetrievalRepository {
             organization_id,
             project_id,
             include_global,
+            include_scratch,
         })
     }
 
@@ -118,6 +151,7 @@ impl PgHybridRetrievalRepository {
         allow_global: bool,
         project_id: ProjectId,
         include_global: bool,
+        include_scratch: bool,
     ) -> QueriaResult<RetrievalAccess> {
         let allowed = sqlx::query_scalar::<_, bool>(
             "select exists(
@@ -140,6 +174,7 @@ impl PgHybridRetrievalRepository {
             organization_id,
             project_id,
             include_global: include_global && allow_global,
+            include_scratch,
         })
     }
 
@@ -153,6 +188,7 @@ impl PgHybridRetrievalRepository {
             .bind(access.organization_id)
             .bind(access.project_id.as_uuid())
             .bind(access.include_global)
+            .bind(access.include_scratch)
             .bind(query)
             .bind(limit)
             .fetch_all(&self.pool)
@@ -187,6 +223,7 @@ impl PgHybridRetrievalRepository {
             .bind(&raw_ids)
             .bind(access.project_id.as_uuid())
             .bind(access.include_global)
+            .bind(access.include_scratch)
             .fetch_all(&self.pool)
             .await
             .map_err(to_infrastructure_error)?
@@ -201,6 +238,10 @@ fn retrieved_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<Retrieved
         &row.try_get::<String, _>("scope")
             .map_err(to_infrastructure_error)?,
     )?;
+    let status = parse_status(
+        &row.try_get::<String, _>("status")
+            .map_err(to_infrastructure_error)?,
+    )?;
     let metadata: Value = row.try_get("metadata").map_err(to_infrastructure_error)?;
     Ok(RetrievedContextItem {
         chunk_id: ChunkId::from_uuid(row.try_get("chunk_id").map_err(to_infrastructure_error)?),
@@ -209,6 +250,8 @@ fn retrieved_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<Retrieved
                 .map_err(to_infrastructure_error)?,
         ),
         scope,
+        status,
+        lane: KnowledgeLane::from_status(status),
         title: row.try_get("title").map_err(to_infrastructure_error)?,
         body: row.try_get("body").map_err(to_infrastructure_error)?,
         citation: Citation {
@@ -243,6 +286,22 @@ fn parse_scope(scope: &str) -> QueriaResult<KnowledgeScope> {
         "project" => Ok(KnowledgeScope::Project),
         value => Err(QueriaError::Infrastructure(format!(
             "database returned invalid knowledge scope {value}"
+        ))),
+    }
+}
+
+fn parse_status(status: &str) -> QueriaResult<KnowledgeStatus> {
+    match status {
+        "approved" => Ok(KnowledgeStatus::Approved),
+        "scratch" => Ok(KnowledgeStatus::Scratch),
+        // Hydrate filter should exclude these; still map cleanly if seen.
+        "draft" => Ok(KnowledgeStatus::Draft),
+        "proposed" => Ok(KnowledgeStatus::Proposed),
+        "rejected" => Ok(KnowledgeStatus::Rejected),
+        "deprecated" => Ok(KnowledgeStatus::Deprecated),
+        "superseded" => Ok(KnowledgeStatus::Superseded),
+        value => Err(QueriaError::Infrastructure(format!(
+            "database returned invalid knowledge status {value}"
         ))),
     }
 }
@@ -283,5 +342,46 @@ mod tests {
         assert!(normalized.contains("unnest($2::uuid[]) with ordinality"));
         assert!(normalized.contains("k.organization_id = access.organization_id"));
         assert!(normalized.contains("k.status = 'approved'"));
+    }
+
+    /// VAL-DL-026 / VAL-DL-027: dual-lane lexical allows scratch when flag true.
+    #[test]
+    fn lexical_search_allows_scratch_when_include_scratch() {
+        let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
+        assert!(sql.contains("access.include_scratch"));
+        assert!(sql.contains("k.status = 'scratch'"));
+        assert!(sql.contains("k.scope = 'project'"));
+        assert!(sql.contains("k.project_id = access.project_id"));
+        // Global path must stay trusted/approved only (VAL-DL-055).
+        assert!(sql.contains("k.scope = 'global' and k.status = 'approved'"));
+    }
+
+    /// VAL-DL-028 / VAL-DL-029: proposed/draft never in SQL allow-list.
+    #[test]
+    fn lexical_search_excludes_pipeline_statuses() {
+        let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
+        for status in ["draft", "proposed", "rejected", "deprecated", "superseded"] {
+            assert!(
+                !sql.contains(&format!("k.status = '{status}'")),
+                "pipeline status {status} must not be selectable"
+            );
+        }
+    }
+
+    /// VAL-DL-031: prefer trusted over scratch in lexical order.
+    #[test]
+    fn lexical_search_prefers_approved_over_scratch() {
+        let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
+        assert!(sql.contains("case when k.status = 'approved' then 0 else 1 end"));
+    }
+
+    /// VAL-DL-035: hydrate selects status for lean citation.
+    #[test]
+    fn hydrate_selects_status_for_lane() {
+        let sql = HYDRATE_SQL.to_ascii_lowercase();
+        assert!(sql.contains("k.status::text as status"));
+        assert!(sql.contains("access.include_scratch"));
+        assert!(sql.contains("k.status = 'scratch'"));
+        assert!(sql.contains("k.scope = 'global' and k.status = 'approved'"));
     }
 }

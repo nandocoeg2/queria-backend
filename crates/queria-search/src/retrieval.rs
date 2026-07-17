@@ -43,6 +43,7 @@ pub trait HybridRetrievalStore: Send + Sync {
         principal: &RetrievalPrincipal,
         project_id: ProjectId,
         include_global: bool,
+        include_scratch: bool,
     ) -> QueriaResult<RetrievalAccess>;
     async fn lexical_search(
         &self,
@@ -122,7 +123,12 @@ where
         request.validate()?;
         let access = self
             .store
-            .authorize(principal, request.project_id, request.include_global)
+            .authorize(
+                principal,
+                request.project_id,
+                request.include_global,
+                request.include_scratch,
+            )
             .await?;
         let candidate_count = request
             .limit
@@ -210,10 +216,11 @@ impl HybridRetrievalStore for PgHybridRetrievalRepository {
         principal: &RetrievalPrincipal,
         project_id: ProjectId,
         include_global: bool,
+        include_scratch: bool,
     ) -> QueriaResult<RetrievalAccess> {
         match principal {
             RetrievalPrincipal::User { user_id } => {
-                self.authorize_user(*user_id, project_id, include_global)
+                self.authorize_user(*user_id, project_id, include_global, include_scratch)
                     .await
             }
             RetrievalPrincipal::Agent {
@@ -227,6 +234,7 @@ impl HybridRetrievalStore for PgHybridRetrievalRepository {
                     *allow_global_knowledge,
                     project_id,
                     include_global,
+                    include_scratch,
                 )
                 .await
             }
@@ -283,14 +291,14 @@ fn sanitized_provider_error(error: &QueriaError) -> String {
 mod tests {
     use super::*;
     use crate::embedding::{EmbeddingDocument, EmbeddingVector, VectorCandidate, VectorPoint};
-    use queria_core::contracts::Citation;
+    use queria_core::contracts::{Citation, KnowledgeLane};
     use queria_core::ids::SourceDocumentId;
-    use queria_core::model::KnowledgeScope;
+    use queria_core::model::{KnowledgeScope, KnowledgeStatus};
     use std::sync::Mutex;
 
     struct FakeHybridStore {
         access: RetrievalAccess,
-        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool)>>,
+        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool, bool)>>,
         lexical: Mutex<Option<Vec<DbRankedChunk>>>,
         hydrate_items: Mutex<Option<Vec<RetrievedContextItem>>>,
     }
@@ -317,11 +325,13 @@ mod tests {
             principal: &RetrievalPrincipal,
             project_id: ProjectId,
             include_global: bool,
+            include_scratch: bool,
         ) -> QueriaResult<RetrievalAccess> {
             self.authorize_checks.lock().expect("lock").push((
                 principal.clone(),
                 project_id,
                 include_global,
+                include_scratch,
             ));
             Ok(self.access.clone())
         }
@@ -452,6 +462,7 @@ mod tests {
                 organization_id,
                 project_id,
                 include_global: true,
+                include_scratch: true,
             },
             vec![DbRankedChunk {
                 chunk_id,
@@ -461,6 +472,8 @@ mod tests {
                 chunk_id,
                 source_document_id,
                 scope: KnowledgeScope::Project,
+                status: KnowledgeStatus::Approved,
+                lane: KnowledgeLane::Trusted,
                 title: "Deploy SOP".to_owned(),
                 body: "Deploy through CI.".to_owned(),
                 citation: Citation {
@@ -483,6 +496,7 @@ mod tests {
                     project_id,
                     query: "deploy flow".to_owned(),
                     include_global: true,
+                    include_scratch: false,
                     limit: 5,
                 },
             )
@@ -505,6 +519,7 @@ mod tests {
                 organization_id,
                 project_id,
                 include_global: false,
+                include_scratch: true,
             },
             vec![DbRankedChunk {
                 chunk_id: shared,
@@ -514,6 +529,8 @@ mod tests {
                 chunk_id: shared,
                 source_document_id,
                 scope: KnowledgeScope::Project,
+                status: KnowledgeStatus::Approved,
+                lane: KnowledgeLane::Trusted,
                 title: "Architecture".to_owned(),
                 body: "System flow.".to_owned(),
                 citation: Citation {
@@ -540,6 +557,7 @@ mod tests {
                     project_id,
                     query: "architecture".to_owned(),
                     include_global: false,
+                    include_scratch: false,
                     limit: 5,
                 },
             )
@@ -562,12 +580,15 @@ mod tests {
                 organization_id,
                 project_id,
                 include_global: false,
+                include_scratch: true,
             },
             Vec::new(),
             vec![RetrievedContextItem {
                 chunk_id,
                 source_document_id,
                 scope: KnowledgeScope::Project,
+                status: KnowledgeStatus::Approved,
+                lane: KnowledgeLane::Trusted,
                 title: "Project integration".to_owned(),
                 body: "Only project knowledge.".to_owned(),
                 citation: Citation {
@@ -597,6 +618,8 @@ mod tests {
                     project_id,
                     query: "integration".to_owned(),
                     include_global: true,
+                    // VAL-DL-026: agent path default is include_scratch true
+                    include_scratch: true,
                     limit: 5,
                 },
             )
@@ -616,6 +639,7 @@ mod tests {
         ));
         assert_eq!(checks[0].1, project_id);
         assert!(checks[0].2);
+        assert!(checks[0].3, "include_scratch must pass through authorize");
 
         let last_search = service
             .vector_index

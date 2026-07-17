@@ -307,10 +307,14 @@ mod tests {
     }
 
     fn item(scope: KnowledgeScope, source_path: &str) -> RetrievedContextItem {
+        use crate::contracts::KnowledgeLane;
+        use crate::model::KnowledgeStatus;
         RetrievedContextItem {
             chunk_id: ChunkId::new(),
             source_document_id: SourceDocumentId::new(),
             scope,
+            status: KnowledgeStatus::Approved,
+            lane: KnowledgeLane::Trusted,
             title: "title".to_owned(),
             body: "body".to_owned(),
             citation: Citation {

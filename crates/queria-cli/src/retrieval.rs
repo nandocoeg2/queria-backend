@@ -17,6 +17,8 @@ pub async fn probe(
                 project_id,
                 query: query.to_owned(),
                 include_global,
+                // CLI retrieval probe is trusted-only by default.
+                include_scratch: false,
                 limit,
             },
         )

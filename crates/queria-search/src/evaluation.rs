@@ -60,10 +60,12 @@ impl<R: EvaluationRetriever> EvaluationExecutor<R> {
 
         let mut responses = Vec::with_capacity(questions.len());
         for question in &questions {
+            // VAL-CROSS-007 / VAL-DL-043: golden eval is trusted-only (no scratch).
             let request = RetrieveContextRequest {
                 project_id,
                 query: question.query.clone(),
                 include_global: question.include_global,
+                include_scratch: false,
                 limit: evaluation_limit(question.minimum_items),
             };
             let response = self.retrieve_with_retry(user_id, request).await;
@@ -157,6 +159,8 @@ mod tests {
                     chunk_id: queria_core::ids::ChunkId::new(),
                     source_document_id: queria_core::ids::SourceDocumentId::new(),
                     scope: queria_core::model::KnowledgeScope::Project,
+                    status: queria_core::model::KnowledgeStatus::Approved,
+                    lane: queria_core::contracts::KnowledgeLane::Trusted,
                     title: "title".to_owned(),
                     body: "body".to_owned(),
                     citation: queria_core::contracts::Citation {
@@ -191,6 +195,7 @@ mod tests {
                     project_id: ProjectId::new(),
                     query: "test".to_owned(),
                     include_global: false,
+                    include_scratch: false,
                     limit: 5,
                 },
             )
@@ -216,6 +221,7 @@ mod tests {
                     project_id: ProjectId::new(),
                     query: "test".to_owned(),
                     include_global: false,
+                    include_scratch: false,
                     limit: 5,
                 },
             )
@@ -242,6 +248,7 @@ mod tests {
                     project_id: ProjectId::new(),
                     query: "test".to_owned(),
                     include_global: false,
+                    include_scratch: false,
                     limit: 5,
                 },
             )

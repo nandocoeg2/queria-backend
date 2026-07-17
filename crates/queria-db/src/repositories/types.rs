@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use queria_core::auth::permissions::AgentTokenPermissions;
-use queria_core::contracts::{Citation, RetrievedContextItem};
+use queria_core::contracts::{Citation, KnowledgeLane, RetrievedContextItem};
 use queria_core::ids::{ApprovalId, ChunkId, SourceDocumentId};
-use queria_core::model::KnowledgeScope;
+use queria_core::model::{KnowledgeScope, KnowledgeStatus};
 use queria_core::{QueriaError, QueriaResult};
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -382,10 +382,14 @@ pub(crate) fn retrieved_item_from_row(
         .try_get("source_document_id")
         .map_err(to_infrastructure_error)?;
 
+    // Legacy substring search remains approved-only; always lean trusted citation.
+    let status = KnowledgeStatus::Approved;
     Ok(RetrievedContextItem {
         chunk_id: ChunkId::from_uuid(row.try_get("chunk_id").map_err(to_infrastructure_error)?),
         source_document_id: SourceDocumentId::from_uuid(source_document_id),
         scope: parse_knowledge_scope(&scope)?,
+        status,
+        lane: KnowledgeLane::from_status(status),
         title: row.try_get("title").map_err(to_infrastructure_error)?,
         body: row.try_get("body").map_err(to_infrastructure_error)?,
         citation: Citation {

@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 struct RetrievalProbeRequest {
     query: String,
     include_global: Option<bool>,
+    /// Operator probe default false (trusted-only); agents default true on MCP.
+    include_scratch: Option<bool>,
     limit: Option<u32>,
 }
 
@@ -95,6 +97,8 @@ async fn retrieve_context_by_slug(
         include_global: payload
             .include_global
             .unwrap_or(project.include_global_default),
+        // Operator slug probe: default trusted-only (VAL-CROSS-007 adjacent).
+        include_scratch: payload.include_scratch.unwrap_or(false),
         limit: payload.limit.unwrap_or(5),
     };
     request.validate().map_err(map_error)?;

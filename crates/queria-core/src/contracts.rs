@@ -1,13 +1,48 @@
 use crate::ids::{ChunkId, ProjectId, SourceDocumentId};
-use crate::model::KnowledgeScope;
+use crate::model::{KnowledgeScope, KnowledgeStatus};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+fn default_include_scratch() -> bool {
+    true
+}
+
+/// Derived lane for dual-lane retrieve (no separate DB column).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeLane {
+    Trusted,
+    Scratch,
+}
+
+impl KnowledgeLane {
+    #[must_use]
+    pub const fn from_status(status: KnowledgeStatus) -> Self {
+        if status.is_scratch_lane() {
+            Self::Scratch
+        } else {
+            Self::Trusted
+        }
+    }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Trusted => "trusted",
+            Self::Scratch => "scratch",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RetrieveContextRequest {
     pub project_id: ProjectId,
     pub query: String,
     pub include_global: bool,
+    /// When true (agent default), include project-scoped scratch alongside approved.
+    /// Golden/eval and trusted-only probes set false.
+    #[serde(default = "default_include_scratch")]
+    pub include_scratch: bool,
     pub limit: u32,
 }
 
@@ -40,6 +75,10 @@ pub struct RetrievedContextItem {
     pub chunk_id: ChunkId,
     pub source_document_id: SourceDocumentId,
     pub scope: KnowledgeScope,
+    /// Lean dual-lane signal: only `approved` or `scratch` appear in agent retrieve.
+    pub status: KnowledgeStatus,
+    /// Lane derived from status (`trusted` for approved, `scratch` for scratch).
+    pub lane: KnowledgeLane,
     pub title: String,
     pub body: String,
     pub citation: Citation,
@@ -125,6 +164,7 @@ mod tests {
             project_id: ProjectId::new(),
             query: "  ".to_owned(),
             include_global: true,
+            include_scratch: true,
             limit: 5,
         };
 
@@ -137,10 +177,40 @@ mod tests {
             project_id: ProjectId::new(),
             query: "how to deploy fjulian-me".to_owned(),
             include_global: true,
+            include_scratch: true,
             limit: 8,
         };
 
         request.validate().expect("bounded query should be valid");
+    }
+
+    /// VAL-DL-026 / IMP-14: agent default for include_scratch is true.
+    #[test]
+    fn retrieve_context_include_scratch_defaults_true() {
+        let value = serde_json::json!({
+            "project_id": ProjectId::new(),
+            "query": "marker",
+            "include_global": true,
+            "limit": 5
+        });
+        let request: RetrieveContextRequest =
+            serde_json::from_value(value).expect("deserialize without include_scratch");
+        assert!(request.include_scratch);
+    }
+
+    /// VAL-DL-035 / VAL-DL-036: lean lane derivation from status.
+    #[test]
+    fn knowledge_lane_derives_from_status() {
+        assert_eq!(
+            KnowledgeLane::from_status(KnowledgeStatus::Scratch),
+            KnowledgeLane::Scratch
+        );
+        assert_eq!(
+            KnowledgeLane::from_status(KnowledgeStatus::Approved),
+            KnowledgeLane::Trusted
+        );
+        assert_eq!(KnowledgeLane::Scratch.as_str(), "scratch");
+        assert_eq!(KnowledgeLane::Trusted.as_str(), "trusted");
     }
 
     #[test]

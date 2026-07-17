@@ -28,13 +28,14 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
             json!({
                 "name": "retrieve_context",
                 "title": "Retrieve Context",
-                "description": "Retrieve approved project and optional global Queria knowledge with citations.",
+                "description": "Retrieve project trusted (approved) knowledge, optional same-project scratch, and optional global trusted knowledge with lean citations (status/lane).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "project_id": { "type": "string", "description": "Queria project UUID." },
                         "query": { "type": "string", "description": "Question or task context to retrieve for." },
-                        "include_global": { "type": "boolean", "description": "Include global knowledge when the token allows it." },
+                        "include_global": { "type": "boolean", "description": "Include global trusted knowledge when the token allows it." },
+                        "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch memory. Default true for agents; set false for trusted-only." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
                     },
                     "required": ["project_id", "query"],
@@ -47,13 +48,14 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
             json!({
                 "name": "search_knowledge",
                 "title": "Search Knowledge",
-                "description": "Search approved Queria knowledge for a project and return matching chunks.",
+                "description": "Search dual-lane Queria knowledge (approved + optional project scratch) and return matching chunks with status/lane.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "project_id": { "type": "string" },
                         "query": { "type": "string" },
                         "include_global": { "type": "boolean" },
+                        "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch. Default true." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
                     },
                     "required": ["project_id", "query"],
@@ -150,6 +152,36 @@ mod tests {
             .into_iter()
             .map(|definition| definition["name"].as_str().expect("tool name").to_owned())
             .collect()
+    }
+
+    /// VAL-DL-026: tools/list schema exposes include_scratch for dual-lane agent retrieve.
+    #[test]
+    fn retrieve_context_schema_includes_scratch_flag() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: default_agent_tools(),
+        };
+        let tools = tool_definitions(&permissions);
+        let retrieve = tools
+            .iter()
+            .find(|t| t["name"] == "retrieve_context")
+            .expect("retrieve_context listed");
+        assert!(
+            retrieve["inputSchema"]["properties"]
+                .get("include_scratch")
+                .is_some(),
+            "include_scratch property required for dual-lane"
+        );
+        let search = tools
+            .iter()
+            .find(|t| t["name"] == "search_knowledge")
+            .expect("search_knowledge listed");
+        assert!(
+            search["inputSchema"]["properties"]
+                .get("include_scratch")
+                .is_some()
+        );
     }
 
     #[test]
