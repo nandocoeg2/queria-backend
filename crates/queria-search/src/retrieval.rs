@@ -203,6 +203,10 @@ where
                 lexical_candidates: bounded_count(lexical.len()),
                 semantic_candidates: bounded_count(semantic.len()),
                 embedding_profile_version: self.config.embedding_profile_version.clone(),
+                // Pipeline stages populate these; placeholders until rerank/compress wire-up.
+                rerank_applied: false,
+                compress_dropped: 0,
+                latency_ms: 0,
             },
             generated_at: Utc::now(),
         })
@@ -498,6 +502,8 @@ mod tests {
                     include_global: true,
                     include_scratch: false,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await
@@ -559,6 +565,8 @@ mod tests {
                     include_global: false,
                     include_scratch: false,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await
@@ -621,6 +629,8 @@ mod tests {
                     // VAL-DL-026: agent path default is include_scratch true
                     include_scratch: true,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await

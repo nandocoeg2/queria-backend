@@ -179,6 +179,8 @@ async fn call_tool(
                 // VAL-DL-026: agent default include_scratch=true
                 include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(5),
+                rerank: None,
+                compress: None,
             };
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))
@@ -192,6 +194,8 @@ async fn call_tool(
                 include_global: args.include_global.unwrap_or(true),
                 include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(10),
+                rerank: None,
+                compress: None,
             };
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))

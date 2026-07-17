@@ -20,6 +20,8 @@ pub async fn probe(
                 // CLI retrieval probe is trusted-only by default (VAL-DL-043 / eval path).
                 include_scratch: false,
                 limit,
+                rerank: None,
+                compress: None,
             },
         )
         .await?;

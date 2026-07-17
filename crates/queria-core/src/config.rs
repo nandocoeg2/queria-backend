@@ -32,6 +32,14 @@ pub struct RetrievalSettings {
     pub rrf_k: u32,
     pub candidate_multiplier: u32,
     pub candidate_cap: u32,
+    /// Default when request omits `rerank`. Env: `QUERIA_RERANK_ENABLED`. Default true.
+    pub rerank_enabled: bool,
+    /// Voyage rerank model id. Env: `QUERIA_RERANK_MODEL`. Default `rerank-2.5`.
+    pub rerank_model: String,
+    /// Rerank HTTP timeout seconds. Env: `QUERIA_RERANK_TIMEOUT_SECONDS`. Default 30.
+    pub rerank_timeout_seconds: u64,
+    /// Default when request omits `compress`. Env: `QUERIA_COMPRESS_ENABLED`. Default true.
+    pub compress_enabled: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -183,6 +191,19 @@ impl AppConfig {
                     "QUERIA_RETRIEVAL_CANDIDATE_CAP",
                     defaults.retrieval.candidate_cap,
                 )?,
+                rerank_enabled: read_bool_env(
+                    "QUERIA_RERANK_ENABLED",
+                    defaults.retrieval.rerank_enabled,
+                )?,
+                rerank_model: read_env("QUERIA_RERANK_MODEL", &defaults.retrieval.rerank_model),
+                rerank_timeout_seconds: read_number_env(
+                    "QUERIA_RERANK_TIMEOUT_SECONDS",
+                    defaults.retrieval.rerank_timeout_seconds,
+                )?,
+                compress_enabled: read_bool_env(
+                    "QUERIA_COMPRESS_ENABLED",
+                    defaults.retrieval.compress_enabled,
+                )?,
             },
             minio: MinioSettings {
                 endpoint: read_env("QUERIA_MINIO_ENDPOINT", &defaults.minio.endpoint),
@@ -299,6 +320,10 @@ impl AppConfig {
                 rrf_k: 60,
                 candidate_multiplier: 4,
                 candidate_cap: 100,
+                rerank_enabled: true,
+                rerank_model: "rerank-2.5".to_owned(),
+                rerank_timeout_seconds: 30,
+                compress_enabled: true,
             },
             minio: MinioSettings {
                 endpoint: "http://127.0.0.1:17678".to_owned(),
@@ -382,6 +407,8 @@ impl AppConfig {
             || self.retrieval.rrf_k == 0
             || self.retrieval.candidate_multiplier == 0
             || self.retrieval.candidate_cap < 20
+            || self.retrieval.rerank_timeout_seconds == 0
+            || self.retrieval.rerank_model.trim().is_empty()
         {
             return Err(QueriaError::Config(
                 "embedding and retrieval numeric limits are invalid".to_owned(),
@@ -480,6 +507,19 @@ where
         .map_err(|_| QueriaError::Config(format!("{key} must be a positive integer")))
 }
 
+fn read_bool_env(key: &str, default: bool) -> QueriaResult<bool> {
+    let Some(value) = env::var(key).ok().filter(|value| !value.trim().is_empty()) else {
+        return Ok(default);
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(QueriaError::Config(format!(
+            "{key} must be a boolean (true/false)"
+        ))),
+    }
+}
+
 fn parse_addr(key: &str, value: &str) -> QueriaResult<SocketAddr> {
     value
         .parse::<SocketAddr>()
@@ -541,6 +581,10 @@ mod tests {
         assert_eq!(config.retrieval.rrf_k, 60);
         assert_eq!(config.retrieval.candidate_multiplier, 4);
         assert_eq!(config.retrieval.candidate_cap, 100);
+        assert!(config.retrieval.rerank_enabled);
+        assert_eq!(config.retrieval.rerank_model, "rerank-2.5");
+        assert_eq!(config.retrieval.rerank_timeout_seconds, 30);
+        assert!(config.retrieval.compress_enabled);
         assert_eq!(config.max_body_bytes, 20_000);
         assert!(
             config
@@ -671,6 +715,64 @@ mod tests {
         }
 
         assert_eq!(value, "fallback");
+    }
+
+    /// Rerank/compress env knobs parse true/false and fall back to defaults.
+    #[test]
+    fn read_bool_env_parses_common_truthy_and_falsy() {
+        unsafe {
+            env::set_var("QUERIA_TEST_BOOL_ON", "true");
+            env::set_var("QUERIA_TEST_BOOL_OFF", "0");
+            env::set_var("QUERIA_TEST_BOOL_BLANK", "  ");
+        }
+
+        let on = read_bool_env("QUERIA_TEST_BOOL_ON", false).expect("true");
+        let off = read_bool_env("QUERIA_TEST_BOOL_OFF", true).expect("false");
+        let blank_default = read_bool_env("QUERIA_TEST_BOOL_BLANK", true).expect("blank→default");
+        let missing_default =
+            read_bool_env("QUERIA_TEST_BOOL_MISSING_KEY_xyz", false).expect("missing→default");
+
+        unsafe {
+            env::remove_var("QUERIA_TEST_BOOL_ON");
+            env::remove_var("QUERIA_TEST_BOOL_OFF");
+            env::remove_var("QUERIA_TEST_BOOL_BLANK");
+        }
+
+        assert!(on);
+        assert!(!off);
+        assert!(blank_default);
+        assert!(!missing_default);
+    }
+
+    #[test]
+    fn read_bool_env_rejects_garbage() {
+        unsafe {
+            env::set_var("QUERIA_TEST_BOOL_BAD", "maybe");
+        }
+        let err = read_bool_env("QUERIA_TEST_BOOL_BAD", true).expect_err("garbage");
+        unsafe {
+            env::remove_var("QUERIA_TEST_BOOL_BAD");
+        }
+        assert!(matches!(err, QueriaError::Config(_)));
+    }
+
+    #[test]
+    fn validation_rejects_blank_rerank_model_or_zero_timeout() {
+        let mut config = AppConfig::default_local();
+        config.setup_token = "a-strong-setup-token-for-tests!!".to_owned();
+        config.retrieval.rerank_model = "  ".to_owned();
+        assert!(matches!(
+            config.validate().expect_err("blank rerank model"),
+            QueriaError::Config(_)
+        ));
+
+        let mut config = AppConfig::default_local();
+        config.setup_token = "a-strong-setup-token-for-tests!!".to_owned();
+        config.retrieval.rerank_timeout_seconds = 0;
+        assert!(matches!(
+            config.validate().expect_err("zero rerank timeout"),
+            QueriaError::Config(_)
+        ));
     }
 
     #[test]

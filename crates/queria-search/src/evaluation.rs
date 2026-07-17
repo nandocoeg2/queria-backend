@@ -67,6 +67,8 @@ impl<R: EvaluationRetriever> EvaluationExecutor<R> {
                 include_global: question.include_global,
                 include_scratch: false,
                 limit: evaluation_limit(question.minimum_items),
+                rerank: None,
+                compress: None,
             };
             let response = self.retrieve_with_retry(user_id, request).await;
             responses.push(response);
@@ -179,6 +181,9 @@ mod tests {
                 lexical_candidates: 0,
                 semantic_candidates: 0,
                 embedding_profile_version: "test".to_owned(),
+                rerank_applied: false,
+                compress_dropped: 0,
+                latency_ms: 0,
             },
             generated_at: chrono::Utc::now(),
         }
@@ -197,6 +202,8 @@ mod tests {
                     include_global: false,
                     include_scratch: false,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await;
@@ -223,6 +230,8 @@ mod tests {
                     include_global: false,
                     include_scratch: false,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await;
@@ -250,6 +259,8 @@ mod tests {
                     include_global: false,
                     include_scratch: false,
                     limit: 5,
+                    rerank: None,
+                    compress: None,
                 },
             )
             .await;

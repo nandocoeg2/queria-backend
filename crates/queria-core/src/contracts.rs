@@ -7,6 +7,18 @@ fn default_include_scratch() -> bool {
     true
 }
 
+fn default_rerank_applied() -> bool {
+    false
+}
+
+fn default_compress_dropped() -> u32 {
+    0
+}
+
+fn default_latency_ms() -> u32 {
+    0
+}
+
 /// Derived lane for dual-lane retrieve (no separate DB column).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,6 +56,12 @@ pub struct RetrieveContextRequest {
     #[serde(default = "default_include_scratch")]
     pub include_scratch: bool,
     pub limit: u32,
+    /// `None` uses `QUERIA_RERANK_ENABLED` / RetrievalSettings default.
+    #[serde(default)]
+    pub rerank: Option<bool>,
+    /// `None` uses `QUERIA_COMPRESS_ENABLED` / RetrievalSettings default.
+    #[serde(default)]
+    pub compress: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -68,6 +86,15 @@ pub struct RetrievalDiagnostics {
     pub lexical_candidates: u32,
     pub semantic_candidates: u32,
     pub embedding_profile_version: String,
+    /// Whether Voyage rerank successfully reordered the candidate set.
+    #[serde(default = "default_rerank_applied")]
+    pub rerank_applied: bool,
+    /// Near-duplicate items dropped by compress (0 when compress off/skipped).
+    #[serde(default = "default_compress_dropped")]
+    pub compress_dropped: u32,
+    /// End-to-end retrieve latency in milliseconds.
+    #[serde(default = "default_latency_ms")]
+    pub latency_ms: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -166,12 +193,14 @@ mod tests {
             include_global: true,
             include_scratch: true,
             limit: 5,
+            rerank: None,
+            compress: None,
         };
 
         assert!(request.validate().is_err());
     }
 
-    /// VAL-DL-040: blank/long query and limit bounds stay validated under dual-lane.
+    /// VAL-DL-040 / VAL-RET-012: blank/long query and limit bounds stay validated.
     #[test]
     fn retrieve_context_request_rejects_overlong_query_and_bad_limit() {
         let overlong = "q".repeat(513);
@@ -181,6 +210,8 @@ mod tests {
             include_global: true,
             include_scratch: true,
             limit: 5,
+            rerank: None,
+            compress: None,
         };
         let err = bad_query.validate().expect_err("512 byte max");
         assert!(
@@ -195,6 +226,8 @@ mod tests {
                 include_global: true,
                 include_scratch: false,
                 limit,
+                rerank: None,
+                compress: None,
             };
             assert!(req.validate().is_err(), "limit {limit} must be rejected");
         }
@@ -208,9 +241,95 @@ mod tests {
             include_global: true,
             include_scratch: true,
             limit: 8,
+            rerank: None,
+            compress: None,
         };
 
         request.validate().expect("bounded query should be valid");
+    }
+
+    /// VAL-RET-012: limit 1 and 20 remain valid after flag additions.
+    #[test]
+    fn retrieve_context_request_accepts_limit_bounds() {
+        for limit in [1_u32, 20] {
+            let request = RetrieveContextRequest {
+                project_id: ProjectId::new(),
+                query: "ok".to_owned(),
+                include_global: true,
+                include_scratch: true,
+                limit,
+                rerank: Some(true),
+                compress: Some(false),
+            };
+            request
+                .validate()
+                .unwrap_or_else(|err| panic!("limit {limit} must be accepted: {err}"));
+        }
+    }
+
+    /// VAL-CROSS-004 / VAL-RET: omitted rerank/compress deserialize as None (use config).
+    #[test]
+    fn retrieve_context_omitted_rerank_compress_are_none() {
+        let value = serde_json::json!({
+            "project_id": ProjectId::new(),
+            "query": "marker",
+            "include_global": true,
+            "limit": 5
+        });
+        let request: RetrieveContextRequest =
+            serde_json::from_value(value).expect("old client payload deserializes");
+        assert_eq!(request.rerank, None);
+        assert_eq!(request.compress, None);
+        assert!(request.include_scratch);
+    }
+
+    /// Optional flags deserialize when present and override independently.
+    #[test]
+    fn retrieve_context_explicit_rerank_compress_flags() {
+        let value = serde_json::json!({
+            "project_id": ProjectId::new(),
+            "query": "marker",
+            "include_global": true,
+            "include_scratch": false,
+            "limit": 3,
+            "rerank": false,
+            "compress": true
+        });
+        let request: RetrieveContextRequest =
+            serde_json::from_value(value).expect("explicit flags deserialize");
+        assert_eq!(request.rerank, Some(false));
+        assert_eq!(request.compress, Some(true));
+        assert!(!request.include_scratch);
+    }
+
+    /// VAL-RET-011: diagnostics serialize new fields; old payloads still deserialize.
+    #[test]
+    fn retrieval_diagnostics_new_fields_roundtrip_and_default() {
+        let full = RetrievalDiagnostics {
+            mode: RetrievalMode::Hybrid,
+            lexical_candidates: 4,
+            semantic_candidates: 6,
+            embedding_profile_version: "voyage-4-1024-v1".to_owned(),
+            rerank_applied: true,
+            compress_dropped: 2,
+            latency_ms: 42,
+        };
+        let value = serde_json::to_value(&full).expect("serialize diagnostics");
+        assert_eq!(value["rerank_applied"], true);
+        assert_eq!(value["compress_dropped"], 2);
+        assert_eq!(value["latency_ms"], 42);
+
+        let legacy = serde_json::json!({
+            "mode": "hybrid",
+            "lexical_candidates": 1,
+            "semantic_candidates": 2,
+            "embedding_profile_version": "voyage-4-1024-v1"
+        });
+        let parsed: RetrievalDiagnostics =
+            serde_json::from_value(legacy).expect("legacy diagnostics deserialize");
+        assert!(!parsed.rerank_applied);
+        assert_eq!(parsed.compress_dropped, 0);
+        assert_eq!(parsed.latency_ms, 0);
     }
 
     /// VAL-DL-036 / VAL-CROSS-008: approved maps to trusted lane leanly.

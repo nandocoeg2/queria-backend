@@ -100,6 +100,9 @@ async fn retrieve_context_by_slug(
         // Operator slug probe: default trusted-only (VAL-CROSS-007 adjacent).
         include_scratch: payload.include_scratch.unwrap_or(false),
         limit: payload.limit.unwrap_or(5),
+        // Surface wiring for request overrides lands with later features.
+        rerank: None,
+        compress: None,
     };
     request.validate().map_err(map_error)?;
 
