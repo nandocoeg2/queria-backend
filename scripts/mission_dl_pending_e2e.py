@@ -493,17 +493,19 @@ def main() -> None:
             it.get("status") == "scratch" or it.get("lane") == "scratch"
             for it in items_probe
         )
-        has_marker = (
-            (MARKER2.split()[0] in (p.stdout + p.stderr))
-            if results.get("index", {}).get("ok")
-            else False
+        # Query string may equal the rare token; only item bodies/status count as leakage.
+        marker_in_items = any(
+            MARKER2.split()[0] in ((it.get("body") or "") + (it.get("title") or ""))
+            for it in items_probe
         )
         if results.get("index", {}).get("ok"):
             results["VAL-DL-043"] = {
-                "ok": p.returncode == 0 and not scratch_in_probe and not has_marker,
+                "ok": p.returncode == 0
+                and not scratch_in_probe
+                and not marker_in_items,
                 "returncode": p.returncode,
                 "scratch_in_probe": scratch_in_probe,
-                "has_marker_text": has_marker,
+                "marker_in_items": marker_in_items,
                 "item_n": len(items_probe),
             }
         else:
