@@ -2,6 +2,7 @@ use crate::compress::{compress_items, resolve_compress_enabled};
 use crate::embedding::{EmbeddingProvider, VectorIndex, VectorSearchRequest};
 use crate::hybrid::{RankedChunk, reciprocal_rank_fusion};
 use crate::qdrant::{QdrantClient, QdrantConfig};
+use crate::rerank::{VoyageReranker, rerank_items, resolve_rerank_enabled};
 use crate::voyage::VoyageClient;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -35,6 +36,8 @@ pub struct RetrievalConfig {
     pub rrf_k: u32,
     pub candidate_multiplier: u32,
     pub candidate_cap: u32,
+    /// Default when request omits `rerank` (from `QUERIA_RERANK_ENABLED`).
+    pub rerank_enabled: bool,
     /// Default when request omits `compress` (from `QUERIA_COMPRESS_ENABLED`).
     pub compress_enabled: bool,
 }
@@ -66,6 +69,8 @@ pub struct RetrievalService<S, E, V> {
     embedding_provider: E,
     vector_index: V,
     config: RetrievalConfig,
+    /// Optional Voyage reranker. `None` when API key missing → fail-open skip.
+    reranker: Option<VoyageReranker>,
 }
 
 pub type PgRetrievalService =
@@ -77,6 +82,11 @@ pub fn build_pg_retrieval_service(
 ) -> QueriaResult<PgRetrievalService> {
     let dimension = usize::try_from(config.embedding.dimension)
         .map_err(|_| QueriaError::Config("embedding dimension is invalid".to_owned()))?;
+    let reranker = VoyageReranker::try_new(
+        &config.embedding.voyage_api_key,
+        &config.retrieval.rerank_model,
+        Duration::from_secs(config.retrieval.rerank_timeout_seconds),
+    );
     Ok(RetrievalService::new(
         PgHybridRetrievalRepository::new(pool),
         VoyageClient::new(
@@ -98,9 +108,11 @@ pub fn build_pg_retrieval_service(
             rrf_k: config.retrieval.rrf_k,
             candidate_multiplier: config.retrieval.candidate_multiplier,
             candidate_cap: config.retrieval.candidate_cap,
+            rerank_enabled: config.retrieval.rerank_enabled,
             compress_enabled: config.retrieval.compress_enabled,
         },
-    ))
+    )
+    .with_reranker(reranker))
 }
 
 impl<S, E, V> RetrievalService<S, E, V>
@@ -116,7 +128,15 @@ where
             embedding_provider,
             vector_index,
             config,
+            reranker: None,
         }
+    }
+
+    /// Attach an optional Voyage reranker (tests / production builder).
+    #[must_use]
+    pub fn with_reranker(mut self, reranker: Option<VoyageReranker>) -> Self {
+        self.reranker = reranker;
+        self
     }
 
     pub async fn retrieve_context(
@@ -198,7 +218,23 @@ where
             item.score = score_by_id.get(&item.chunk_id).copied().unwrap_or_default();
         }
 
-        // Compress after ranking/hydrate (rerank stage may reorder before this later).
+        // Rerank after hydrate (fail open: keep RRF order on error / missing key).
+        // Full oversample→pool rework is pipeline-pool-rerank-compress; top_k = limit.
+        let rerank_on = resolve_rerank_enabled(request.rerank, self.config.rerank_enabled);
+        let top_k = usize::try_from(request.limit)
+            .map_err(|_| QueriaError::Validation("retrieval limit is invalid".to_owned()))?;
+        let rerank_outcome = rerank_items(
+            rerank_on,
+            self.reranker.as_ref(),
+            &request.query,
+            items,
+            top_k,
+        )
+        .await;
+        let rerank_applied = rerank_outcome.applied;
+        let items = rerank_outcome.items;
+
+        // Compress after ranking/rerank (prefer trusted over scratch).
         let compress_on = resolve_compress_enabled(request.compress, self.config.compress_enabled);
         let compress_outcome = compress_items(items, compress_on);
         let items = compress_outcome.items;
@@ -213,9 +249,9 @@ where
                 lexical_candidates: bounded_count(lexical.len()),
                 semantic_candidates: bounded_count(semantic.len()),
                 embedding_profile_version: self.config.embedding_profile_version.clone(),
-                // Rerank still placeholder until voyage-rerank / pipeline features wire it.
-                rerank_applied: false,
+                rerank_applied,
                 compress_dropped,
+                // latency_ms filled by pipeline-pool-rerank-compress.
                 latency_ms: 0,
             },
             generated_at: Utc::now(),
@@ -682,7 +718,161 @@ mod tests {
             rrf_k: 60,
             candidate_multiplier: 4,
             candidate_cap: 100,
+            // Unit tests here do not attach a reranker; default-off keeps RRF only.
+            rerank_enabled: false,
             compress_enabled: true,
         }
+    }
+
+    /// VAL-RET-008 / VAL-CROSS-008: service path with rerank desired but no key still succeeds.
+    #[tokio::test]
+    async fn missing_reranker_fail_open_on_service() {
+        let project_id = ProjectId::new();
+        let organization_id = Uuid::now_v7();
+        let chunk_a = ChunkId::new();
+        let chunk_b = ChunkId::new();
+        let source_document_id = SourceDocumentId::new();
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
+                organization_id,
+                project_id,
+                include_global: true,
+                include_scratch: true,
+            },
+            vec![
+                DbRankedChunk {
+                    chunk_id: chunk_a,
+                    score: 0.9,
+                },
+                DbRankedChunk {
+                    chunk_id: chunk_b,
+                    score: 0.5,
+                },
+            ],
+            vec![
+                RetrievedContextItem {
+                    chunk_id: chunk_a,
+                    source_document_id,
+                    scope: KnowledgeScope::Project,
+                    status: KnowledgeStatus::Approved,
+                    lane: KnowledgeLane::Trusted,
+                    title: "A".to_owned(),
+                    body: "first rrf".to_owned(),
+                    citation: Citation {
+                        source_uri: "git://repo/a.md".to_owned(),
+                        source_path: Some("a.md".to_owned()),
+                        line_start: Some(1),
+                        line_end: Some(2),
+                    },
+                    score: 0.0,
+                },
+                RetrievedContextItem {
+                    chunk_id: chunk_b,
+                    source_document_id,
+                    scope: KnowledgeScope::Project,
+                    status: KnowledgeStatus::Approved,
+                    lane: KnowledgeLane::Trusted,
+                    title: "B".to_owned(),
+                    body: "second rrf".to_owned(),
+                    citation: Citation {
+                        source_uri: "git://repo/b.md".to_owned(),
+                        source_path: Some("b.md".to_owned()),
+                        line_start: Some(1),
+                        line_end: Some(2),
+                    },
+                    score: 0.0,
+                },
+            ],
+        );
+        let mut cfg = config();
+        cfg.rerank_enabled = true;
+        // No .with_reranker — simulates missing VOYAGE_API_KEY.
+        let service = RetrievalService::new(store, FailProvider, FakeIndex::empty(), cfg);
+
+        let response = service
+            .retrieve_context(
+                &RetrievalPrincipal::User {
+                    user_id: Uuid::now_v7(),
+                },
+                RetrieveContextRequest {
+                    project_id,
+                    query: "rrf order".to_owned(),
+                    include_global: true,
+                    include_scratch: true,
+                    limit: 5,
+                    rerank: None,
+                    compress: Some(false),
+                },
+            )
+            .await
+            .expect("missing key must not hard-fail retrieve");
+
+        assert!(!response.retrieval.rerank_applied);
+        assert_eq!(response.items.len(), 2);
+        assert_eq!(response.items[0].chunk_id, chunk_a);
+        assert_eq!(response.items[1].chunk_id, chunk_b);
+        assert!(!response.items[0].body.is_empty());
+        assert_eq!(response.items[0].lane, KnowledgeLane::Trusted);
+    }
+
+    /// VAL-RET-006: explicit rerank=false forces skip when config default on.
+    #[tokio::test]
+    async fn explicit_rerank_false_skips() {
+        let project_id = ProjectId::new();
+        let organization_id = Uuid::now_v7();
+        let chunk_id = ChunkId::new();
+        let source_document_id = SourceDocumentId::new();
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
+                organization_id,
+                project_id,
+                include_global: true,
+                include_scratch: true,
+            },
+            vec![DbRankedChunk {
+                chunk_id,
+                score: 0.8,
+            }],
+            vec![RetrievedContextItem {
+                chunk_id,
+                source_document_id,
+                scope: KnowledgeScope::Project,
+                status: KnowledgeStatus::Approved,
+                lane: KnowledgeLane::Trusted,
+                title: "One".to_owned(),
+                body: "body".to_owned(),
+                citation: Citation {
+                    source_uri: "git://repo/one.md".to_owned(),
+                    source_path: Some("one.md".to_owned()),
+                    line_start: Some(1),
+                    line_end: Some(1),
+                },
+                score: 0.0,
+            }],
+        );
+        let mut cfg = config();
+        cfg.rerank_enabled = true;
+        let service = RetrievalService::new(store, FailProvider, FakeIndex::empty(), cfg);
+
+        let response = service
+            .retrieve_context(
+                &RetrievalPrincipal::User {
+                    user_id: Uuid::now_v7(),
+                },
+                RetrieveContextRequest {
+                    project_id,
+                    query: "skip rerank".to_owned(),
+                    include_global: true,
+                    include_scratch: false,
+                    limit: 5,
+                    rerank: Some(false),
+                    compress: Some(false),
+                },
+            )
+            .await
+            .expect("override false should succeed");
+
+        assert!(!response.retrieval.rerank_applied);
+        assert_eq!(response.items.len(), 1);
     }
 }

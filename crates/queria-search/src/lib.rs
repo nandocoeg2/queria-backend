@@ -3,6 +3,7 @@ pub mod embedding;
 pub mod evaluation;
 pub mod hybrid;
 pub mod qdrant;
+pub mod rerank;
 pub mod retrieval;
 pub mod scratch_embed;
 pub mod voyage;
