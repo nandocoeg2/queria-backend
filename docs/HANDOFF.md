@@ -1,6 +1,6 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-17 (prod redeploy dual-lane + Caddy edge; measure pack earlier same day)
+> Last verified: 2026-07-17 (prod seed `fjulian-me` + eval 3/3; redeploy dual-lane + Caddy earlier same day)
 > Branch: `main`
 > Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A on `main`)
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
@@ -8,6 +8,7 @@
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
+> **Production project `fjulian-me` seeded** (git source, ingest, partial embeddings, golden eval 3/3).
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design. When other
@@ -164,7 +165,7 @@ ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key 
 | Schema | `_queria_migration` through `20260717000200` (10 rows). Includes dual-lane: `knowledge_status` enum has **`scratch`**. |
 | Env alignment | compose `env_file: .env` + overrides; `QDRANT_API_KEY` length matches host and qdrant service key; `VOYAGE_API_KEY` and `QUERIA_FIRST_ADMIN_EMAIL` present in API container |
 | Org | `fjulian` (1 user/admin; setup already consumed 2026-07-08) |
-| Projects | **0** (slug `fjulian-me` still missing — seed is a separate approved feature) |
+| Projects | **1** — slug `fjulian-me` (seeded 2026-07-17; see seed pack below) |
 
 Verified live stack after redeploy (2026-07-17):
 
@@ -194,63 +195,76 @@ Host resource snapshot: ~11 GiB RAM, ~188G disk with ~144G free, Docker on OCI a
 
 Same host also runs unrelated shared workloads (monitoring, other app DBs, `grok2api`, etc.). Do not treat the box as Queria-only when planning ports, disk, or restarts.
 
-### Mission ops acceptance pack (2026-07-17, measure-only)
+### Mission ops acceptance pack (2026-07-17, measure-only — historical)
 
-**Allowed write:** exactly one `eval run --project fjulian-me` attempt.  
-**Forbidden (not done):** deploy, container restart/recreate, migrate, backfill enqueue, restore, schema change, dual-lane/`index_memory` on prod.
+Earlier same day, before seed: project missing; status/probe/eval all exited 1 with `admin or project not found`. See git history of this section if needed. **Superseded by seed pack below.**
 
-| Check | Command (on host / container) | Result |
-|---|---|---|
-| Edge healthz | `curl` `http://127.0.0.1:17674/healthz` | **HTTP 200**, body `OK` |
-| Containers | `docker ps` / `docker compose ps` | proxy/api/mcp/worker/admin/postgres/qdrant/minio **Up**; postgres+qdrant healthy |
-| Embeddings status | `docker exec --env-file …/.env queria-backend-queria-api-1 queria-cli embeddings status --project fjulian-me` | **exit 1** `admin or project not found` (admin email matches user; **project missing**) |
-| Embeddings residual (SQL equivalent) | counts from empty `chunk` table + zero projects | see table below |
-| Retrieval probe | `queria-cli retrieval probe --project fjulian-me --query "deployment and site build notes" --limit 5` | **exit 1** same error (second control query also exit 1; no knowledge mutation) |
-| Golden eval (once) | `queria-cli eval run --project fjulian-me` with golden file mounted from host `tests/golden_questions` | **exit 1** same error; **no** `evaluation_report` row inserted |
+### Mission ops seed pack (2026-07-17, `ops-prod-seed-fjulian-me`)
 
-**Production embeddings residual for `fjulian-me` (2026-07-17):**
+**Allowed for this feature:** create project `fjulian-me`, register Git source `git@github.com:nandocoeg2/fjulian.me.git`, ingestion + embedding backfill, then status/probe/**one** eval + HANDOFF.  
+**Not done:** full image rebuild/redeploy, volume wipe, second eval run, dual-lane `index_memory` on prod.
+
+| Check | Result |
+|---|---|
+| Edge healthz | **HTTP 200**, body `OK` (Caddy) |
+| Project | slug **`fjulian-me`** exists (org `fjulian`, project id `9e5d90ee-c782-457e-98b1-86ff85cffb6a`) |
+| Git source | `git@github.com:nandocoeg2/fjulian.me.git` active; local checkout `/tmp/seed10001/fjulian.me` (allowlist host `github.com`, repo `nandocoeg2/fjulian.me.git`) |
+| Git ingest | job `a8e589f9-…` **succeeded**: 231 files, **1213** knowledge items, **1229** chunks (all initially pending) |
+| TruffleHog fix | image lacked `config/trufflehog-*.txt`; worker bind-mount `./config:/config:ro` + absolute env paths; first fail was missing include paths (not real secrets) |
+| Embedding backfill | job `6528e606-…` enqueued; Voyage **429** rate limits with batch 8 / 2s interval; ready increased 0 → **72** during seed session |
+| Embeddings status | **exit 0** JSON (see residual below) |
+| Retrieval probe | **exit 0**; structured `items` (5) + `retrieval.mode` hybrid for both golden-ish queries |
+| Golden eval (once) | **3/3 passed**, regression **1.0**, report id `6c8b5df9-89e4-45c1-8fda-e76b5a4ec567` persisted |
+
+**Production embeddings residual for `fjulian-me` (2026-07-17 seed session, post-probe/eval):**
 
 ```json
 {
   "project": "fjulian-me",
-  "project_exists": false,
+  "project_exists": true,
   "embedding_profile_version": "voyage-4-1024-v1",
   "counts": {
-    "ready": 0,
-    "pending": 0,
-    "failed": 0,
+    "ready": 72,
+    "pending": 1005,
+    "failed": 152,
     "processing": 0,
     "stale": 0
   },
-  "org_projects_total": 0,
-  "chunks_total_all_projects": 0,
-  "cli_exit": 1,
-  "cli_error": "admin or project not found"
+  "knowledge_items_approved": 1213,
+  "chunks_total": 1229,
+  "ingest_job": "succeeded",
+  "backfill_job_status": "queued (retrying; Voyage 429 residual)",
+  "cli_exit": 0
 }
 ```
 
-**Probe notes:** CLI could not resolve project `fjulian-me`. No ranked hits structure returned (pre-retrieve failure). Knowledge/chunk/job counts stayed at 0 before and after probes. Classified read-ish (no backfill enqueue).
+**Probe notes:**
 
-**Eval (exactly one attempt this session):**
+- Query `deployment and site build notes` → 5 items, `retrieval.mode=hybrid`, first path `src/entry-server.tsx`, status/lane `approved`/`trusted`.
+- Query `Astro markdown content flow` → 5 items, hybrid, citation paths present.
+- Read-ish after seed writes; no second backfill enqueue for probes.
+
+**Eval (exactly one run this seed session):**
 
 | Field | Value |
 |---|---|
 | Project | `fjulian-me` |
-| Total / passed / failed | **N/A** (did not enter EvaluationExecutor; no report insert) |
-| Regression score | **N/A** |
-| Failing questions | N/A |
-| `evaluation_report` rows after run | **0** |
-| Mission note | Single prod eval command only; not re-run for score shopping. Content DoD (e.g. 3/3) **not met**. |
+| Report id | `6c8b5df9-89e4-45c1-8fda-e76b5a4ec567` |
+| Status | `passed` |
+| Total / passed / failed | **3 / 3 / 0** |
+| Regression score | **1.0** |
+| Failing questions | **none** |
+| Modes observed | hybrid + lexical_fallback mix (semantic partial while embeddings residual) |
+| Mission note | Single prod eval only; Phase 7 golden **3/3 met** on content criteria |
 
-**Ops open issues (after 2026-07-17 redeploy; content Phase 7 still open):**
+**Ops open issues (after seed):**
 
-1. **Prod has no projects and no knowledge** — setup/admin exists for org `fjulian`, but project/content tables remain empty. Status/probe/eval for `fjulian-me` need seed feature `ops-prod-seed-fjulian-me` (approved separately).
-2. ~~Runtime edge still `queria-proxy`~~ **Resolved** — Caddy `queria-edge` live; healthz 200 with `Server: Caddy`.
-3. ~~API container env incomplete~~ **Resolved on redeploy** — compose `env_file` + `QUERIA_FIRST_ADMIN_EMAIL` / Voyage / matching `QDRANT_API_KEY` in API and Qdrant.
-4. **Historical local embedding residual** (2026-07-05 ready 344 / pending 717 / failed 168) is **local only**; do not use it as production truth.
-5. ~~No dual-lane on prod~~ **Resolved at runtime/schema** — image `c1cdfd7…` + migrations `20260717000100`/`00200` (`scratch` enum + content_hash). Content seed still pending.
-
-Seed/ingest/eval for `fjulian-me` is a separate approved feature; do not wipe postgres/qdrant volumes.
+1. ~~Prod has no projects/knowledge~~ **Resolved** for `fjulian-me` (1213 approved items / 1229 chunks).
+2. **Embedding residual still large** — ready **72**, pending **1005**, failed **152**; backfill continues with Voyage 429 throttling. Failed chunks are retryable; do not treat residual as local 2026-07-05 snapshot.
+3. **TruffleHog config not in runtime image** — worker needs `/config` mount (or Dockerfile COPY of `config/trufflehog-*.txt`) on future deploys; host override `docker-compose.worker-seed.override.yml` used for this seed.
+4. **Inactive Mac path source** remains deactivated (`file:///Users/.../fjulian.me`); only GitHub SSH source is active.
+5. ~~Runtime edge `queria-proxy`~~ **Resolved** (Caddy). Dual-lane schema/image already live from redeploy.
+6. Optional: bake worker pacing (`QUERIA_EMBEDDING_BATCH_SIZE=8`, interval 2s) into permanent prod `.env` if Voyage rate limits persist.
 
 Security:
 
@@ -283,7 +297,7 @@ lock. Historical failed chunks remain retryable.
 `README.md: Deployment` chunk is pending, while other build/deployment chunks
 are already ready.
 
-**Production (2026-07-17):** project `fjulian-me` absent; all embedding counts 0 (see Mission ops acceptance pack).
+**Production (2026-07-17 seed):** project `fjulian-me` present; embeddings ready 72 / pending 1005 / failed 152 (backfill still draining; see Mission ops seed pack).
 
 ## Latest Verified Retrieval Finding
 
@@ -296,14 +310,15 @@ bounded relaxed OR path; RRF still combines lexical and semantic rankings.
 Auth, approved status, active source, organization, project, and global-scope
 filters remain inside both SQL paths.
 
-Re-verify on current production data after embedding backfill; do not treat the
-old 2/3 failure as the live default without a fresh probe.
+**Production re-verify (2026-07-17 seed):** probe for `deployment and site build notes`
+returns structured hybrid hits (5 items). Partial embeddings still leave many
+chunks pending/failed; lexical path covers golden minimums (eval 3/3).
 
 ## Latest Evaluation Result
 
-### Production ops acceptance (2026-07-17) — one allowed run
+### Production seed acceptance (2026-07-17) — one allowed run
 
-Command (on prod host; used host `.env` + golden file from deploy tree):
+Command (on prod host; host `.env` + golden file from deploy tree):
 
 ```bash
 docker run --rm --network container:queria-backend-queria-api-1 \
@@ -315,12 +330,17 @@ docker run --rm --network container:queria-backend-queria-api-1 \
 
 Observed:
 
-- CLI exit: **1**
-- Error: `admin or project not found` (project `fjulian-me` missing; admin email matches DB user)
-- total / passed / failed: **not computed**
-- regression score: **N/A**
-- `evaluation_report` insert: **none** (0 rows after attempt)
-- **Not** a second run; Phase 7 golden 3/3 remains open
+- CLI exit: **0**
+- Report id: `6c8b5df9-89e4-45c1-8fda-e76b5a4ec567`
+- total: **3** / passed: **3** / failed: **0**
+- regression score: **1.0**
+- status: **passed**
+- `evaluation_report` insert: **yes** (1 row)
+- **Not** a second run for score shopping. Phase 7 golden content DoD **met**.
+
+### Historical measure-only (2026-07-17 earlier, pre-seed)
+
+- Exit 1 `admin or project not found`; no report. Superseded by seed run above.
 
 ### Historical local only (2026-07-05)
 
