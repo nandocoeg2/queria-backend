@@ -127,6 +127,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "backup_records",
             sql: include_str!("../../../migrations/20260705000100_backup_records.sql"),
         },
+        Migration {
+            version: "20260717000100",
+            name: "knowledge_status_scratch",
+            sql: include_str!("../../../migrations/20260717000100_knowledge_status_scratch.sql"),
+        },
     ]
 }
 
@@ -265,5 +270,27 @@ mod tests {
                 "evaluation report migration is missing {required_sql}"
             );
         }
+    }
+
+    #[test]
+    fn bundled_migrations_include_knowledge_status_scratch() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260717000100")
+            .expect("missing knowledge_status scratch migration");
+
+        assert!(
+            migration
+                .sql
+                .contains("ALTER TYPE knowledge_status ADD VALUE")
+                && migration.sql.contains("'scratch'"),
+            "scratch migration must ADD VALUE 'scratch' to knowledge_status"
+        );
+        // YAGNI: lane is derived from status; no dedicated lane column.
+        assert!(
+            !migration.sql.to_lowercase().contains("add column"),
+            "scratch migration must not add columns; extend enum only"
+        );
     }
 }
