@@ -1,12 +1,13 @@
 # Stage 1: Build
+# Pin close to workspace rust-version; edition 2024 needs >=1.85. Prefer bookworm for aarch64 OCI hosts.
 FROM rust:1.85-slim-bookworm AS builder
 WORKDIR /usr/src/queria
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev cmake g++ build-essential && rm -rf /var/lib/apt/lists/*
 # Copy workspace files
 COPY . .
-# Build all release binaries
-RUN cargo build --release --workspace
+# Build runtime binaries only (faster than full workspace tests)
+RUN cargo build --release -p queria-api -p queria-mcp -p queria-worker -p queria-cli
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim AS runtime

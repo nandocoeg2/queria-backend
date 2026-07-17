@@ -92,7 +92,8 @@ docker compose -f docker-compose.production.yml build queria-admin
 Run database migrations once before booting the application containers to prevent concurrent migration attempts:
 
 ```bash
-docker compose -f docker-compose.production.yml run --rm queria-api database migrate
+# entrypoint wraps binaries; use queria-cli subcommand (not bare "database")
+docker compose -f docker-compose.production.yml run --rm --no-deps queria-api queria-cli database migrate
 ```
 
 ## Deploying the Stack

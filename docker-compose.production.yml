@@ -30,20 +30,25 @@ services:
   queria-api:
     image: queria-backend:latest
     command: queria-api
+    env_file:
+      - .env
     environment:
       - QUERIA_ENV=production
       - QUERIA_GIT_ALLOWED_ROOTS=/tmp
       - QUERIA_API_ADDR=0.0.0.0:17671
-      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      # Override host .env URLs so containers use compose DNS, not host loopback.
+      - QUERIA_DATABASE_URL=postgresql://queria:${DATABASE_PASSWORD}@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_FIRST_ADMIN_EMAIL=${QUERIA_FIRST_ADMIN_EMAIL}
       - QUERIA_MINIO_ENDPOINT=${OCI_STORAGE_ENDPOINT}
       - QUERIA_MINIO_BUCKET=${OCI_STORAGE_BUCKET}
       - QUERIA_MINIO_ACCESS_KEY=${OCI_STORAGE_ACCESS_KEY}
       - QUERIA_MINIO_SECRET_KEY=${OCI_STORAGE_SECRET_KEY}
       - QUERIA_MINIO_REGION=${OCI_STORAGE_REGION}
+      - QUERIA_SOURCE_COMMIT=${QUERIA_SOURCE_COMMIT}
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,14 +59,18 @@ services:
   queria-mcp:
     image: queria-backend:latest
     command: queria-mcp
+    env_file:
+      - .env
     environment:
       - QUERIA_ENV=production
       - QUERIA_MCP_ADDR=0.0.0.0:17672
-      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      - QUERIA_DATABASE_URL=postgresql://queria:${DATABASE_PASSWORD}@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_FIRST_ADMIN_EMAIL=${QUERIA_FIRST_ADMIN_EMAIL}
+      - QUERIA_SOURCE_COMMIT=${QUERIA_SOURCE_COMMIT}
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,15 +81,18 @@ services:
   queria-worker:
     image: queria-backend:latest
     command: queria-worker
+    env_file:
+      - .env
     environment:
       - QUERIA_ENV=production
       - QUERIA_GIT_ALLOWED_ROOTS=/tmp
       - QUERIA_WORKER_HEALTH_ADDR=0.0.0.0:17673
-      - QUERIA_DATABASE_URL=postgres://queria:${DATABASE_PASSWORD}@postgres:5432/queria
+      - QUERIA_DATABASE_URL=postgresql://queria:${DATABASE_PASSWORD}@postgres:5432/queria
       - QUERIA_QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_FIRST_ADMIN_EMAIL=${QUERIA_FIRST_ADMIN_EMAIL}
       - QUERIA_MINIO_ENDPOINT=${OCI_STORAGE_ENDPOINT}
       - QUERIA_MINIO_BUCKET=${OCI_STORAGE_BUCKET}
       - QUERIA_MINIO_ACCESS_KEY=${OCI_STORAGE_ACCESS_KEY}
@@ -105,6 +117,7 @@ services:
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
     restart: unless-stopped
 
+  # Caddy edge replaces legacy queria-proxy (Pingora binary removed in SIMPLIFICATION P1).
   queria-edge:
     image: caddy:2.10-alpine
     ports:

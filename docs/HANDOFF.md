@@ -1,13 +1,13 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-17 (ops acceptance measure-only pack on production)
+> Last verified: 2026-07-17 (prod redeploy dual-lane + Caddy edge; measure pack earlier same day)
 > Branch: `main`
-> Local workspace commit at measure time: see `git log` (docs residual update for prod ops pack)
+> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A on `main`)
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
-> **Production host still runs pre-Caddy image** (`queria-proxy` container, image `queria-backend:latest` built 2026-07-08); code-side Caddy is not redeployed yet.
+> **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design. When other
@@ -26,17 +26,19 @@ and AI agents. Full contract: [`PRODUCT.md`](./PRODUCT.md).
 `propose_memory` after work. Permanent **trusted** memory enters normal retrieval
 only through approval or a trusted Git ingestion pipeline.
 
-**Approved, not implemented:** dual-lane **scratch** agent memory (`index_memory`,
-project-scoped direct write) so agents can persist searchable notes without
-approval, without writing into trusted/global team truth. See PRODUCT lanes and
-[`IMPROVEMENTS.md`](./IMPROVEMENTS.md) `IMP-13`–`IMP-16`.
+**Dual-lane Slice A (code + prod image 2026-07-17):** project-scoped **scratch**
+via MCP `index_memory` (permission `IndexMemory`), sync Voyage+Qdrant embed,
+content_hash idempotency, shared max body with `propose_memory`, and
+`include_scratch` default true on agent retrieve. Promote / Admin scratch UI
+still deferred (`IMP-15`/`IMP-16`). See PRODUCT lanes and
+[`IMPROVEMENTS.md`](./IMPROVEMENTS.md).
 
-Knowledge scopes (as-is + target):
+Knowledge scopes:
 
 - `global`: reusable coding, security, deployment, SOP standards (**trusted only**; no scratch global).
-- `project`: project trusted knowledge; after dual-lane also that project’s scratch.
+- `project`: project trusted knowledge plus that project’s scratch when `include_scratch` is true.
 - `include_global=true` still requires token permission; project-only tokens cannot retrieve global knowledge.
-- `include_scratch` (planned): default true for agent retrieve; false for trusted-only probes.
+- `include_scratch`: default true for agent retrieve; false/trusted-only for golden eval path.
 
 ## Repository Boundaries
 
@@ -146,43 +148,49 @@ Connect:
 ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key ubuntu@168.110.214.130
 ```
 
-### Stack identity (measured 2026-07-17, read-only)
+### Stack identity (redeployed 2026-07-17, dual-lane + Caddy)
 
 | Field | Value |
 |---|---|
 | Host deploy path | `/home/ubuntu/queria-backend` |
-| Host git HEAD | `7ad381d` (`docs: update verified commit in HANDOFF.md`, 2026-07-08) |
-| Runtime `QUERIA_SOURCE_COMMIT` | `9506047` (image build label; differs from host checkout) |
-| Image | `queria-backend:latest` (`sha256:d517c6ea89a0…`, created 2026-07-08T12:45Z, ~116 MB) |
-| Edge service (live) | `queria-backend-queria-proxy-1` maps host `17674` (legacy Rust proxy; **not** Caddy/`queria-edge` yet) |
-| API / MCP / worker / admin | all `Up 8+ days` on measure day (no ops restart) |
-| Postgres / Qdrant | `healthy` |
-| MinIO | `Up` |
-| Schema | `_queria_migration` versions `20260704000100`–`20260705000100` (8 rows; baseline through backup_records). No dual-lane/`scratch` migration on prod. |
-| Org | `fjulian` (1 user/admin present; setup already consumed 2026-07-08) |
-| Projects | **0** (slug `fjulian-me` **does not exist** on prod) |
+| Host git checkout | still older tree files may lag; **runtime image** is authoritative |
+| Runtime `QUERIA_SOURCE_COMMIT` | `c1cdfd70caf65a4bf020fbb921c60f515c277788` |
+| Image | `queria-backend:latest` / tag `queria-backend:c1cdfd70caf65a4bf020fbb921c60f515c277788` (`sha256:dcad68efb5d9…`, created 2026-07-17T10:14Z) |
+| Edge service (live) | `queria-backend-queria-edge-1` image `caddy:2.10-alpine` (Caddy **v2.10.2**), host `17674` |
+| Legacy proxy | **removed** (no `queria-proxy` container after redeploy) |
+| API / MCP / worker / admin | Up on dual-lane image (recreated on redeploy) |
+| Postgres / Qdrant | **healthy**; volumes **not wiped** (`queria-backend_postgres_data` / `queria-backend_qdrant_data` created 2026-07-08) |
+| MinIO | `Up` (volume preserved) |
+| Schema | `_queria_migration` through `20260717000200` (10 rows). Includes dual-lane: `knowledge_status` enum has **`scratch`**. |
+| Env alignment | compose `env_file: .env` + overrides; `QDRANT_API_KEY` length matches host and qdrant service key; `VOYAGE_API_KEY` and `QUERIA_FIRST_ADMIN_EMAIL` present in API container |
+| Org | `fjulian` (1 user/admin; setup already consumed 2026-07-08) |
+| Projects | **0** (slug `fjulian-me` still missing — seed is a separate approved feature) |
 
-Verified live stack on 2026-07-17 (containers still up ~8 days; not recreated by ops pack):
+Verified live stack after redeploy (2026-07-17):
 
 | Service | Notes |
 |---|---|
-| `queria-backend-queria-proxy-1` | Public host port `17674` (legacy proxy image) |
-| `queria-backend-queria-api-1` | Internal only; contains `/usr/local/bin/queria-cli` |
-| `queria-backend-queria-mcp-1` | Internal only |
-| `queria-backend-queria-worker-1` | Internal only |
-| `queria-backend-queria-admin-1` | Internal (`4321` in container) |
-| `queria-backend-postgres-1` | Healthy |
-| `queria-backend-qdrant-1` | Healthy |
+| `queria-backend-queria-edge-1` | Public host port `17674` (Caddy; Server header `Caddy`) |
+| `queria-backend-queria-api-1` | Image dual-lane; `/usr/local/bin/queria-cli` present |
+| `queria-backend-queria-mcp-1` | Dual-lane image |
+| `queria-backend-queria-worker-1` | Dual-lane image |
+| `queria-backend-queria-admin-1` | Internal (`4321`) |
+| `queria-backend-postgres-1` | Healthy; volume preserved |
+| `queria-backend-qdrant-1` | Healthy; volume preserved |
 | `queria-backend-minio-1` | Running |
 
-Proxy health on the host (2026-07-17 ops pack):
+Edge health after redeploy + explicit migrate:
 
 ```bash
 curl -sS -o /tmp/healthz.out -w "%{http_code}" http://127.0.0.1:17674/healthz
-# http_code=200 body=OK
+# http_code=200 body=OK  (Server: Caddy)
+docker compose -f docker-compose.production.yml run --rm --no-deps queria-api queria-cli database migrate
+# {"status":"migrated"}  (idempotent; migrations already included dual-lane)
 ```
 
-Host resource snapshot (2026-07-16 notes still apply): ~11 GiB RAM, ~188G disk with ~145G free, Docker 29.5.0.
+**Note:** runbook `deployment.md` historically used `queria-api database migrate` without the `queria-cli` binary name; production entrypoint requires `queria-cli database migrate`.
+
+Host resource snapshot: ~11 GiB RAM, ~188G disk with ~144G free, Docker on OCI aarch64.
 
 Same host also runs unrelated shared workloads (monitoring, other app DBs, `grok2api`, etc.). Do not treat the box as Queria-only when planning ports, disk, or restarts.
 
@@ -234,15 +242,15 @@ Same host also runs unrelated shared workloads (monitoring, other app DBs, `grok
 | `evaluation_report` rows after run | **0** |
 | Mission note | Single prod eval command only; not re-run for score shopping. Content DoD (e.g. 3/3) **not met**. |
 
-**Ops open issues (honest; do not close Phase 7):**
+**Ops open issues (after 2026-07-17 redeploy; content Phase 7 still open):**
 
-1. **Prod has no projects and no knowledge** — setup/admin exists for org `fjulian`, but `project`/`knowledge_item`/`chunk`/`source_document`/`ingestion_job`/`agent_token`/`evaluation_report` are all empty. Status/probe/eval for `fjulian-me` cannot pass until project is created and trusted knowledge is ingested (explicit mid-mission approval required; out of this ops pack).
-2. **Runtime edge is still `queria-proxy`**, not Caddy `queria-edge`. Repo P1 Caddy work is local-side; production image/redeploy not done.
-3. **API container env incomplete vs host `.env`** — container process env lacked `QUERIA_FIRST_ADMIN_EMAIL` (CLI needed `--env-file` from host). Prefer aligning compose `env_file` on next approved redeploy.
+1. **Prod has no projects and no knowledge** — setup/admin exists for org `fjulian`, but project/content tables remain empty. Status/probe/eval for `fjulian-me` need seed feature `ops-prod-seed-fjulian-me` (approved separately).
+2. ~~Runtime edge still `queria-proxy`~~ **Resolved** — Caddy `queria-edge` live; healthz 200 with `Server: Caddy`.
+3. ~~API container env incomplete~~ **Resolved on redeploy** — compose `env_file` + `QUERIA_FIRST_ADMIN_EMAIL` / Voyage / matching `QDRANT_API_KEY` in API and Qdrant.
 4. **Historical local embedding residual** (2026-07-05 ready 344 / pending 717 / failed 168) is **local only**; do not use it as production truth.
-5. **No dual-lane on prod** — intentional; Slice A remains local-only this mission.
+5. ~~No dual-lane on prod~~ **Resolved at runtime/schema** — image `c1cdfd7…` + migrations `20260717000100`/`00200` (`scratch` enum + content_hash). Content seed still pending.
 
-Do not create projects, enqueue backfill, migrate, or redeploy without explicit user approval.
+Seed/ingest/eval for `fjulian-me` is a separate approved feature; do not wipe postgres/qdrant volumes.
 
 Security:
 

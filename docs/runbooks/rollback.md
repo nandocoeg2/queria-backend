@@ -40,7 +40,7 @@ To roll back the deployment without losing persistent database or vector volumes
    Since Queria database schema migrations are backwards-compatible and additive, no down-migrations are required. However, you can verify schema compatibility by running:
    ```bash
    # Check active database schema matches expectations
-   docker compose -f docker-compose.production.yml run --rm queria-api database migrate
+   docker compose -f docker-compose.production.yml run --rm --no-deps queria-api queria-cli database migrate
    ```
 
 5. **Start the stable services**:
