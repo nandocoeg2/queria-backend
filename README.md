@@ -1,7 +1,7 @@
 # queria-backend
 
 > Status: CURRENT - core product live; residual ops acceptance.
-> Last verified: 2026-07-17.
+> Last verified: 2026-07-18.
 > Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Cuts: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md). Backlog: [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
 
 Queria backend workspace for centralized team and agent knowledge.
@@ -14,9 +14,9 @@ See the full matrix in [`docs/HANDOFF.md`](docs/HANDOFF.md). Short version:
 |---|---|
 | Auth, setup, projects, sources, approvals, tokens, jobs | `COMPLETED` |
 | Git ingestion and trusted auto-approval | `COMPLETED` |
-| Hybrid retrieval (Voyage + Qdrant + FTS/RRF) | `COMPLETED` |
+| Hybrid retrieval (Voyage + Qdrant + FTS/RRF + rerank/compress) | `COMPLETED` (local `main`; prod image may lag until redeploy) |
 | MCP agent tools | `COMPLETED` (includes dual-lane `index_memory` + `include_scratch`) |
-| Admin API + Astro Admin UI | `COMPLETED` (P0 lean applied: no React/Three/shadcn) |
+| Admin API + Astro Admin UI | `COMPLETED` (P0 lean; Admin Playground at `/admin/playground`) |
 | Backup/restore, Caddy edge, production compose | `COMPLETED` (Pingora removed P1; restore-drill still P2 defer) |
 | Production acceptance pack | `OPEN` |
 
@@ -33,6 +33,20 @@ Agents retrieve and write in two lanes. Contract: [`docs/PRODUCT.md`](docs/PRODU
 - Without **IndexMemory**, agents stay propose-only (legacy).
 - Scratch is project-scoped only (never global). Prefer trusted over scratch when ranking near-duplicates.
 - Admin UI does **not** manage scratch yet (operator surfaces stay token/approvals/sources as today).
+
+## Retrieval quality + Admin Playground (local main)
+
+Shared pipeline (MCP, API, CLI, Admin):
+
+```text
+hybrid pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compress (prefer trusted)
+```
+
+- **Admin Playground:** session-auth SSR at `/admin/playground` (form + results; not the evaluation product).
+- **Env defaults (on):** `QUERIA_RERANK_ENABLED`, `QUERIA_RERANK_MODEL` (`rerank-2.5`), `QUERIA_COMPRESS_ENABLED`. See `.env.example` and [`docs/runbooks/hybrid-retrieval.md`](docs/runbooks/hybrid-retrieval.md).
+- **Probe / per-call flags:** optional `rerank` and `compress` on API/MCP retrieve, CLI `retrieval probe --rerank/--compress`, and Admin probe form. Operator probes default `include_scratch=false`.
+- Rerank **fails open** (keeps RRF order). Diagnostics include `rerank_applied`, `compress_dropped`, `latency_ms`.
+- Shipped on local `main` only in this note — do not assume production host image has been redeployed.
 
 ## Docs
 
