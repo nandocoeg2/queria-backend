@@ -384,4 +384,38 @@ mod tests {
         assert!(sql.contains("k.status = 'scratch'"));
         assert!(sql.contains("k.scope = 'global' and k.status = 'approved'"));
     }
+
+    /// VAL-DL-016 / VAL-DL-055: scratch is project-only; global filter only accepts approved.
+    #[test]
+    fn scratch_never_joins_global_scope_path() {
+        let lexical = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
+        let hydrate = HYDRATE_SQL.to_ascii_lowercase();
+        for sql in [lexical.as_str(), hydrate.as_str()] {
+            assert!(
+                sql.contains("k.scope = 'global' and k.status = 'approved'"),
+                "global hits must stay approved/trusted"
+            );
+            assert!(
+                sql.contains("k.status = 'scratch'") && sql.contains("k.scope = 'project'"),
+                "scratch gate must require project scope"
+            );
+            // No path that selects scratch under global scope.
+            assert!(!sql.contains("k.scope = 'global' and k.status = 'scratch'"));
+        }
+    }
+
+    /// VAL-DL-030 / VAL-CROSS-008: approved stays selectable whether include_scratch is on or off.
+    #[test]
+    fn approved_status_always_included_independent_of_scratch_flag() {
+        let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase().replace('\n', " ");
+        // Unconditional approved arm plus optional scratch arm (flag-gated).
+        assert!(sql.contains("k.status = 'approved'"));
+        assert!(sql.contains("access.include_scratch"));
+        assert!(
+            sql.contains("k.status = 'approved'    or (      access.include_scratch")
+                || sql.contains("k.status = 'approved'")
+                    && sql.contains("and k.status = 'scratch'"),
+            "approved must remain available when include_scratch is false"
+        );
+    }
 }

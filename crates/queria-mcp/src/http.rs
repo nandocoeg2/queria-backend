@@ -685,4 +685,51 @@ mod tests {
             .expect_err("oversize");
         assert!(err.starts_with("body_too_large"));
     }
+
+    /// VAL-DL-034: index_memory schema/args never accept a knowledge id mutate target.
+    #[test]
+    fn index_memory_args_have_no_trusted_id_mutate_field() {
+        // Round-trip through JSON without knowledge_item_id; extra field must not bind.
+        let value = json!({
+            "project_slug": "fjulian-me",
+            "body": "mission-dl-no-mutate",
+            "knowledge_item_id": "00000000-0000-0000-0000-000000000001",
+            "id": "00000000-0000-0000-0000-000000000001"
+        });
+        let args: IndexMemoryArgs = serde_json::from_value(value).expect("deserialize");
+        let params = args
+            .into_params(20_000)
+            .expect("valid without mutate fields");
+        // Only body/title/hash project selectors exist; no approved id carry-through.
+        assert!(params.project_id.is_none());
+        assert_eq!(params.project_slug.as_deref(), Some("fjulian-me"));
+        assert_eq!(params.body, "mission-dl-no-mutate");
+    }
+
+    /// VAL-DL-032: infrastructure embed failures map to non-success tool error string.
+    #[test]
+    fn index_memory_error_maps_infrastructure_to_embed_failed() {
+        let msg = index_memory_error(queria_core::QueriaError::Infrastructure(
+            "voyage down".to_owned(),
+        ));
+        assert_eq!(msg, "index_memory_embed_failed");
+        assert_ne!(msg, "permission_denied");
+        let validation = index_memory_error(queria_core::QueriaError::Validation(
+            "invalid_body".to_owned(),
+        ));
+        assert_eq!(validation, "invalid_body");
+    }
+
+    /// VAL-DL-042: valid optional tags accepted within bounds.
+    #[test]
+    fn index_memory_accepts_valid_optional_tags() {
+        let mut args = valid_index("mission-dl-tags-ok");
+        args.tags = vec!["a".to_owned(), "b".to_owned()];
+        args.title = Some("t".to_owned());
+        args.category = Some("note".to_owned());
+        let params = args.into_params(20_000).expect("valid tags");
+        assert_eq!(params.tags, vec!["a".to_owned(), "b".to_owned()]);
+        assert_eq!(params.title, "t");
+        assert_eq!(params.category, "note");
+    }
 }

@@ -200,6 +200,13 @@ pub fn content_hash_for_body(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::{
+        EmbeddingDocument, EmbeddingProvider, EmbeddingVector, VectorCandidate, VectorIndex,
+        VectorIndexHealth, VectorPoint, VectorSearchRequest,
+    };
+    use async_trait::async_trait;
+    use std::sync::Mutex;
+    use uuid::Uuid;
 
     #[test]
     fn content_hash_for_body_matches_core_helper() {
@@ -218,5 +225,90 @@ mod tests {
             profile_version: "voyage-4-1024-v1".to_owned(),
         };
         assert_eq!(profile.dimension, 1024);
+    }
+
+    /// VAL-DL-032 / VAL-DL-052: failing provider is surfaced as infrastructure error (no success).
+    #[tokio::test]
+    async fn failing_provider_surfaces_infrastructure_error() {
+        struct FailProvider;
+        #[async_trait]
+        impl EmbeddingProvider for FailProvider {
+            async fn embed_documents(
+                &self,
+                _inputs: &[EmbeddingDocument],
+            ) -> QueriaResult<Vec<EmbeddingVector>> {
+                Err(QueriaError::Infrastructure(
+                    "voyage unavailable (test)".to_owned(),
+                ))
+            }
+            async fn embed_query(&self, _query: &str) -> QueriaResult<EmbeddingVector> {
+                Err(QueriaError::Infrastructure(
+                    "voyage unavailable (test)".to_owned(),
+                ))
+            }
+        }
+
+        struct TrackingIndex {
+            deleted: Mutex<Vec<Uuid>>,
+        }
+        #[async_trait]
+        impl VectorIndex for TrackingIndex {
+            async fn ensure_collection(&self) -> QueriaResult<()> {
+                Ok(())
+            }
+            async fn upsert(&self, _points: &[VectorPoint]) -> QueriaResult<()> {
+                Ok(())
+            }
+            async fn search(
+                &self,
+                _request: VectorSearchRequest,
+            ) -> QueriaResult<Vec<VectorCandidate>> {
+                Ok(vec![])
+            }
+            async fn delete(&self, point_ids: &[Uuid]) -> QueriaResult<()> {
+                self.deleted
+                    .lock()
+                    .expect("lock")
+                    .extend(point_ids.iter().copied());
+                Ok(())
+            }
+            async fn health(&self) -> QueriaResult<VectorIndexHealth> {
+                Ok(VectorIndexHealth {
+                    collection: "t".to_owned(),
+                    points_count: 0,
+                })
+            }
+        }
+
+        let profile = EmbedProfile {
+            provider: "voyage".to_owned(),
+            model: "voyage-4".to_owned(),
+            dimension: 4,
+            profile_version: "test".to_owned(),
+        };
+        let record = IndexedMemoryRecord {
+            knowledge_item_id: Uuid::now_v7(),
+            chunk_id: Uuid::now_v7(),
+            project_id: Uuid::now_v7(),
+            organization_id: Uuid::now_v7(),
+            status: "scratch".to_owned(),
+            scope: "project".to_owned(),
+            title: "t".to_owned(),
+            body: "mission-dl-fail-path".to_owned(),
+            content_hash: content_hash_for_body("mission-dl-fail-path"),
+            created: true,
+        };
+        let index = TrackingIndex {
+            deleted: Mutex::new(Vec::new()),
+        };
+        let err = embed_and_upsert_scratch(&FailProvider, &index, &profile, &record)
+            .await
+            .expect_err("provider down must fail");
+        assert!(
+            matches!(err, QueriaError::Infrastructure(ref msg) if msg.contains("voyage")),
+            "expected infrastructure embed failure, got {err:?}"
+        );
+        // Delete not called on pure embed failure before upsert; caller path still rolls back PG.
+        assert!(index.deleted.lock().expect("lock").is_empty());
     }
 }

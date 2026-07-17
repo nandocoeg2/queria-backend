@@ -1,8 +1,8 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-17 (embedding backfill restatus: ready 1226 / failed 3; seed eval 3/3; dual-lane + Caddy redeploy earlier same day)
+> Last verified: 2026-07-17 (embedding residual ready 1226 / failed 3; seed eval 3/3; dual-lane + Caddy; TruffleHog path filters baked into image on `main` @ `37e7b7c`)
 > Branch: `main`
-> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A on `main`)
+> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A). Image bake-in for TruffleHog config is on `main` at `37e7b7c` — **not yet redeployed** to the live host image.
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
@@ -312,7 +312,7 @@ Earlier same day, before seed: project missing; status/probe/eval all exited 1 w
 
 1. ~~Prod has no projects/knowledge~~ **Resolved** (`fjulian-me`, 1213 items / 1229 chunks).
 2. ~~Embedding residual still large~~ **Mostly resolved** — ready **1226** / pending **0** / failed **3** (Voyage 429). No wipe; optional later bounded retry of the 3 failed if quota allows (not required for golden DoD).
-3. **TruffleHog config not in runtime image** — worker needs `/config` mount or Dockerfile COPY of `config/trufflehog-*.txt` on future deploys.
+3. ~~**TruffleHog config not in runtime image**~~ **Committed on `main` (`37e7b7c`)** — Dockerfile `COPY config/trufflehog-*.txt` + absolute `QUERIA_TRUFFLEHOG_*` env; production compose reasserts paths. **Live image still `c1cdfd7` until next redeploy** (seed used host `/config` bind-mount).
 4. **Inactive Mac path source** remains deactivated; only GitHub SSH source is active.
 5. ~~Runtime edge `queria-proxy`~~ **Resolved** (Caddy).
 6. Optional: bake worker pacing (`QUERIA_EMBEDDING_BATCH_SIZE=8`, interval ≥2s) into permanent prod `.env` to reduce 429 churn on future large ingests.
@@ -471,7 +471,7 @@ rtk git diff --check
 | Production acceptance pack | Medium | Healthz, stack identity, embeddings status, probe, **eval 3/3** recorded. Remaining Phase 7: MCP client smoke, backup restore drill, SLO spot-check. |
 | Edge still `queria-proxy` | **Resolved** | Live edge is Caddy `queria-edge` after 2026-07-17 redeploy. |
 | Prod container env drift | Medium | CLI still prefers host `--env-file` for some flags; compose `env_file` mostly aligned post-redeploy. |
-| TruffleHog config in image | Medium | Image does not COPY `config/trufflehog-*.txt`; seed used host `/config` bind-mount. Tracked feature `deploy-trufflehog-config-in-image`. |
+| TruffleHog config in image | **Low** (code done) | **Committed** `37e7b7c` on `main` (Dockerfile COPY + env). Live prod image still dual-lane `c1cdfd7` until redeploy; seed used host `/config` bind-mount. |
 | Hard simplification cuts | Done (P0–P3) | See [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). |
 | Admin UI dedicated routes | Low | Embedding / retrieval probe / backup are embedded or CLI-only (see screen matrix). Optional polish only. |
 | Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP stays five tools. |
@@ -505,7 +505,7 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 2. ~~Create project / Git ingest / one eval~~ **done** (`fjulian-me`, eval 3/3).
 3. ~~Embedding backfill restatus~~ **done** (ready 1226 / failed 3; job succeeded; HANDOFF residual updated).
 4. Remaining acceptance: MCP client smoke, scopes, backup restore drill, SLO spot-check (still open).
-5. Optional ops: bake embedding pacing into prod `.env`; Dockerfile COPY trufflehog config paths.
+5. Optional ops: bake embedding pacing into prod `.env`; **redeploy** so live image picks up TruffleHog path-filter bake-in (`37e7b7c`).
 
 **Post-cut**
 

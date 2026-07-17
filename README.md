@@ -1,8 +1,8 @@
 # queria-backend
 
 > Status: CURRENT - core product live; residual ops acceptance.
-> Last verified: 2026-07-16.
-> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Cuts applied: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md).
+> Last verified: 2026-07-17.
+> Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Cuts: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md). Backlog: [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
 
 Queria backend workspace for centralized team and agent knowledge.
 

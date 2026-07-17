@@ -1,7 +1,7 @@
 # Queria Docs Policy
 
 > Status: CURRENT
-> Last verified: 2026-07-16
+> Last verified: 2026-07-17
 
 ## Source of truth
 
@@ -10,8 +10,9 @@
 | What is implemented right now? | [`HANDOFF.md`](./HANDOFF.md) only |
 | What should we delete or shrink next? | [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) |
 | How does the product work for operators? | Live files under [`runbooks/`](./runbooks/) |
-| What is the product contract? | [`PRODUCT.md`](./PRODUCT.md) |
+| What is the product contract? | [`PRODUCT.md`](./PRODUCT.md) (includes dual-lane; HANDOFF says what is shipped) |
 | As-is vs post-cut architecture? | [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
+| What post-MVP improvements are approved but not ledgers? | [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) (`REFERENCE` backlog) |
 
 If HANDOFF and any other document disagree, **HANDOFF wins**. Product specs and research docs never claim "done."
 
@@ -35,6 +36,7 @@ queria/backend/docs/
   PRODUCT.md
   ARCHITECTURE.md
   SIMPLIFICATION.md
+  IMPROVEMENTS.md     # REFERENCE backlog (enowx-informed); not runtime truth
   runbooks/           # live ops only
   archive/            # SUPERSEDED plans, specs, walkthroughs
 ```
@@ -49,7 +51,8 @@ When behavior changes:
 2. Relevant runbook (if ops changes)
 3. `HANDOFF.md` current state and residual gaps
 4. `SIMPLIFICATION.md` checkboxes only after verified cut
-5. Parent `docs/README.md` only if the product index needs a pointer change
+5. `IMPROVEMENTS.md` item status only after HANDOFF reflects the change (or when adding approved backlog)
+6. Parent `docs/README.md` only if the product index needs a pointer change
 
 ## What goes to archive
 

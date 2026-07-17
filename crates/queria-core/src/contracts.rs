@@ -171,6 +171,35 @@ mod tests {
         assert!(request.validate().is_err());
     }
 
+    /// VAL-DL-040: blank/long query and limit bounds stay validated under dual-lane.
+    #[test]
+    fn retrieve_context_request_rejects_overlong_query_and_bad_limit() {
+        let overlong = "q".repeat(513);
+        let bad_query = RetrieveContextRequest {
+            project_id: ProjectId::new(),
+            query: overlong,
+            include_global: true,
+            include_scratch: true,
+            limit: 5,
+        };
+        let err = bad_query.validate().expect_err("512 byte max");
+        assert!(
+            matches!(err, QueriaError::Validation(ref msg) if msg.contains("512")),
+            "expected overlong query validation, got {err:?}"
+        );
+
+        for limit in [0_u32, 21] {
+            let req = RetrieveContextRequest {
+                project_id: ProjectId::new(),
+                query: "ok".to_owned(),
+                include_global: true,
+                include_scratch: false,
+                limit,
+            };
+            assert!(req.validate().is_err(), "limit {limit} must be rejected");
+        }
+    }
+
     #[test]
     fn retrieve_context_request_accepts_bounded_query() {
         let request = RetrieveContextRequest {
@@ -182,6 +211,18 @@ mod tests {
         };
 
         request.validate().expect("bounded query should be valid");
+    }
+
+    /// VAL-DL-036 / VAL-CROSS-008: approved maps to trusted lane leanly.
+    #[test]
+    fn approved_status_maps_to_trusted_lane_leanly() {
+        assert!(KnowledgeStatus::Approved.is_trusted_lane());
+        assert!(!KnowledgeStatus::Approved.is_scratch_lane());
+        assert_eq!(
+            KnowledgeLane::from_status(KnowledgeStatus::Approved).as_str(),
+            "trusted"
+        );
+        assert_eq!(KnowledgeStatus::Approved.as_str(), "approved");
     }
 
     /// VAL-DL-026 / IMP-14: agent default for include_scratch is true.

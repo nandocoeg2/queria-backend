@@ -1,9 +1,11 @@
 # Queria Architecture
 
-> Status: CURRENT (as-is) + PLANNED (post-hard-cut)
-> Last verified: 2026-07-16
+> Status: CURRENT (as-is) + PLANNED (post-hard-cut + dual-lane)
+> Last verified: 2026-07-17
 > Runtime truth: [`HANDOFF.md`](./HANDOFF.md)
+> Product contract: [`PRODUCT.md`](./PRODUCT.md)
 > Cut plan: [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
+> Backlog: [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
 
 ## As-is (2026-07-16)
 
@@ -91,9 +93,48 @@ Admin: stat cards and SSR tables only (P0 applied).
 | `/admin`, `/` (UI) | admin |
 | `/healthz` | edge-local 200 or api health |
 
+## Dual-lane knowledge (Slice A as-is + deferred)
+
+Contract and rules: [`PRODUCT.md`](./PRODUCT.md). Backlog: `IMP-13`–`IMP-16` in [`IMPROVEMENTS.md`](./IMPROVEMENTS.md). Runtime: [`HANDOFF.md`](./HANDOFF.md).
+
+**As-is (Slice A shipped):** MCP `index_memory` → scratch (project-scoped, sync embed); MCP `propose_memory` → approval → trusted; worker Git → trusted; retrieve with `include_scratch` default true (eval/CLI trusted-only).
+
+**Still deferred:** Admin list/delete scratch (`IMP-15`); `promote_memory` (`IMP-16`); prefer-trusted near-dup compress (`IMP-02`).
+
+Write paths:
+
+```mermaid
+flowchart LR
+  Agent --> Index["index_memory"]
+  Agent --> Propose["propose_memory"]
+  Index --> Scratch[(scratch project)]
+  Propose --> Queue[proposed]
+  Queue --> Approve[admin approve]
+  Approve --> Trusted[(trusted)]
+  Git["Git worker"] --> Trusted
+  Scratch --> Promote["promote optional deferred"]
+  Promote --> Queue
+  Scratch --> Search["retrieve filter"]
+  Trusted --> Search
+```
+
+| Concern | Pre–Slice A | Slice A (now) | Deferred |
+|---|---|---|---|
+| Agent direct write | No | Yes → **scratch** only, project-scoped | — |
+| Trusted write | Approve or trusted Git | Unchanged | — |
+| Global | Trusted standards | Still trusted-only; no scratch global | — |
+| Qdrant / FTS filter | org, project, status, approved | + status `scratch` / lane filters | — |
+| Eval / golden | Approved knowledge | Trusted lane only (`include_scratch=false`) | — |
+| Rank ties | RRF only | RRF only | Prefer trusted over scratch (IMP-02) |
+| Admin scratch / promote | N/A | N/A | IMP-15 / IMP-16 |
+
+Crate impact (Slice A): `queria-db` migrations + hybrid filters; `queria-search` scratch embed + retrieval; `queria-mcp` `index_memory`; `queria-core` `IndexMemory` permission + contracts.
+
 ## Explicit non-goals (post-cut)
 
 - Multi vector DB product support (Qdrant only in Queria)
 - Second edge binary inside the Rust workspace
 - Evaluation Admin product surface as a default
 - Decorative 3D visualization as a release gate
+- Agent direct write into **trusted** or **global** (scratch lane only)
+- Full enowx multi-store / one-binary product shape

@@ -1,30 +1,88 @@
 # Queria Product Contract
 
 > Status: CURRENT
-> Last verified: 2026-07-16
+> Last verified: 2026-07-17
 > Implementation ledger: [`HANDOFF.md`](./HANDOFF.md)
+> Post-MVP improvements: [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
 
 ## North star
 
-Centralize organization-wide and project-specific knowledge for humans and AI agents. Every agent should call `retrieve_context(project_id, query)` before work and may call `propose_memory` after work. Permanent memory enters normal retrieval only through approval or a trusted Git ingestion pipeline.
+Centralize organization-wide and project-specific knowledge for humans and AI agents.
+
+Agents always retrieve before work. They may write in two intentional ways:
+
+1. **Scratch (agent memory)** — direct, project-scoped, searchable immediately (enowx-style DX). Not team “official” truth.
+2. **Trusted** — permanent shared knowledge only via **approval** or a **trusted Git ingestion** pipeline.
+
+Dual-lane keeps personal/agent velocity without collapsing the team trust model into a single bucket.
+
+## Knowledge lanes (trust model)
+
+| Lane | How it enters | Who can write via MCP | In default agent retrieve? | Admin “official” knowledge |
+|---|---|---|---|---|
+| **scratch** | `index_memory` (direct) | Agent with `index_memory` permission | Yes (same project only) | Optional list / TTL / promote / delete |
+| **trusted** | Approval of proposed items, or trusted Git pipeline | Not directly by agent | Yes | Yes |
+| **pipeline only** | `propose_memory` → `proposed` / `draft` until approved | Agent proposes only | No (unless operator tooling) | Approval queue |
+
+### Hard rules
+
+- Scratch is **project-scoped only**. Never `global`. Never cross-project.
+- Agents **must not** overwrite, delete, or silently mutate **trusted** items via MCP.
+- Promoting scratch toward team truth: `scratch → proposed` (optional `promote_memory`), still requires human (or policy) approval to become trusted.
+- Golden evaluation and leakage gates apply to **trusted** knowledge only.
+- When ranking near-duplicates, **prefer trusted over scratch**.
+- Audit: every scratch write records agent token (or actor), project, timestamp.
+
+### Agent workflow
+
+```text
+Before work:
+  retrieve_context(project_id, query)
+  # default: trusted (project + optional global) ∪ scratch (project)
+
+After work (fast, no human):
+  index_memory(project_id, body, tags…)   # → scratch, searchable now
+
+After work (want team truth):
+  propose_memory(...)                     # → proposed → approve → trusted
+  # or promote_memory(scratch_id)         # → proposed → approve → trusted
+```
+
+Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted (auto-approve only for trusted sources per existing rules).
 
 ## Knowledge scopes
 
 | Scope | Meaning |
 |---|---|
-| `global` | Coding, security, deployment, SOP, and operational standards shared across projects |
-| `project` | Business flow, technical decisions, integrations, incidents, gotchas for one project |
-| `include_global` | Request flag; still requires token permission. Project-only tokens cannot read global knowledge |
+| `global` | **Trusted only.** Coding, security, deployment, SOP, and operational standards shared across projects. No scratch global. |
+| `project` | Project-specific trusted knowledge **plus** that project’s scratch lane. |
+| `include_global` | Request flag; still requires token permission. Project-only tokens cannot read global (trusted) knowledge. |
+| `include_scratch` | Request flag for retrieval; default **true** for agent `retrieve_context`. May be false for operator “trusted-only” probes. |
 
 ## Surfaces
 
 | Surface | Audience | Role |
 |---|---|---|
-| Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs |
-| MCP (`queria-mcp`) | Agents | `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source` |
-| CLI | Operators | Migrate, embeddings status, retrieval probe, eval (only eval path), backup/restore-drill |
+| Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs; later scratch list / promote / TTL |
+| MCP (`queria-mcp`) | Agents | See tool table below |
+| CLI | Operators | Migrate, embeddings status, retrieval probe, eval (trusted/golden), backup/restore-drill |
 
-Maintainer actions (approve/reject, reindex, token admin) stay on session Admin HTTP by design, not MCP.
+### MCP tools (contract)
+
+| Tool | Status | Lane / role |
+|---|---|---|
+| `retrieve_context` | Shipped | Read trusted + optional scratch (`include_scratch` default **true**; optional global trusted) |
+| `search_knowledge` | Shipped | Search with lane-aware filters (Slice A) |
+| `propose_memory` | Shipped | Write → `proposed` (not immediately trusted) |
+| `list_projects` | Shipped | Discovery |
+| `get_source` | Shipped | Trusted source metadata |
+| `index_memory` | **Shipped (Slice A)** | Direct write → **scratch** only (`IMP-13`) |
+| `promote_memory` | **Planned** | scratch → `proposed` (`IMP-16`) |
+| `list_sources` / `describe_project` / `get_memory_status` | **Planned** | Read-only discovery (`IMP-07`) |
+
+Maintainer actions (approve/reject, reindex, token admin) stay on **session Admin HTTP** by design, not MCP.
+
+Token permission **`IndexMemory`** (Slice A): project-scoped. Without it, agent remains propose-only (legacy). Optional `promote_memory` permission stays planned (`IMP-16`).
 
 ## Post-cut product boundaries
 
@@ -35,6 +93,15 @@ After the hard simplification plan in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
 - Evaluation as a first-class Admin product (page removed P2; use CLI)
 - Restore drill as product API (CLI/runbook only P2)
 - Pingora-in-process edge (Caddy; P1)
+
+### Dual-lane boundaries (CURRENT Slice A)
+
+- **Shipped:** project-scoped scratch via `index_memory`; dual-lane retrieve (`include_scratch`); content_hash idempotency; shared max body with `propose_memory`.
+- **Still deferred:** Admin scratch UI (`IMP-15`), `promote_memory` (`IMP-16`), rerank/compress (`IMP-01`/`IMP-02`).
+- **Out of scope:** agent direct write into **trusted** or **global**; replacing approval for team truth; full enowx multi-store or one-binary product shape.
+
+Post-MVP backlog (rerank, metrics, Admin scratch, agent DX, etc.) lives in
+[`IMPROVEMENTS.md`](./IMPROVEMENTS.md) (`REFERENCE`). Runtime status remains HANDOFF-only.
 
 ## Sahara UI
 
