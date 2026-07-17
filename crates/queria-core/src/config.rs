@@ -672,4 +672,63 @@ mod tests {
 
         assert_eq!(value, "fallback");
     }
+
+    #[test]
+    fn trufflehog_config_files_exist_in_repo() {
+        let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let include = workspace_root.join("config/trufflehog-include-paths.txt");
+        let exclude = workspace_root.join("config/trufflehog-exclude-paths.txt");
+        assert!(
+            include.is_file(),
+            "missing {} (needed for image COPY)",
+            include.display()
+        );
+        assert!(
+            exclude.is_file(),
+            "missing {} (needed for image COPY)",
+            exclude.display()
+        );
+
+        let defaults = AppConfig::default_local();
+        assert_eq!(
+            defaults.git.trufflehog_include_paths_file,
+            "config/trufflehog-include-paths.txt"
+        );
+        assert_eq!(
+            defaults.git.trufflehog_exclude_paths_file,
+            "config/trufflehog-exclude-paths.txt"
+        );
+    }
+
+    #[test]
+    fn dockerfile_bakes_trufflehog_config_into_image() {
+        let dockerfile_path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Dockerfile");
+        let dockerfile = std::fs::read_to_string(&dockerfile_path)
+            .unwrap_or_else(|err| panic!("read {}: {err}", dockerfile_path.display()));
+        assert!(
+            dockerfile.contains(
+                "COPY config/trufflehog-include-paths.txt /config/trufflehog-include-paths.txt"
+            ),
+            "Dockerfile must COPY include paths into /config"
+        );
+        assert!(
+            dockerfile.contains(
+                "COPY config/trufflehog-exclude-paths.txt /config/trufflehog-exclude-paths.txt"
+            ),
+            "Dockerfile must COPY exclude paths into /config"
+        );
+        assert!(
+            dockerfile.contains(
+                "QUERIA_TRUFFLEHOG_INCLUDE_PATHS_FILE=/config/trufflehog-include-paths.txt"
+            ),
+            "Dockerfile must set absolute include path env"
+        );
+        assert!(
+            dockerfile.contains(
+                "QUERIA_TRUFFLEHOG_EXCLUDE_PATHS_FILE=/config/trufflehog-exclude-paths.txt"
+            ),
+            "Dockerfile must set absolute exclude path env"
+        );
+    }
 }

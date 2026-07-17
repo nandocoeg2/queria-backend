@@ -21,6 +21,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Copy TruffleHog from the official TruffleSecurity image
 COPY --from=trufflesecurity/trufflehog:latest /usr/bin/trufflehog /usr/local/bin/trufflehog
+# Bake secret-scan path filters so the worker needs no host config bind-mount.
+COPY config/trufflehog-include-paths.txt /config/trufflehog-include-paths.txt
+COPY config/trufflehog-exclude-paths.txt /config/trufflehog-exclude-paths.txt
+ENV QUERIA_TRUFFLEHOG_INCLUDE_PATHS_FILE=/config/trufflehog-include-paths.txt \
+    QUERIA_TRUFFLEHOG_EXCLUDE_PATHS_FILE=/config/trufflehog-exclude-paths.txt
 # Copy release binaries from the builder
 COPY --from=builder /usr/src/queria/target/release/queria-api /usr/local/bin/queria-api
 COPY --from=builder /usr/src/queria/target/release/queria-mcp /usr/local/bin/queria-mcp
