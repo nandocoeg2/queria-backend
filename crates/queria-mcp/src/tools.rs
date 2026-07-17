@@ -36,7 +36,9 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
                         "query": { "type": "string", "description": "Question or task context to retrieve for." },
                         "include_global": { "type": "boolean", "description": "Include global trusted knowledge when the token allows it." },
                         "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch memory. Default true for agents; set false for trusted-only." },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+                        "rerank": { "type": "boolean", "description": "Optional. When set, overrides server QUERIA_RERANK_ENABLED default." },
+                        "compress": { "type": "boolean", "description": "Optional. When set, overrides server QUERIA_COMPRESS_ENABLED default." }
                     },
                     "required": ["project_id", "query"],
                     "additionalProperties": false
@@ -56,7 +58,9 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
                         "query": { "type": "string" },
                         "include_global": { "type": "boolean" },
                         "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch. Default true." },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+                        "rerank": { "type": "boolean", "description": "Optional. Overrides server QUERIA_RERANK_ENABLED when set." },
+                        "compress": { "type": "boolean", "description": "Optional. Overrides server QUERIA_COMPRESS_ENABLED when set." }
                     },
                     "required": ["project_id", "query"],
                     "additionalProperties": false
@@ -182,6 +186,26 @@ mod tests {
                 .get("include_scratch")
                 .is_some()
         );
+    }
+
+    /// VAL-CROSS-001: tools/list schema exposes optional rerank and compress.
+    #[test]
+    fn retrieve_context_schema_includes_rerank_compress_flags() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: default_agent_tools(),
+        };
+        let tools = tool_definitions(&permissions);
+        for name in ["retrieve_context", "search_knowledge"] {
+            let tool = tools
+                .iter()
+                .find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("{name} listed"));
+            let props = &tool["inputSchema"]["properties"];
+            assert!(props.get("rerank").is_some(), "{name} needs rerank");
+            assert!(props.get("compress").is_some(), "{name} needs compress");
+        }
     }
 
     #[test]

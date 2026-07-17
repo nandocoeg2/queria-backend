@@ -1,13 +1,17 @@
 use crate::http;
 use axum::Router;
 use queria_core::AppConfig;
+use queria_search::retrieval::{PgRetrievalService, build_pg_retrieval_service};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
-#[derive(Clone, Debug)]
+/// Process-level MCP state with a long-lived retrieval service (shared clients).
+#[derive(Clone)]
 pub struct McpState {
     pub config: AppConfig,
     pub pool: Option<PgPool>,
+    pub retrieval: Option<Arc<PgRetrievalService>>,
 }
 
 impl McpState {
@@ -23,13 +27,25 @@ pub fn build_app() -> Router {
     build_app_with_state(McpState {
         config: AppConfig::default_local(),
         pool: None,
+        retrieval: None,
     })
 }
 
 pub fn build_app_with_pool(config: AppConfig, pool: PgPool) -> Router {
+    let retrieval = match build_pg_retrieval_service(&config, pool.clone()) {
+        Ok(service) => Some(Arc::new(service)),
+        Err(error) => {
+            tracing::error!(
+                error = %error,
+                "failed to construct retrieval service at MCP startup"
+            );
+            None
+        }
+    };
     build_app_with_state(McpState {
         config,
         pool: Some(pool),
+        retrieval,
     })
 }
 

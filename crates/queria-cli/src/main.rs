@@ -82,6 +82,12 @@ enum RetrievalCommand {
         include_global: bool,
         #[arg(long, default_value_t = 5)]
         limit: u32,
+        /// When set, overrides server QUERIA_RERANK_ENABLED default.
+        #[arg(long)]
+        rerank: Option<bool>,
+        /// When set, overrides server QUERIA_COMPRESS_ENABLED default.
+        #[arg(long)]
+        compress: Option<bool>,
     },
 }
 
@@ -132,8 +138,10 @@ async fn main() -> anyhow::Result<()> {
                     query,
                     include_global,
                     limit,
+                    rerank,
+                    compress,
                 },
-        } => retrieval::probe(&project, &query, include_global, limit).await,
+        } => retrieval::probe(&project, &query, include_global, limit, rerank, compress).await,
         Command::Eval {
             command: EvalCommand::Run { project },
         } => evaluation::run(&project).await,
@@ -216,5 +224,76 @@ mod tests {
                 command: BackupCommand::RestoreDrill { org, .. }
             } if org == "fjulian"
         ));
+    }
+
+    /// VAL-CROSS-001: probe flags optional; omit → None (server defaults).
+    #[test]
+    fn parses_retrieval_probe_without_quality_flags() {
+        let cli = Cli::try_parse_from([
+            "queria-cli",
+            "retrieval",
+            "probe",
+            "--project",
+            "fjulian-me",
+            "--query",
+            "hello",
+        ])
+        .expect("probe should parse");
+        match cli.command {
+            Command::Retrieval {
+                command:
+                    RetrievalCommand::Probe {
+                        project,
+                        query,
+                        include_global,
+                        limit,
+                        rerank,
+                        compress,
+                    },
+            } => {
+                assert_eq!(project, "fjulian-me");
+                assert_eq!(query, "hello");
+                assert!(include_global);
+                assert_eq!(limit, 5);
+                assert!(rerank.is_none());
+                assert!(compress.is_none());
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    /// VAL-CROSS-002: CLI accepts explicit rerank/compress overrides.
+    #[test]
+    fn parses_retrieval_probe_with_quality_flag_overrides() {
+        let cli = Cli::try_parse_from([
+            "queria-cli",
+            "retrieval",
+            "probe",
+            "--project",
+            "fjulian-me",
+            "--query",
+            "hello",
+            "--rerank=false",
+            "--compress=true",
+            "--limit",
+            "3",
+        ])
+        .expect("probe with flags should parse");
+        match cli.command {
+            Command::Retrieval {
+                command:
+                    RetrievalCommand::Probe {
+                        rerank,
+                        compress,
+                        limit,
+                        ..
+                    },
+            } => {
+                assert_eq!(rerank, Some(false));
+                assert_eq!(compress, Some(true));
+                assert_eq!(limit, 3);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }

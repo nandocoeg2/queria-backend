@@ -16,7 +16,7 @@ use queria_db::repositories::{
     AuthenticatedAgentToken, IndexMemoryParams, PgProjectRepository, ProjectRecord,
     ProposeMemoryParams, SourceDocumentRecord,
 };
-use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
+use queria_search::retrieval::RetrievalPrincipal;
 use queria_search::scratch_embed::{build_embed_clients, index_memory_with_sync_embed};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -43,6 +43,10 @@ struct RetrievalArgs {
     /// Agent default true (IMP-14); omit or true for dual-lane, false for trusted-only.
     include_scratch: Option<bool>,
     limit: Option<u32>,
+    /// `None` uses server `QUERIA_RERANK_ENABLED` default.
+    rerank: Option<bool>,
+    /// `None` uses server `QUERIA_COMPRESS_ENABLED` default.
+    compress: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,11 +180,11 @@ async fn call_tool(
                 project_id: args.project_id,
                 query: args.query,
                 include_global: args.include_global.unwrap_or(true),
-                // VAL-DL-026: agent default include_scratch=true
+                // VAL-DL-026 / VAL-CROSS-004: agent default include_scratch=true
                 include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(5),
-                rerank: None,
-                compress: None,
+                rerank: args.rerank,
+                compress: args.compress,
             };
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))
@@ -194,8 +198,8 @@ async fn call_tool(
                 include_global: args.include_global.unwrap_or(true),
                 include_scratch: args.include_scratch.unwrap_or(true),
                 limit: args.limit.unwrap_or(10),
-                rerank: None,
-                compress: None,
+                rerank: args.rerank,
+                compress: args.compress,
             };
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))
@@ -262,11 +266,10 @@ async fn hybrid_retrieve(
     request: RetrieveContextRequest,
 ) -> Result<RetrieveContextResponse, String> {
     request.validate().map_err(|error| error.to_string())?;
-    let pool = state
-        .pool
-        .clone()
+    let service = state
+        .retrieval
+        .as_ref()
         .ok_or_else(|| "knowledge_store_not_configured".to_owned())?;
-    let service = build_pg_retrieval_service(&state.config, pool).map_err(infrastructure_error)?;
     service
         .retrieve_context(
             &RetrievalPrincipal::Agent {
@@ -735,5 +738,35 @@ mod tests {
         assert_eq!(params.tags, vec!["a".to_owned(), "b".to_owned()]);
         assert_eq!(params.title, "t");
         assert_eq!(params.category, "note");
+    }
+
+    /// VAL-CROSS-004: omit include_scratch → agent default true.
+    #[test]
+    fn retrieval_args_default_include_scratch_true() {
+        let args: RetrievalArgs = serde_json::from_str(
+            r#"{"project_id":"019083a0-0000-7000-8000-000000000001","query":"hello"}"#,
+        )
+        .expect("minimal retrieval args");
+        assert!(args.include_scratch.unwrap_or(true));
+        assert!(args.rerank.is_none());
+        assert!(args.compress.is_none());
+    }
+
+    /// VAL-CROSS-001/002: MCP tools accept optional rerank/compress overrides.
+    #[test]
+    fn retrieval_args_accept_flag_overrides() {
+        let args: RetrievalArgs = serde_json::from_str(
+            r#"{
+                "project_id":"019083a0-0000-7000-8000-000000000001",
+                "query":"hello",
+                "include_scratch": false,
+                "rerank": false,
+                "compress": true
+            }"#,
+        )
+        .expect("retrieval args with flags");
+        assert_eq!(args.include_scratch, Some(false));
+        assert_eq!(args.rerank, Some(false));
+        assert_eq!(args.compress, Some(true));
     }
 }

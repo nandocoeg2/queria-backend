@@ -8,8 +8,9 @@ use axum::{
 };
 use queria_core::QueriaError;
 use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
-use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
+use queria_search::retrieval::{PgRetrievalService, RetrievalPrincipal};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct RetrievalProbeRequest {
@@ -18,6 +19,10 @@ struct RetrievalProbeRequest {
     /// Operator probe default false (trusted-only); agents default true on MCP.
     include_scratch: Option<bool>,
     limit: Option<u32>,
+    /// `None` uses server `QUERIA_RERANK_ENABLED` default.
+    rerank: Option<bool>,
+    /// `None` uses server `QUERIA_COMPRESS_ENABLED` default.
+    compress: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +42,17 @@ pub fn project_router() -> Router<ApiState> {
     Router::new().route("/{slug}/retrieval/probe", post(retrieve_context_by_slug))
 }
 
+fn retrieval_service(
+    state: &ApiState,
+) -> Result<&Arc<PgRetrievalService>, (StatusCode, Json<ErrorResponse>)> {
+    state.retrieval.as_ref().ok_or_else(|| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "knowledge_store_not_configured",
+        )
+    })
+}
+
 async fn retrieve_context(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -47,13 +63,7 @@ async fn retrieve_context(
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
     request.validate().map_err(map_error)?;
 
-    let Some(pool) = state.pool.clone() else {
-        return Err(error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "knowledge_store_not_configured",
-        ));
-    };
-    let service = build_pg_retrieval_service(&state.config, pool).map_err(map_error)?;
+    let service = retrieval_service(&state)?;
     service
         .retrieve_context(
             &RetrievalPrincipal::User {
@@ -91,28 +101,21 @@ async fn retrieve_context_by_slug(
         .await
         .map_err(map_error)?
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "project_not_found"))?;
+    // Operator slug probe: default trusted-only (VAL-CROSS-005). Agent MCP default remains true.
     let request = RetrieveContextRequest {
         project_id: queria_core::ids::ProjectId::from_uuid(project.id),
         query: payload.query,
         include_global: payload
             .include_global
             .unwrap_or(project.include_global_default),
-        // Operator slug probe: default trusted-only (VAL-CROSS-007 adjacent).
         include_scratch: payload.include_scratch.unwrap_or(false),
         limit: payload.limit.unwrap_or(5),
-        // Surface wiring for request overrides lands with later features.
-        rerank: None,
-        compress: None,
+        rerank: payload.rerank,
+        compress: payload.compress,
     };
     request.validate().map_err(map_error)?;
 
-    let Some(pool) = state.pool.clone() else {
-        return Err(error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "knowledge_store_not_configured",
-        ));
-    };
-    let service = build_pg_retrieval_service(&state.config, pool).map_err(map_error)?;
+    let service = retrieval_service(&state)?;
     service
         .retrieve_context(
             &RetrievalPrincipal::User {
@@ -163,4 +166,65 @@ fn valid_slug(value: &str) -> bool {
         && bytes
             .iter()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use queria_core::ids::ProjectId;
+    use uuid::Uuid;
+
+    /// VAL-CROSS-005: operator probe body without include_scratch → false.
+    #[test]
+    fn probe_defaults_include_scratch_false() {
+        let payload: RetrievalProbeRequest =
+            serde_json::from_str(r#"{"query":"deployment notes","include_global":true,"limit":5}"#)
+                .expect("probe body deserializes");
+        assert!(!payload.include_scratch.unwrap_or(false));
+        assert!(payload.rerank.is_none());
+        assert!(payload.compress.is_none());
+    }
+
+    /// VAL-CROSS-001 / VAL-CROSS-002: probe accepts explicit rerank/compress overrides.
+    #[test]
+    fn probe_accepts_rerank_compress_flags() {
+        let payload: RetrievalProbeRequest = serde_json::from_str(
+            r#"{
+                "query": "q",
+                "include_scratch": true,
+                "rerank": false,
+                "compress": false
+            }"#,
+        )
+        .expect("probe body with flags");
+        assert_eq!(payload.include_scratch, Some(true));
+        assert_eq!(payload.rerank, Some(false));
+        assert_eq!(payload.compress, Some(false));
+    }
+
+    /// Flags on RetrieveContextRequest pass through (session dual routes share this type).
+    #[test]
+    fn retrieve_context_request_flags_passthrough() {
+        let req: RetrieveContextRequest = serde_json::from_str(
+            r#"{
+                "project_id": "019083a0-0000-7000-8000-000000000001",
+                "query": "notes",
+                "include_global": true,
+                "limit": 5,
+                "rerank": true,
+                "compress": false
+            }"#,
+        )
+        .expect("session retrieve body");
+        // Omitted include_scratch still agent/serde default true on this contract type.
+        assert!(req.include_scratch);
+        assert_eq!(req.rerank, Some(true));
+        assert_eq!(req.compress, Some(false));
+        assert_eq!(
+            req.project_id,
+            ProjectId::from_uuid(
+                Uuid::parse_str("019083a0-0000-7000-8000-000000000001").expect("uuid")
+            )
+        );
+    }
 }

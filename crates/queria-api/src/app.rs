@@ -7,13 +7,19 @@ use queria_core::AppConfig;
 use queria_db::admin_queries::PgAdminQueriesRepository;
 use queria_db::ingestion::PgIngestionRepository;
 use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
+use queria_search::retrieval::{PgRetrievalService, build_pg_retrieval_service};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
-#[derive(Clone, Debug)]
+/// Process-level API state. Holds a long-lived retrieval service so Voyage/Qdrant
+/// HTTP clients are not rebuilt on every request.
+#[derive(Clone)]
 pub struct ApiState {
     pub config: AppConfig,
     pub pool: Option<PgPool>,
+    /// Built once when the pool is configured; shared across handlers via Arc.
+    pub retrieval: Option<Arc<PgRetrievalService>>,
 }
 
 impl ApiState {
@@ -39,13 +45,28 @@ impl ApiState {
 }
 
 pub fn build_app(config: AppConfig) -> Router {
-    build_app_with_state(ApiState { config, pool: None })
+    build_app_with_state(ApiState {
+        config,
+        pool: None,
+        retrieval: None,
+    })
 }
 
 pub fn build_app_with_pool(config: AppConfig, pool: PgPool) -> Router {
+    let retrieval = match build_pg_retrieval_service(&config, pool.clone()) {
+        Ok(service) => Some(Arc::new(service)),
+        Err(error) => {
+            tracing::error!(
+                error = %error,
+                "failed to construct retrieval service at API startup"
+            );
+            None
+        }
+    };
     build_app_with_state(ApiState {
         config,
         pool: Some(pool),
+        retrieval,
     })
 }
 
@@ -301,6 +322,75 @@ mod tests {
             .expect("request should complete");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// VAL-CROSS-007: both dual routes still gate on session when flags present.
+    #[tokio::test]
+    async fn dual_retrieve_routes_with_flags_require_session() {
+        let bodies = [
+            (
+                "/api/v1/retrieve-context",
+                r#"{
+                    "project_id": "019083a0-0000-7000-8000-000000000001",
+                    "query": "deployment notes",
+                    "include_global": true,
+                    "limit": 5,
+                    "rerank": false,
+                    "compress": true
+                }"#,
+            ),
+            (
+                "/api/v1/retrieval/retrieve-context",
+                r#"{
+                    "project_id": "019083a0-0000-7000-8000-000000000001",
+                    "query": "deployment notes",
+                    "include_global": true,
+                    "limit": 5,
+                    "rerank": true,
+                    "compress": false
+                }"#,
+            ),
+            (
+                "/api/v1/projects/fjulian-me/retrieval/probe",
+                r#"{
+                    "query": "deployment notes",
+                    "include_global": true,
+                    "limit": 5,
+                    "rerank": false,
+                    "compress": false
+                }"#,
+            ),
+        ];
+
+        for (uri, body) in bodies {
+            let response = build_app(AppConfig::default_local())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("request should complete");
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "unauth must fail for {uri}"
+            );
+        }
+    }
+
+    /// Pool-less app never constructs a retrieval service (no per-request rebuild path).
+    #[test]
+    fn state_without_pool_has_no_retrieval_service() {
+        let state = ApiState {
+            config: AppConfig::default_local(),
+            pool: None,
+            retrieval: None,
+        };
+        assert!(state.retrieval.is_none());
     }
 
     #[tokio::test]
