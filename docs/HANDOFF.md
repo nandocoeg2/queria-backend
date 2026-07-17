@@ -273,7 +273,7 @@ Earlier same day, before seed: project missing; status/probe/eval all exited 1 w
 | Second eval | **skipped** (default; counts improved substantially but prior golden 3/3 and no user-facing regression suspected) |
 | Volume wipe | **none** |
 
-**Production embeddings residual for `fjulian-me` (2026-07-17 restatus, final poll):**
+**Production embeddings residual for `fjulian-me` (2026-07-17 restatus, final poll ~13:08 UTC):**
 
 ```json
 {
@@ -291,6 +291,17 @@ Earlier same day, before seed: project missing; status/probe/eval all exited 1 w
   "knowledge_items_approved": 1213,
   "backfill_job_status": "succeeded",
   "failed_error_class": "Voyage 429 Too Many Requests (all 3 residual)",
+  "failed_sample_titles": [
+    "src/utils/siteOutput.ts: StaticFileOutput",
+    ".agents/skills/vercel-react-best-practices/rules/js-index-maps.md: Build Index Maps for Repeated Lookups",
+    ".agents/skills/code-review/references/language/rust.md: `unsafe`"
+  ],
+  "worker_pacing": {
+    "QUERIA_EMBEDDING_BATCH_SIZE": 8,
+    "QUERIA_EMBEDDING_REQUEST_INTERVAL_MS": 2000,
+    "QUERIA_EMBEDDING_MAX_RETRIES": 3
+  },
+  "poll_timeline_ready": [1104, 1152, 1200, 1224, 1226],
   "cli_exit": 0
 }
 ```
