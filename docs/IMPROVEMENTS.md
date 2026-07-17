@@ -1,7 +1,7 @@
 # Queria Improvement Backlog (enowx-informed)
 
 > Status: REFERENCE — approved direction and ranked backlog, not an implementation ledger.
-> Last verified: 2026-07-17.
+> Last verified: 2026-07-18.
 > Runtime truth: [`HANDOFF.md`](./HANDOFF.md).
 > Product contract: [`PRODUCT.md`](./PRODUCT.md) (includes dual-lane trust model).
 > What not to re-add: [`SIMPLIFICATION.md`](./SIMPLIFICATION.md).
@@ -33,9 +33,9 @@ copying multi-store or a full enowx SPA/binary product shape.
 | Goal | Per-project agent memory | Org + project shared knowledge | Same + per-project scratch |
 | Trust | Agent indexes freely | Propose / Git / approve only | Scratch direct; trusted still gated |
 | Stack | Go single binary + embedded React | Rust multi-service + Astro Admin + Caddy | Unchanged |
-| Search | Hybrid + rerank + compression | Hybrid RRF only | + rerank/compress; lane-aware rank |
+| Search | Hybrid + rerank + compression | Hybrid RRF + Voyage rerank + near-dup compress | Lane-aware rank; optional further knobs |
 | Metrics | SQLite query metrics | JSON logs | Durable Postgres metrics (IMP-04) |
-| Probe | Playground UI | CLI probe / eval | + embedded Admin probe |
+| Probe | Playground UI | Admin SSR Playground + CLI probe / eval | Lean page (not eval product) |
 | Install DX | Skill, multi-client, stdio + HTTP | Central HTTP MCP | + skill, snippets, stdio adapter |
 
 ## Out of scope / anti-goals
@@ -141,39 +141,42 @@ flowchart LR
 | Field | Value |
 |---|---|
 | Priority | P0 |
-| Status | `proposed` |
+| Status | `done` (2026-07-18) |
 | Problem | Hybrid RRF ranks semantic + lexical; precision can still be noisy for global+project mixes. |
 | enowx reference | Voyage `rerank-2.5` wired into `core.Service.Search` after candidate retrieval. |
 | Proposed approach | Pluggable reranker interface in `queria-search` (default Voyage rerank). Apply after RRF on a bounded candidate pool; clamp topK server-side. Gate with config/env; fail open or fail closed documented in runbook. |
 | Surfaces | `queria-search`, `queria-mcp`, `queria-api` retrieval, config, hybrid-retrieval runbook |
 | Acceptance | `retrieve_context` / search path can enable rerank; topK clamped; unit/integration test with fake reranker; golden eval not regressed on fixed fixture; config documented. |
 | Dependencies | Voyage (or chosen) API key; latency budget noted in metrics (IMP-04). |
+| Shipped notes | Concrete Voyage client (`POST /v1/rerank`, model `rerank-2.5`); env `QUERIA_RERANK_*`; request optional `rerank`; **fail-open** only; pool → RRF → hydrate → rerank; no multi-provider trait. See HANDOFF retrieval quality. |
 
 #### IMP-02 — Near-duplicate compression
 
 | Field | Value |
 |---|---|
 | Priority | P0 |
-| Status | `proposed` |
+| Status | `done` (2026-07-18) |
 | Problem | Overlapping global/project/source chunks waste agent context tokens. |
 | enowx reference | Near-duplicate compression on ranked results. |
 | Proposed approach | Post-rank compress: similarity threshold on text or embedding of returned hits; keep highest-ranked of near-dups; expose optional flag default-on for `retrieve_context`. |
 | Surfaces | `queria-search`, MCP/API retrieval response |
 | Acceptance | Duplicate-heavy fixture returns fewer near-identical snippets while preserving diversity of distinct facts; tests for threshold edge cases. |
 | Dependencies | Best after or with IMP-01 (compress after final rank order). |
+| Shipped notes | Pure near-dup on normalized body and/or content hash after rerank; prefer trusted over scratch; env `QUERIA_COMPRESS_ENABLED`; request optional `compress`; `compress_dropped` diagnostic. Char budget packaging (IMP-18) still open if needed later. |
 
 #### IMP-03 — Embedded Admin retrieval probe
 
 | Field | Value |
 |---|---|
 | Priority | P0 |
-| Status | `proposed` |
+| Status | `done` (2026-07-18) |
 | Problem | Operators rely on CLI for live retrieval trust; no lean Admin surface. |
 | enowx reference | Playground (query, scores, snippets). |
 | Proposed approach | **Embedded** probe (not a product eval UI, not a full SPA playground): small form on Knowledge or Jobs — query, project, include_global — returns top chunks, scores, latency. Session-admin only. Reuse existing retrieval API. |
 | Surfaces | Admin Astro, `queria-api` (if thin probe endpoint needed) |
 | Acceptance | Admin user can probe without CLI; no dedicated eval product page; Playwright/smoke if Admin tests exist; PRODUCT still says eval is CLI. |
 | Dependencies | Prefer IMP-04 for latency display; after dual-lane, probe should show lane labels; SIMPLIFICATION: not re-adding Evaluation Admin product. |
+| Shipped notes | Lean SSR page `/admin/playground` (nav item Playground); form includes include_scratch, limit, rerank, compress; reuses `POST .../retrieval/probe`; diagnostics strip with `latency_ms` / `rerank_applied` / `compress_dropped` (no durable metrics table). Eval remains CLI. |
 
 #### IMP-04 — Durable query metrics
 
@@ -300,7 +303,8 @@ flowchart LR
 
 Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 **Slice A shipped (code + prod image dual-lane base):** IMP-13 + IMP-14 (schema, `IndexMemory`, `index_memory`, content_hash, max body, `include_scratch` default true). Runtime truth: [`HANDOFF.md`](./HANDOFF.md).
-**Still proposed / not this mission:** IMP-15 Admin scratch, IMP-16 promote, IMP-01/02 rerank+compress (and packaging IMP-17/18 folded into those).
+**Retrieval quality shipped (2026-07-18 local main):** IMP-01 rerank, IMP-02 compress, IMP-03 Admin Playground (recall/pool sizing folded into pipeline with IMP-01). Runtime truth: [`HANDOFF.md`](./HANDOFF.md).
+**Still proposed:** IMP-15 Admin scratch, IMP-16 promote, IMP-04 durable metrics, optional packaging IMP-18 char budget.
 
 #### IMP-13 — Schema + `index_memory` (scratch write)
 
@@ -328,7 +332,7 @@ Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 | Surfaces | `queria-search`, MCP/API schemas, hybrid SQL + Qdrant filters, eval filters |
 | Acceptance | Scratch from project A never appears under project B; global query never returns scratch; default agent retrieve merges trusted+scratch; golden eval fixtures use trusted-only; tests cover permission + include flags. |
 | Dependencies | IMP-13 schema/write path. |
-| Shipped notes | `include_scratch` default true on agent retrieve; CLI/eval trusted-only (`include_scratch=false`); hybrid filters + status/lane on hits. Near-dup prefer-trusted still deferred to IMP-02. |
+| Shipped notes | `include_scratch` default true on agent retrieve; CLI/eval trusted-only (`include_scratch=false`); hybrid filters + status/lane on hits. Near-dup prefer-trusted delivered with IMP-02. |
 
 #### IMP-15 — Admin scratch surface (list / delete / TTL)
 
@@ -365,7 +369,7 @@ Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 | Field | Value |
 |---|---|
 | Priority | P1 (implement **inside IMP-01**, not a separate epic) |
-| Status | `proposed` |
+| Status | `done` (2026-07-18; folded into pipeline with IMP-01) |
 | yagni | Without rerank, fetch-N/take-K is ~10 LOC. Do not ship recall/k as Admin UI or day-one MCP knobs. |
 | Problem | Before rerank, candidate pool must be larger than the final answer set. |
 | enowx reference | `Recall` then `K` around rerank. |
@@ -373,6 +377,7 @@ Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 | Surfaces | `queria-search` (same PR as IMP-01) |
 | Acceptance | candidates ≥ k; response length ≤ k. No new Admin UI. |
 | Dependencies | IMP-01. |
+| Shipped notes | Pool = `min(limit * candidate_multiplier, candidate_cap)`; RRF over pool then rerank top_k=`limit`. Not exposed as separate MCP knobs. |
 
 #### IMP-18 — Soft size budget on `retrieve_context`
 

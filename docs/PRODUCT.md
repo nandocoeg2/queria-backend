@@ -1,7 +1,7 @@
 # Queria Product Contract
 
 > Status: CURRENT
-> Last verified: 2026-07-17
+> Last verified: 2026-07-18
 > Implementation ledger: [`HANDOFF.md`](./HANDOFF.md)
 > Post-MVP improvements: [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
 
@@ -64,15 +64,16 @@ Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted 
 | Surface | Audience | Role |
 |---|---|---|
 | Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs; later scratch list / promote / TTL |
+| Admin Playground | Operators | Lean SSR `/admin/playground`: live retrieval probe with rerank/compress toggles, scores, lane, diagnostics (not eval product) |
 | MCP (`queria-mcp`) | Agents | See tool table below |
-| CLI | Operators | Migrate, embeddings status, retrieval probe, eval (trusted/golden), backup/restore-drill |
+| CLI | Operators | Migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress`), eval (trusted/golden), backup/restore-drill |
 
 ### MCP tools (contract)
 
 | Tool | Status | Lane / role |
 |---|---|---|
-| `retrieve_context` | Shipped | Read trusted + optional scratch (`include_scratch` default **true**; optional global trusted) |
-| `search_knowledge` | Shipped | Search with lane-aware filters (Slice A) |
+| `retrieve_context` | Shipped | Read trusted + optional scratch (`include_scratch` default **true**; optional global trusted); optional `rerank` / `compress` (server defaults on) |
+| `search_knowledge` | Shipped | Search with lane-aware filters; same optional `rerank` / `compress` flags as retrieve |
 | `propose_memory` | Shipped | Write → `proposed` (not immediately trusted) |
 | `list_projects` | Shipped | Discovery |
 | `get_source` | Shipped | Trusted source metadata |
@@ -94,13 +95,14 @@ After the hard simplification plan in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
 - Restore drill as product API (CLI/runbook only P2)
 - Pingora-in-process edge (Caddy; P1)
 
-### Dual-lane boundaries (CURRENT Slice A)
+### Dual-lane + retrieval quality (CURRENT)
 
-- **Shipped:** project-scoped scratch via `index_memory`; dual-lane retrieve (`include_scratch`); content_hash idempotency; shared max body with `propose_memory`.
-- **Still deferred:** Admin scratch UI (`IMP-15`), `promote_memory` (`IMP-16`), rerank/compress (`IMP-01`/`IMP-02`).
-- **Out of scope:** agent direct write into **trusted** or **global**; replacing approval for team truth; full enowx multi-store or one-binary product shape.
+- **Shipped (Slice A):** project-scoped scratch via `index_memory`; dual-lane retrieve (`include_scratch`); content_hash idempotency; shared max body with `propose_memory`.
+- **Shipped (retrieval quality):** hybrid candidate pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compress (prefer trusted); optional request flags; Admin Playground SSR (`IMP-01`/`IMP-02`/`IMP-03`).
+- **Still deferred:** Admin scratch UI (`IMP-15`), `promote_memory` (`IMP-16`), durable query metrics (`IMP-04`).
+- **Out of scope:** agent direct write into **trusted** or **global**; replacing approval for team truth; full enowx multi-store or one-binary product shape; Evaluation Admin product page.
 
-Post-MVP backlog (rerank, metrics, Admin scratch, agent DX, etc.) lives in
+Post-MVP backlog (metrics, Admin scratch, agent DX, etc.) lives in
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) (`REFERENCE`). Runtime status remains HANDOFF-only.
 
 ## Sahara UI

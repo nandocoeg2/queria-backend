@@ -1,8 +1,8 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-17 (embedding residual ready 1226 / failed 3; seed eval 3/3; dual-lane + Caddy; TruffleHog path filters baked into image on `main` @ `37e7b7c`)
+> Last verified: 2026-07-18 (local main: retrieval quality + Admin Playground; prod image still dual-lane Slice A — see stack identity)
 > Branch: `main`
-> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A). Image bake-in for TruffleHog config is on `main` at `37e7b7c` — **not yet redeployed** to the live host image.
+> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A). Image bake-in for TruffleHog config is on `main` at `37e7b7c` — **not yet redeployed** to the live host image. Rerank/compress/Playground are on local `main` and **not** claimed as live on the production host until redeploy.
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
@@ -33,6 +33,14 @@ content_hash idempotency, shared max body with `propose_memory`, and
 `include_scratch` default true on agent retrieve. Promote / Admin scratch UI
 still deferred (`IMP-15`/`IMP-16`). See PRODUCT lanes and
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md).
+
+**Retrieval quality + Playground (local main 2026-07-18):** shared pipeline
+pool → RRF → hydrate → Voyage rerank (`rerank-2.5`, **fail-open**) → near-dup
+compress (prefer trusted); optional `rerank`/`compress` on API/MCP/CLI; state-held
+`PgRetrievalService` on API/MCP; Admin SSR `/admin/playground`. Env knobs
+`QUERIA_RERANK_*`, `QUERIA_COMPRESS_ENABLED` (defaults on). Diagnostics:
+`rerank_applied`, `compress_dropped`, `latency_ms`. Backlog IDs IMP-01/02/03
+(and pool sizing IMP-17 folded in). **Not** production-redeployed with this handoff.
 
 Knowledge scopes:
 
@@ -101,10 +109,12 @@ not a Rust proxy crate.
 | Git ingestion MVP | `COMPLETED` | Allowlist validation, TruffleHog gate, parser/chunker, stale cleanup, trusted auto-approval, and job lifecycle exist. |
 | Voyage-4 and Qdrant clients | `COMPLETED` | Provider clients, collection setup, durable jobs, and backfill are implemented. |
 | Hybrid retrieval and RRF | `COMPLETED` | Semantic plus Postgres FTS works with strict-weighted relaxed OR query fallback. |
+| Rerank + compress pipeline | `COMPLETED` (local main 2026-07-18) | Pool RRF → hydrate → Voyage rerank fail-open → near-dup compress (prefer trusted). Flags + diagnostics on all surfaces. Runbook: [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md). Prod image may lag until redeploy. |
+| Admin retrieval Playground | `COMPLETED` (local main 2026-07-18) | `/admin/playground` SSR form + results; not Evaluation Admin product. |
 | Embedding pacing and graceful stop | `COMPLETED` | Paced batches requeue and unlock jobs instead of sleeping while holding a running job. |
 | Evaluation baseline | `COMPLETED` (CLI) | Shared executor via `queria-cli eval run`; Admin evaluation HTTP routes removed. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
-| MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`. Maintainer actions (approve/reject, reindex, token admin) stay on session Admin HTTP API by design, not MCP. |
+| MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`, `index_memory` (scratch). Optional `rerank`/`compress` on retrieve/search. Maintainer actions stay on session Admin HTTP, not MCP. |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
@@ -124,7 +134,7 @@ not a Rust proxy crate.
 | Approval Queue | `COMPLETED` | `/admin/approvals` |
 | Ingestion Jobs | `COMPLETED` | `/admin/jobs` (primary place for job lifecycle; embedding work shows up as jobs) |
 | Embedding Status | `EMBEDDED` | No dedicated `/admin/embedding` route. Visible via dashboard summary, source detail chunk-state counts, jobs list, and CLI `embeddings status`. |
-| Retrieval Probe | `EMBEDDED` | No dedicated `/admin/retrieval-probe` route. Operator probe/eval path is Evaluation + CLI `retrieval probe`. |
+| Retrieval Probe / Playground | `COMPLETED` | Dedicated lean SSR `/admin/playground` (nav: Playground). Session probe reuses `POST /api/v1/projects/{slug}/retrieval/probe` with rerank/compress toggles, scores, lane, diagnostics. Eval remains CLI only. CLI `retrieval probe` flags still available. |
 | Agent Tokens | `COMPLETED` | `/admin/tokens` |
 | Audit Logs | `COMPLETED` | `/admin/audit` |
 | Evaluation | `CLI` | Admin page + evaluation HTTP removed. Run `queria-cli eval run --project <slug>`; dashboard may show last report if present |
@@ -473,9 +483,10 @@ rtk git diff --check
 | Prod container env drift | Medium | CLI still prefers host `--env-file` for some flags; compose `env_file` mostly aligned post-redeploy. |
 | TruffleHog config in image | **Low** (code done) | **Committed** `37e7b7c` on `main` (Dockerfile COPY + env). Live prod image still dual-lane `c1cdfd7` until redeploy; seed used host `/config` bind-mount. |
 | Hard simplification cuts | Done (P0–P3) | See [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). |
-| Admin UI dedicated routes | Low | Embedding / retrieval probe / backup are embedded or CLI-only (see screen matrix). Optional polish only. |
-| Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP stays five tools. |
-| Future product improvements | REFERENCE backlog | Dual-lane Slice A on local + prod image; Admin promote UI later. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
+| Admin UI dedicated routes | Low | Embedding / backup remain embedded or CLI-only. Playground route shipped for retrieval probe. |
+| Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP does not expose maintainer mutations. |
+| Production redeploy for retrieval quality | Medium | Local main has rerank/compress/Playground; live host image still dual-lane Slice A (`c1cdfd7`). Redeploy only when operator requests (out of this docs feature). |
+| Future product improvements | REFERENCE backlog | IMP-01/02/03 done on local main. Still open: IMP-04 metrics, IMP-15/16 Admin scratch/promote, agent DX. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
 
 ## Post-audit simplification
 
@@ -514,5 +525,5 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 
 **Product improvements**
 
-8. Backlog in [`IMPROVEMENTS.md`](./IMPROVEMENTS.md): Admin scratch/promote (`IMP-15`/`16`), packaging/filters, quality IMP-01–12. Dual-lane Slice A shipped on local + prod image. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
+8. Retrieval quality IMP-01/02 + Admin Playground IMP-03 shipped on **local main** (2026-07-18); docs/runbook aligned. Next backlog: durable metrics (`IMP-04`), Admin scratch/promote (`IMP-15`/`16`), agent DX. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
 
