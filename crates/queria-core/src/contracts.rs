@@ -96,6 +96,24 @@ pub fn validate_memory_body(body: &str, max_body_bytes: usize) -> crate::QueriaR
     Ok(body)
 }
 
+/// Normalize memory body for IMP-22 content hashing.
+///
+/// Trims ends and collapses internal runs of whitespace to a single space so
+/// trivial whitespace variants map to one scratch item.
+#[must_use]
+pub fn normalize_memory_body_for_hash(body: &str) -> String {
+    body.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// SHA-256 hex of the normalized body used for scratch idempotency (IMP-22).
+#[must_use]
+pub fn scratch_content_hash(body: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let normalized = normalize_memory_body_for_hash(body);
+    let digest = Sha256::digest(normalized.as_bytes());
+    format!("{digest:x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +209,33 @@ mod tests {
         assert_eq!(
             validate_memory_body(&legal, max).unwrap(),
             validate_memory_body(&legal, max).unwrap()
+        );
+    }
+
+    /// VAL-DL-019 / IMP-22: whitespace-normalized bodies share content hash.
+    #[test]
+    fn scratch_content_hash_normalizes_whitespace() {
+        let a = scratch_content_hash("hello   world\n");
+        let b = scratch_content_hash("  hello world  ");
+        let c = scratch_content_hash("hello world");
+        assert_eq!(a, b);
+        assert_eq!(b, c);
+        assert_eq!(a.len(), 64);
+    }
+
+    /// VAL-DL-020: different bodies yield different hashes.
+    #[test]
+    fn scratch_content_hash_differs_for_distinct_bodies() {
+        let a = scratch_content_hash("mission-dl-marker-one");
+        let b = scratch_content_hash("mission-dl-marker-two");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn normalize_memory_body_for_hash_collapses_runs() {
+        assert_eq!(
+            normalize_memory_body_for_hash("  foo \t bar\nbaz  "),
+            "foo bar baz"
         );
     }
 }

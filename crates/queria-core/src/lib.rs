@@ -11,6 +11,6 @@ pub use config::{
     AppConfig, BackupSettings, EmbeddingSettings, GitSettings, MinioSettings, QdrantSettings,
     RetrievalSettings, WorkerSettings,
 };
-pub use contracts::validate_memory_body;
+pub use contracts::{normalize_memory_body_for_hash, scratch_content_hash, validate_memory_body};
 pub use error::{QueriaError, QueriaResult};
 pub use observability::init_json_tracing;

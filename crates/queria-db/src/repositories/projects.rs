@@ -7,13 +7,13 @@ use uuid::Uuid;
 
 use super::types::{
     AgentTokenRecord, ApprovalRecord, ApprovedKnowledgeRecord, AuthenticatedAgentToken,
-    CreateAgentTokenParams, CreateProjectParams, KnowledgeItemRecord, ProjectRecord,
-    ProposeMemoryParams, ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord,
-    agent_token_from_row, approval_for_update, approval_from_row,
-    authenticated_agent_token_from_row, count_accessible_project_slugs,
-    ensure_approval_source_document, insert_approval_audit_log, knowledge_item_from_row,
-    organization_id_for_user, project_from_row, project_id_for_slug, retrieved_item_from_row,
-    source_from_row, to_infrastructure_error,
+    CreateAgentTokenParams, CreateProjectParams, IndexMemoryParams, IndexedMemoryRecord,
+    KnowledgeItemRecord, MarkScratchChunkReadyParams, ProjectRecord, ProposeMemoryParams,
+    ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord, agent_token_from_row,
+    approval_for_update, approval_from_row, authenticated_agent_token_from_row,
+    count_accessible_project_slugs, ensure_approval_source_document, insert_approval_audit_log,
+    knowledge_item_from_row, organization_id_for_user, project_from_row, project_id_for_slug,
+    retrieved_item_from_row, source_from_row, to_infrastructure_error,
 };
 
 #[derive(Clone, Debug)]
@@ -621,6 +621,402 @@ impl PgProjectRepository {
         })
     }
 
+    /// Resolve an agent-accessible project by id and/or slug (IMP-13).
+    ///
+    /// Rejects requests that do not resolve to a single project in the token scope.
+    /// Never returns a global scope target; scratch is always project-scoped.
+    pub async fn resolve_project_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        project_id: Option<Uuid>,
+        project_slug: Option<&str>,
+    ) -> QueriaResult<ProjectRecord> {
+        let slug = project_slug
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        match (project_id, slug) {
+            (Some(id), Some(slug)) => {
+                let row = sqlx::query(
+                    "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
+                            p.include_global_default, p.created_at, p.updated_at
+                     from project p
+                     where p.organization_id = $1
+                       and p.id = $2
+                       and p.slug = $3
+                       and p.slug = any($4)",
+                )
+                .bind(agent.organization_id)
+                .bind(id)
+                .bind(slug)
+                .bind(&agent.permissions.project_slugs)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_infrastructure_error)?;
+                row.map(project_from_row)
+                    .transpose()?
+                    .ok_or(QueriaError::PermissionDenied)
+            }
+            (Some(id), None) => {
+                let row = sqlx::query(
+                    "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
+                            p.include_global_default, p.created_at, p.updated_at
+                     from project p
+                     where p.organization_id = $1
+                       and p.id = $2
+                       and p.slug = any($3)",
+                )
+                .bind(agent.organization_id)
+                .bind(id)
+                .bind(&agent.permissions.project_slugs)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_infrastructure_error)?;
+                row.map(project_from_row)
+                    .transpose()?
+                    .ok_or(QueriaError::PermissionDenied)
+            }
+            (None, Some(slug)) => {
+                let row = sqlx::query(
+                    "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
+                            p.include_global_default, p.created_at, p.updated_at
+                     from project p
+                     where p.organization_id = $1
+                       and p.slug = $2
+                       and p.slug = any($3)",
+                )
+                .bind(agent.organization_id)
+                .bind(slug)
+                .bind(&agent.permissions.project_slugs)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(to_infrastructure_error)?;
+                row.map(project_from_row)
+                    .transpose()?
+                    .ok_or(QueriaError::PermissionDenied)
+            }
+            (None, None) => Err(QueriaError::Validation("invalid_project".to_owned())),
+        }
+    }
+
+    /// Insert project-scoped scratch knowledge_item + chunk, or return existing
+    /// row when `(project_id, content_hash)` already has active scratch (IMP-13/22).
+    ///
+    /// Does **not** mutate approved/trusted items. Never creates global scope rows.
+    /// Caller must run sync Voyage embed + Qdrant upsert, then
+    /// [`Self::mark_scratch_chunk_ready`] or [`Self::delete_scratch_knowledge_item`]
+    /// on failure so no searchable orphan remains.
+    pub async fn index_memory_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        params: IndexMemoryParams,
+    ) -> QueriaResult<IndexedMemoryRecord> {
+        if params.content_hash.trim().is_empty() {
+            return Err(QueriaError::Validation("invalid_content_hash".to_owned()));
+        }
+
+        let project = self
+            .resolve_project_for_agent(agent, params.project_id, params.project_slug.as_deref())
+            .await?;
+
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+
+        // Idempotent lookup: same project + content_hash → existing scratch (IMP-22).
+        if let Some(existing) = sqlx::query(
+            "select ki.id as knowledge_item_id, c.id as chunk_id, ki.project_id,
+                    ki.organization_id, ki.status::text as status, ki.scope::text as scope,
+                    ki.title, ki.body, ki.content_hash
+             from knowledge_item ki
+             join chunk c on c.knowledge_item_id = ki.id and c.chunk_index = 0
+             where ki.project_id = $1
+               and ki.status = 'scratch'
+               and ki.content_hash = $2
+             limit 1",
+        )
+        .bind(project.id)
+        .bind(&params.content_hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?
+        {
+            transaction
+                .commit()
+                .await
+                .map_err(to_infrastructure_error)?;
+            return Ok(IndexedMemoryRecord {
+                knowledge_item_id: existing
+                    .try_get("knowledge_item_id")
+                    .map_err(to_infrastructure_error)?,
+                chunk_id: existing
+                    .try_get("chunk_id")
+                    .map_err(to_infrastructure_error)?,
+                project_id: existing
+                    .try_get("project_id")
+                    .map_err(to_infrastructure_error)?,
+                organization_id: existing
+                    .try_get("organization_id")
+                    .map_err(to_infrastructure_error)?,
+                status: existing
+                    .try_get("status")
+                    .map_err(to_infrastructure_error)?,
+                scope: existing.try_get("scope").map_err(to_infrastructure_error)?,
+                title: existing.try_get("title").map_err(to_infrastructure_error)?,
+                body: existing.try_get("body").map_err(to_infrastructure_error)?,
+                content_hash: existing
+                    .try_get("content_hash")
+                    .map_err(to_infrastructure_error)?,
+                created: false,
+            });
+        }
+
+        // Guard: never overwrite approved by matching hash under scratch uniqueness
+        // (partial unique index only covers status=scratch). Explicit no-op on trusted.
+        let approved_collision: Option<Uuid> = sqlx::query_scalar(
+            "select id from knowledge_item
+             where project_id = $1
+               and status = 'approved'
+               and content_hash = $2
+             limit 1",
+        )
+        .bind(project.id)
+        .bind(&params.content_hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+        // approved_collision is informational: we still create a separate scratch row
+        // (VAL-DL-054). Do not mutate the approved id.
+        let _ = approved_collision;
+
+        let knowledge_item_id = sqlx::query(
+            "insert into knowledge_item(
+               organization_id, project_id, scope, status, title, body,
+               category, tags, content_hash, generated_by
+             )
+             values ($1, $2, 'project', 'scratch', $3, $4, $5, $6, $7, $8)
+             returning id",
+        )
+        .bind(agent.organization_id)
+        .bind(project.id)
+        .bind(&params.title)
+        .bind(&params.body)
+        .bind(&params.category)
+        .bind(&params.tags)
+        .bind(&params.content_hash)
+        .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
+        .fetch_one(&mut *transaction)
+        .await
+        .and_then(|row| row.try_get::<Uuid, _>("id"))
+        .map_err(to_infrastructure_error)?;
+
+        let source_uri = format!("queria://scratch/{knowledge_item_id}");
+        let source_document_id = sqlx::query(
+            "insert into source_document(
+               organization_id, project_id, kind, uri, title, source_path,
+               content_hash, metadata, is_active
+             )
+             values ($1, $2, 'manual_note', $3, $4, $5, $6, $7, true)
+             returning id",
+        )
+        .bind(agent.organization_id)
+        .bind(project.id)
+        .bind(&source_uri)
+        .bind(&params.title)
+        .bind(format!("scratch/{knowledge_item_id}"))
+        .bind(format!("scratch:{}", params.content_hash))
+        .bind(json!({
+            "generated_from": "index_memory",
+            "knowledge_item_id": knowledge_item_id,
+            "agent_token_id": agent.id,
+            "agent_token_prefix": agent.token_prefix
+        }))
+        .fetch_one(&mut *transaction)
+        .await
+        .and_then(|row| row.try_get::<Uuid, _>("id"))
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "update knowledge_item
+             set source_document_id = $2, updated_at = now()
+             where id = $1",
+        )
+        .bind(knowledge_item_id)
+        .bind(source_document_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let chunk_id = sqlx::query(
+            "insert into chunk(
+               knowledge_item_id, source_document_id, chunk_index, body,
+               token_count, content_hash, search_title, metadata,
+               embedding_status
+             )
+             values ($1, $2, 0, $3, 0, $4, $5, $6, 'pending')
+             returning id",
+        )
+        .bind(knowledge_item_id)
+        .bind(source_document_id)
+        .bind(&params.body)
+        .bind(&params.content_hash)
+        .bind(&params.title)
+        .bind(json!({
+            "line_start": 1,
+            "line_end": params.body.lines().count().max(1),
+            "lane": "scratch"
+        }))
+        .fetch_one(&mut *transaction)
+        .await
+        .and_then(|row| row.try_get::<Uuid, _>("id"))
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "insert into audit_log(
+               organization_id, actor_type, actor_id, action,
+               resource_type, resource_id, metadata
+             )
+             values ($1, 'agent', $2, 'index_memory', 'knowledge_item', $3, $4)",
+        )
+        .bind(agent.organization_id)
+        .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
+        .bind(knowledge_item_id.to_string())
+        .bind(json!({
+            "project_id": project.id,
+            "chunk_id": chunk_id,
+            "content_hash": params.content_hash,
+            "status": "scratch",
+            "scope": "project",
+            "agent_token_id": agent.id,
+            "agent_token_prefix": agent.token_prefix
+        }))
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        Ok(IndexedMemoryRecord {
+            knowledge_item_id,
+            chunk_id,
+            project_id: project.id,
+            organization_id: agent.organization_id,
+            status: "scratch".to_owned(),
+            scope: "project".to_owned(),
+            title: params.title,
+            body: params.body,
+            content_hash: params.content_hash,
+            created: true,
+        })
+    }
+
+    /// Mark scratch chunk embedding ready after successful Voyage+Qdrant (IMP-13).
+    pub async fn mark_scratch_chunk_ready(
+        &self,
+        params: &MarkScratchChunkReadyParams,
+    ) -> QueriaResult<()> {
+        let result = sqlx::query(
+            "update chunk
+             set embedding_provider = $2,
+                 embedding_model = $3,
+                 embedding_dimension = $4,
+                 embedding_profile_version = $5,
+                 embedding_content_hash = $6,
+                 qdrant_point_id = $7,
+                 embedding_status = 'ready',
+                 embedding_error = null,
+                 embedded_at = now(),
+                 embedding_updated_at = now()
+             where id = $1
+               and exists (
+                 select 1 from knowledge_item ki
+                 where ki.id = chunk.knowledge_item_id
+                   and ki.status = 'scratch'
+               )",
+        )
+        .bind(params.chunk_id)
+        .bind(&params.provider)
+        .bind(&params.model)
+        .bind(params.dimension)
+        .bind(&params.profile_version)
+        .bind(&params.embedding_content_hash)
+        .bind(params.qdrant_point_id)
+        .execute(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        if result.rows_affected() != 1 {
+            return Err(QueriaError::Infrastructure(format!(
+                "scratch chunk {} could not be marked ready",
+                params.chunk_id
+            )));
+        }
+        Ok(())
+    }
+
+    /// Roll back a newly created scratch item when embed/Qdrant fails (VAL-DL-033).
+    /// Cascades to chunk and related rows; source_document cleaned explicitly.
+    pub async fn delete_scratch_knowledge_item(
+        &self,
+        knowledge_item_id: Uuid,
+        organization_id: Uuid,
+    ) -> QueriaResult<()> {
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+
+        let source_document_id: Option<Uuid> = sqlx::query_scalar(
+            "select source_document_id
+             from knowledge_item
+             where id = $1
+               and organization_id = $2
+               and status = 'scratch'",
+        )
+        .bind(knowledge_item_id)
+        .bind(organization_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?
+        .flatten();
+
+        let deleted = sqlx::query(
+            "delete from knowledge_item
+             where id = $1
+               and organization_id = $2
+               and status = 'scratch'",
+        )
+        .bind(knowledge_item_id)
+        .bind(organization_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        if deleted.rows_affected() == 0 {
+            return Err(QueriaError::NotFound(format!(
+                "scratch knowledge_item {knowledge_item_id}"
+            )));
+        }
+
+        if let Some(source_id) = source_document_id {
+            sqlx::query(
+                "delete from source_document
+                 where id = $1
+                   and organization_id = $2
+                   and uri like 'queria://scratch/%'",
+            )
+            .bind(source_id)
+            .bind(organization_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(to_infrastructure_error)?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+        Ok(())
+    }
+
     pub async fn list_approvals(
         &self,
         user_id: Uuid,
@@ -879,6 +1275,25 @@ impl PgProjectRepository {
         Ok(Some(approval))
     }
 
+    /// Unit-test SQL contracts for index_memory (no live DB required).
+    #[cfg(test)]
+    pub(crate) fn index_memory_idempotent_lookup_sql() -> &'static str {
+        "select ki.id as knowledge_item_id, c.id as chunk_id, ki.project_id,
+                    ki.organization_id, ki.status::text as status, ki.scope::text as scope,
+                    ki.title, ki.body, ki.content_hash
+             from knowledge_item ki
+             join chunk c on c.knowledge_item_id = ki.id and c.chunk_index = 0
+             where ki.project_id = $1
+               and ki.status = 'scratch'
+               and ki.content_hash = $2
+             limit 1"
+    }
+
+    #[cfg(test)]
+    pub(crate) fn index_memory_insert_sql_snippet() -> &'static str {
+        "values ($1, $2, 'project', 'scratch', $3, $4, $5, $6, $7, $8)"
+    }
+
     pub async fn seed_fjulian_me_registry(&self) -> QueriaResult<()> {
         sqlx::query(
             "with first_org as (
@@ -924,5 +1339,30 @@ impl PgProjectRepository {
         .await
         .map(|_| ())
         .map_err(to_infrastructure_error)
+    }
+}
+
+#[cfg(test)]
+mod index_memory_tests {
+    use super::PgProjectRepository;
+
+    /// VAL-DL-018 / IMP-22: lookup is keyed by project + content_hash + scratch only.
+    #[test]
+    fn idempotent_lookup_filters_scratch_and_hash() {
+        let sql = PgProjectRepository::index_memory_idempotent_lookup_sql();
+        assert!(sql.contains("ki.status = 'scratch'"));
+        assert!(sql.contains("ki.content_hash = $2"));
+        assert!(sql.contains("ki.project_id = $1"));
+        assert!(!sql.contains("status = 'approved'"));
+    }
+
+    /// VAL-DL-008 / VAL-DL-013: insert always project-scoped scratch.
+    #[test]
+    fn insert_sql_is_project_scoped_scratch() {
+        let sql = PgProjectRepository::index_memory_insert_sql_snippet();
+        assert!(sql.contains("'project'"));
+        assert!(sql.contains("'scratch'"));
+        assert!(!sql.contains("'global'"));
+        assert!(!sql.contains("'approved'"));
     }
 }

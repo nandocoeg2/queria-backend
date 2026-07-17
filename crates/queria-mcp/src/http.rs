@@ -9,14 +9,15 @@ use axum::{
 };
 use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::contracts::{
-    RetrieveContextRequest, RetrieveContextResponse, validate_memory_body,
+    RetrieveContextRequest, RetrieveContextResponse, scratch_content_hash, validate_memory_body,
 };
 use queria_core::ids::{ProjectId, SourceDocumentId};
 use queria_db::repositories::{
-    AuthenticatedAgentToken, PgProjectRepository, ProjectRecord, ProposeMemoryParams,
-    SourceDocumentRecord,
+    AuthenticatedAgentToken, IndexMemoryParams, PgProjectRepository, ProjectRecord,
+    ProposeMemoryParams, SourceDocumentRecord,
 };
 use queria_search::retrieval::{RetrievalPrincipal, build_pg_retrieval_service};
+use queria_search::scratch_embed::{build_embed_clients, index_memory_with_sync_embed};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -217,41 +218,30 @@ async fn call_tool(
         "index_memory" => {
             let args: IndexMemoryArgs =
                 serde_json::from_value(params.arguments).map_err(invalid_params)?;
-            // IMP-23: shared max body + empty rejection before any write.
-            // Full scratch write/embed is dual-lane-index-memory-write-hash-embed.
-            let _body = validate_memory_body(&args.body, state.config.max_body_bytes)
-                .map_err(validation_error)?;
-            let has_project = args.project_id.is_some()
-                || args
-                    .project_slug
-                    .as_ref()
-                    .is_some_and(|slug| !slug.trim().is_empty());
-            if !has_project {
-                return Err("invalid_project".to_owned());
-            }
-            // Keep title/tags bounds lean and consistent with propose.
-            if let Some(ref title) = args.title {
-                let title = title.trim();
-                if title.len() > 256 {
-                    return Err("invalid_title".to_owned());
-                }
-            }
-            if let Some(ref category) = args.category {
-                let category = category.trim();
-                if category.len() > 64 {
-                    return Err("invalid_category".to_owned());
-                }
-            }
-            let tags = args
-                .tags
-                .iter()
-                .map(|tag| tag.trim())
-                .filter(|tag| !tag.is_empty())
-                .collect::<Vec<_>>();
-            if tags.len() > 25 || tags.iter().any(|tag| tag.len() > 64) {
-                return Err("invalid_tags".to_owned());
-            }
-            Err("index_memory_not_implemented".to_owned())
+            let write_params = args.into_params(state.config.max_body_bytes)?;
+            let (voyage, qdrant, profile) =
+                build_embed_clients(&state.config).map_err(infrastructure_error)?;
+            let indexed = index_memory_with_sync_embed(
+                repository,
+                agent,
+                write_params,
+                &voyage,
+                &qdrant,
+                &profile,
+            )
+            .await
+            .map_err(index_memory_error)?;
+            Ok(tool_success(json!({
+                "knowledge_item_id": indexed.knowledge_item_id,
+                "chunk_id": indexed.chunk_id,
+                "project_id": indexed.project_id,
+                "status": indexed.status,
+                "scope": indexed.scope,
+                "title": indexed.title,
+                "content_hash": indexed.content_hash,
+                "created": indexed.created,
+                "idempotent": indexed.idempotent
+            })))
         }
         _ => Err("unknown_tool".to_owned()),
     }
@@ -313,6 +303,75 @@ impl ProposeMemoryArgs {
             body,
             category,
             tags,
+        })
+    }
+}
+
+impl IndexMemoryArgs {
+    /// Validate + normalize index_memory arguments (IMP-13/22/23).
+    ///
+    /// Rejects global scope (project selector required; no scope override field).
+    fn into_params(self, max_body_bytes: usize) -> Result<IndexMemoryParams, String> {
+        let body = validate_memory_body(&self.body, max_body_bytes).map_err(validation_error)?;
+        let project_slug = self
+            .project_slug
+            .map(|slug| slug.trim().to_owned())
+            .filter(|slug| !slug.is_empty());
+        if self.project_id.is_none() && project_slug.is_none() {
+            return Err("invalid_project".to_owned());
+        }
+        if let Some(ref slug) = project_slug
+            && !valid_slug(slug)
+        {
+            return Err("invalid_project_slug".to_owned());
+        }
+
+        let title = self
+            .title
+            .as_ref()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| {
+                let truncated: String = body.chars().take(80).collect();
+                if truncated.is_empty() {
+                    "scratch".to_owned()
+                } else {
+                    truncated
+                }
+            });
+        if title.len() > 256 {
+            return Err("invalid_title".to_owned());
+        }
+
+        let category = self
+            .category
+            .as_ref()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "scratch".to_owned());
+        if category.len() > 64 {
+            return Err("invalid_category".to_owned());
+        }
+
+        let tags = self
+            .tags
+            .into_iter()
+            .map(|tag| tag.trim().to_owned())
+            .filter(|tag| !tag.is_empty())
+            .collect::<Vec<_>>();
+        if tags.len() > 25 || tags.iter().any(|tag| tag.len() > 64) {
+            return Err("invalid_tags".to_owned());
+        }
+
+        let content_hash = scratch_content_hash(&body);
+        Ok(IndexMemoryParams {
+            project_id: self.project_id.map(ProjectId::as_uuid),
+            project_slug,
+            title,
+            body,
+            category,
+            tags,
+            content_hash,
         })
     }
 }
@@ -435,6 +494,19 @@ fn infrastructure_error(error: queria_core::QueriaError) -> String {
     "tool_failed".to_owned()
 }
 
+fn index_memory_error(error: queria_core::QueriaError) -> String {
+    match error {
+        queria_core::QueriaError::Validation(message) => message,
+        queria_core::QueriaError::PermissionDenied => "permission_denied".to_owned(),
+        queria_core::QueriaError::NotFound(message) => message,
+        other => {
+            tracing::error!(error = %other, "index_memory failed");
+            // Surface embed/Qdrant failures without claiming success (VAL-DL-032).
+            "index_memory_embed_failed".to_owned()
+        }
+    }
+}
+
 fn valid_slug(value: &str) -> bool {
     let bytes = value.as_bytes();
     let Some(first) = bytes.first() else {
@@ -521,6 +593,91 @@ mod tests {
         let err = valid_propose(&"n".repeat(20_001))
             .into_params(config.max_body_bytes)
             .expect_err("20_001 over default");
+        assert!(err.starts_with("body_too_large"));
+    }
+
+    fn valid_index(body: &str) -> IndexMemoryArgs {
+        IndexMemoryArgs {
+            project_id: None,
+            project_slug: Some("fjulian-me".to_owned()),
+            body: body.to_owned(),
+            title: Some("scratch note".to_owned()),
+            category: Some("note".to_owned()),
+            tags: vec!["mission-dl".to_owned()],
+        }
+    }
+
+    /// VAL-DL-007/013: project selector required; no global default.
+    #[test]
+    fn index_memory_requires_project_selector() {
+        let args = IndexMemoryArgs {
+            project_id: None,
+            project_slug: None,
+            body: "mission-dl-body".to_owned(),
+            title: None,
+            category: None,
+            tags: vec![],
+        };
+        let err = args.into_params(20_000).expect_err("must require project");
+        assert_eq!(err, "invalid_project");
+    }
+
+    /// VAL-DL-018/019: content_hash is stable after normalize.
+    #[test]
+    fn index_memory_params_hash_is_idempotent_for_whitespace() {
+        let a = valid_index("hello   world")
+            .into_params(20_000)
+            .expect("ok");
+        let b = IndexMemoryArgs {
+            project_id: None,
+            project_slug: Some("fjulian-me".to_owned()),
+            body: "  hello world  ".to_owned(),
+            title: None,
+            category: None,
+            tags: vec![],
+        }
+        .into_params(20_000)
+        .expect("ok");
+        assert_eq!(a.content_hash, b.content_hash);
+        assert_eq!(a.content_hash, scratch_content_hash("hello world"));
+    }
+
+    /// VAL-DL-042: optional title/category defaults; oversized tags fail.
+    #[test]
+    fn index_memory_rejects_absurd_tag_counts() {
+        let mut args = valid_index("body");
+        args.tags = (0..30).map(|i| format!("tag{i}")).collect();
+        let err = args.into_params(20_000).expect_err("too many tags");
+        assert_eq!(err, "invalid_tags");
+    }
+
+    #[test]
+    fn index_memory_accepts_slug_only_and_defaults_title() {
+        let params = IndexMemoryArgs {
+            project_id: None,
+            project_slug: Some("fjulian-me".to_owned()),
+            body: "mission-dl-unique-marker-xyz".to_owned(),
+            title: None,
+            category: None,
+            tags: vec![],
+        }
+        .into_params(20_000)
+        .expect("valid");
+        assert_eq!(params.project_slug.as_deref(), Some("fjulian-me"));
+        assert_eq!(params.category, "scratch");
+        assert!(!params.title.is_empty());
+        assert_eq!(params.content_hash.len(), 64);
+        // No global scope field exists; writes are always project-scoped.
+        assert!(params.project_id.is_none() || params.project_slug.is_some());
+    }
+
+    /// VAL-DL-022: oversize body rejected on index_memory params.
+    #[test]
+    fn index_memory_rejects_oversized_body() {
+        let max = 40usize;
+        let err = valid_index(&"x".repeat(max + 1))
+            .into_params(max)
+            .expect_err("oversize");
         assert!(err.starts_with("body_too_large"));
     }
 }

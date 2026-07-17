@@ -132,6 +132,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "knowledge_status_scratch",
             sql: include_str!("../../../migrations/20260717000100_knowledge_status_scratch.sql"),
         },
+        Migration {
+            version: "20260717000200",
+            name: "scratch_content_hash",
+            sql: include_str!("../../../migrations/20260717000200_scratch_content_hash.sql"),
+        },
     ]
 }
 
@@ -291,6 +296,33 @@ mod tests {
         assert!(
             !migration.sql.to_lowercase().contains("add column"),
             "scratch migration must not add columns; extend enum only"
+        );
+    }
+
+    /// IMP-22: partial unique index on (project_id, content_hash) for scratch only.
+    #[test]
+    fn bundled_migrations_include_scratch_content_hash() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260717000200")
+            .expect("missing scratch content_hash migration");
+
+        for required in [
+            "content_hash",
+            "idx_knowledge_item_scratch_content_hash",
+            "status = 'scratch'",
+            "project_id",
+        ] {
+            assert!(
+                migration.sql.contains(required),
+                "scratch content_hash migration missing {required}"
+            );
+        }
+        // Must not force uniqueness against approved/trusted rows.
+        assert!(
+            migration.sql.contains("where status = 'scratch'"),
+            "unique index must be partial on scratch status only"
         );
     }
 }

@@ -105,6 +105,59 @@ pub struct ProposeMemoryParams {
     pub tags: Vec<String>,
 }
 
+/// Params for agent `index_memory` (project-scoped scratch write, IMP-13/22).
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexMemoryParams {
+    pub project_id: Option<Uuid>,
+    pub project_slug: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub category: String,
+    pub tags: Vec<String>,
+    pub content_hash: String,
+}
+
+/// Result of inserting or no-op resolving a scratch knowledge item + chunk.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexedMemoryRecord {
+    pub knowledge_item_id: Uuid,
+    pub chunk_id: Uuid,
+    pub project_id: Uuid,
+    pub organization_id: Uuid,
+    pub status: String,
+    pub scope: String,
+    pub title: String,
+    pub body: String,
+    pub content_hash: String,
+    pub created: bool,
+}
+
+/// Compact record returned after embedding is marked ready (or idempotent hit).
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexMemoryResult {
+    pub knowledge_item_id: Uuid,
+    pub chunk_id: Uuid,
+    pub project_id: Uuid,
+    pub status: String,
+    pub scope: String,
+    pub title: String,
+    pub content_hash: String,
+    pub created: bool,
+    pub idempotent: bool,
+}
+
+/// Fields required to mark a scratch chunk embedding ready after sync embed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MarkScratchChunkReadyParams {
+    pub chunk_id: Uuid,
+    pub qdrant_point_id: Uuid,
+    pub embedding_content_hash: String,
+    pub provider: String,
+    pub model: String,
+    pub dimension: i32,
+    pub profile_version: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApprovalRecord {
     pub id: Uuid,
