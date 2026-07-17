@@ -8,7 +8,9 @@ use axum::{
     routing::{get, post},
 };
 use queria_core::auth::agent_token::AgentTokenIssuer;
-use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
+use queria_core::contracts::{
+    RetrieveContextRequest, RetrieveContextResponse, validate_memory_body,
+};
 use queria_core::ids::{ProjectId, SourceDocumentId};
 use queria_db::repositories::{
     AuthenticatedAgentToken, PgProjectRepository, ProjectRecord, ProposeMemoryParams,
@@ -51,6 +53,22 @@ struct ProposeMemoryArgs {
     title: String,
     body: String,
     category: String,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+/// Args for `index_memory` (IMP-13 write path + IMP-23 body validation).
+#[derive(Debug, Deserialize)]
+struct IndexMemoryArgs {
+    #[serde(default)]
+    project_id: Option<ProjectId>,
+    #[serde(default)]
+    project_slug: Option<String>,
+    body: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    category: Option<String>,
     #[serde(default)]
     tags: Vec<String>,
 }
@@ -185,7 +203,7 @@ async fn call_tool(
         "propose_memory" => {
             let args: ProposeMemoryArgs =
                 serde_json::from_value(params.arguments).map_err(invalid_params)?;
-            let params = args.into_params()?;
+            let params = args.into_params(state.config.max_body_bytes)?;
             let proposed = repository
                 .propose_memory_for_agent(agent, params)
                 .await
@@ -195,6 +213,45 @@ async fn call_tool(
                 "status": proposed.status,
                 "title": proposed.title
             })))
+        }
+        "index_memory" => {
+            let args: IndexMemoryArgs =
+                serde_json::from_value(params.arguments).map_err(invalid_params)?;
+            // IMP-23: shared max body + empty rejection before any write.
+            // Full scratch write/embed is dual-lane-index-memory-write-hash-embed.
+            let _body = validate_memory_body(&args.body, state.config.max_body_bytes)
+                .map_err(validation_error)?;
+            let has_project = args.project_id.is_some()
+                || args
+                    .project_slug
+                    .as_ref()
+                    .is_some_and(|slug| !slug.trim().is_empty());
+            if !has_project {
+                return Err("invalid_project".to_owned());
+            }
+            // Keep title/tags bounds lean and consistent with propose.
+            if let Some(ref title) = args.title {
+                let title = title.trim();
+                if title.len() > 256 {
+                    return Err("invalid_title".to_owned());
+                }
+            }
+            if let Some(ref category) = args.category {
+                let category = category.trim();
+                if category.len() > 64 {
+                    return Err("invalid_category".to_owned());
+                }
+            }
+            let tags = args
+                .tags
+                .iter()
+                .map(|tag| tag.trim())
+                .filter(|tag| !tag.is_empty())
+                .collect::<Vec<_>>();
+            if tags.len() > 25 || tags.iter().any(|tag| tag.len() > 64) {
+                return Err("invalid_tags".to_owned());
+            }
+            Err("index_memory_not_implemented".to_owned())
         }
         _ => Err("unknown_tool".to_owned()),
     }
@@ -225,10 +282,10 @@ async fn hybrid_retrieve(
 }
 
 impl ProposeMemoryArgs {
-    fn into_params(self) -> Result<ProposeMemoryParams, String> {
+    fn into_params(self, max_body_bytes: usize) -> Result<ProposeMemoryParams, String> {
         let project_slug = self.project_slug.trim().to_owned();
         let title = self.title.trim().to_owned();
-        let body = self.body.trim().to_owned();
+        let body = validate_memory_body(&self.body, max_body_bytes).map_err(validation_error)?;
         let category = self.category.trim().to_owned();
         let tags = self
             .tags
@@ -242,9 +299,6 @@ impl ProposeMemoryArgs {
         }
         if title.is_empty() || title.len() > 256 {
             return Err("invalid_title".to_owned());
-        }
-        if body.is_empty() || body.len() > 20_000 {
-            return Err("invalid_body".to_owned());
         }
         if category.is_empty() || category.len() > 64 {
             return Err("invalid_category".to_owned());
@@ -369,6 +423,13 @@ fn invalid_params(error: serde_json::Error) -> String {
     format!("invalid_params: {error}")
 }
 
+fn validation_error(error: queria_core::QueriaError) -> String {
+    match error {
+        queria_core::QueriaError::Validation(message) => message,
+        other => other.to_string(),
+    }
+}
+
 fn infrastructure_error(error: queria_core::QueriaError) -> String {
     tracing::error!(error = %error, "mcp tool failed");
     "tool_failed".to_owned()
@@ -389,4 +450,77 @@ fn valid_slug(value: &str) -> bool {
         && bytes
             .iter()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_propose(body: &str) -> ProposeMemoryArgs {
+        ProposeMemoryArgs {
+            project_slug: "fjulian-me".to_owned(),
+            title: "note".to_owned(),
+            body: body.to_owned(),
+            category: "scratch".to_owned(),
+            tags: vec![],
+        }
+    }
+
+    /// VAL-DL-025 / VAL-DL-022: propose_memory shares configured max (not hard-only 20k).
+    #[test]
+    fn propose_memory_rejects_body_over_configured_max() {
+        let max = 64usize;
+        let args = valid_propose(&"x".repeat(max + 1));
+        let err = args.into_params(max).expect_err("oversized body");
+        assert!(
+            err.starts_with("body_too_large"),
+            "clear size error expected, got {err}"
+        );
+    }
+
+    /// VAL-DL-023: body under/equal max accepted for propose_memory validation.
+    #[test]
+    fn propose_memory_accepts_body_at_configured_max() {
+        let max = 128usize;
+        let body = "a".repeat(max);
+        let params = valid_propose(&body)
+            .into_params(max)
+            .expect("body at max should pass");
+        assert_eq!(params.body.len(), max);
+    }
+
+    /// VAL-DL-024: empty / blank body rejected on propose path.
+    #[test]
+    fn propose_memory_rejects_empty_body() {
+        let err = valid_propose("   ")
+            .into_params(20_000)
+            .expect_err("blank body");
+        assert_eq!(err, "invalid_body");
+    }
+
+    /// VAL-DL-022/024: index_memory args use the same validate_memory_body helper.
+    #[test]
+    fn index_memory_body_validation_matches_shared_helper() {
+        let max = 32usize;
+        assert!(validate_memory_body("", max).is_err());
+        assert!(validate_memory_body("  ", max).is_err());
+        assert!(validate_memory_body(&"y".repeat(max + 1), max).is_err());
+        assert!(validate_memory_body(&"y".repeat(max), max).is_ok());
+        assert!(validate_memory_body("mission-dl-ok", max).is_ok());
+    }
+
+    /// IMP-23: default config max is 20_000 and applied to propose path.
+    #[test]
+    fn default_max_body_bytes_is_twenty_thousand() {
+        let config = queria_core::AppConfig::default_local();
+        assert_eq!(config.max_body_bytes, 20_000);
+        let ok = valid_propose(&"n".repeat(20_000))
+            .into_params(config.max_body_bytes)
+            .expect("exactly 20k ok");
+        assert_eq!(ok.body.len(), 20_000);
+        let err = valid_propose(&"n".repeat(20_001))
+            .into_params(config.max_body_bytes)
+            .expect_err("20_001 over default");
+        assert!(err.starts_with("body_too_large"));
+    }
 }

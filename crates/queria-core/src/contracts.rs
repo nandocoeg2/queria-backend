@@ -79,9 +79,27 @@ impl RetrieveContextRequest {
     }
 }
 
+/// Shared body validation for MCP write tools (`propose_memory`, `index_memory`).
+///
+/// Trims leading/trailing whitespace, rejects blank bodies, and enforces
+/// `max_body_bytes` (UTF-8 byte length of the trimmed body). Used by IMP-23.
+pub fn validate_memory_body(body: &str, max_body_bytes: usize) -> crate::QueriaResult<String> {
+    let body = body.trim().to_owned();
+    if body.is_empty() {
+        return Err(crate::QueriaError::Validation("invalid_body".to_owned()));
+    }
+    if body.len() > max_body_bytes {
+        return Err(crate::QueriaError::Validation(format!(
+            "body_too_large: max {max_body_bytes} bytes"
+        )));
+    }
+    Ok(body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::QueriaError;
 
     #[test]
     fn retrieve_context_request_rejects_blank_query() {
@@ -112,6 +130,67 @@ mod tests {
         assert_eq!(
             serde_json::to_value(RetrievalMode::LexicalFallback).expect("mode should serialize"),
             serde_json::json!("lexical_fallback")
+        );
+    }
+
+    /// VAL-DL-024: empty / whitespace-only body rejected.
+    #[test]
+    fn validate_memory_body_rejects_empty_and_blank() {
+        for raw in ["", "   ", "\n\t"] {
+            let err = validate_memory_body(raw, 20_000).expect_err("blank must fail");
+            assert!(
+                matches!(err, QueriaError::Validation(ref msg) if msg == "invalid_body"),
+                "unexpected error for {raw:?}: {err:?}"
+            );
+        }
+    }
+
+    /// VAL-DL-022 / VAL-DL-025: oversized body rejected under configured max.
+    #[test]
+    fn validate_memory_body_rejects_oversized() {
+        let max = 32usize;
+        let oversize = "x".repeat(max + 1);
+        let err = validate_memory_body(&oversize, max).expect_err("oversized must fail");
+        match err {
+            QueriaError::Validation(msg) => {
+                assert!(
+                    msg.starts_with("body_too_large"),
+                    "clear client error expected, got {msg}"
+                );
+                assert!(msg.contains(&max.to_string()));
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    /// VAL-DL-023: body at limit accepted; under max accepted; shared for both write tools.
+    #[test]
+    fn validate_memory_body_accepts_under_and_equal_max() {
+        let max = 16usize;
+        let exact = "a".repeat(max);
+        let under = "hello".to_owned();
+        assert_eq!(
+            validate_memory_body(&exact, max).expect("exact max ok"),
+            exact
+        );
+        assert_eq!(
+            validate_memory_body(&format!("  {under}  "), max).expect("trimmed under ok"),
+            under
+        );
+    }
+
+    /// IMP-23: same max_body_bytes applies to propose and index tool bodies.
+    #[test]
+    fn shared_max_applies_identically_to_both_write_tools() {
+        let max = 20_000usize;
+        let legal = "mission-dl-body-note".to_owned();
+        let huge = "z".repeat(max + 1);
+        assert!(validate_memory_body(&legal, max).is_ok());
+        assert!(validate_memory_body(&huge, max).is_err());
+        // Identical bounds: any tool that calls this helper shares the env limit.
+        assert_eq!(
+            validate_memory_body(&legal, max).unwrap(),
+            validate_memory_body(&legal, max).unwrap()
         );
     }
 }

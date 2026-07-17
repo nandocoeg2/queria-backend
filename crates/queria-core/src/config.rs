@@ -85,6 +85,9 @@ pub struct AppConfig {
     pub setup_token: String,
     pub first_admin_email: String,
     pub first_org_slug: String,
+    /// Shared max UTF-8 body bytes for MCP `index_memory` and `propose_memory` (IMP-23).
+    /// Env: `QUERIA_MAX_BODY_BYTES`. Default 20_000.
+    pub max_body_bytes: usize,
     pub qdrant: QdrantSettings,
     pub embedding: EmbeddingSettings,
     pub retrieval: RetrievalSettings,
@@ -127,6 +130,7 @@ impl AppConfig {
             setup_token: read_env("QUERIA_SETUP_TOKEN", &defaults.setup_token),
             first_admin_email: read_env("QUERIA_FIRST_ADMIN_EMAIL", &defaults.first_admin_email),
             first_org_slug: read_env("QUERIA_FIRST_ORG_SLUG", &defaults.first_org_slug),
+            max_body_bytes: read_number_env("QUERIA_MAX_BODY_BYTES", defaults.max_body_bytes)?,
             qdrant: QdrantSettings {
                 url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant.url),
                 api_key: read_env("QDRANT_API_KEY", &defaults.qdrant.api_key),
@@ -272,6 +276,7 @@ impl AppConfig {
             setup_token: "change-me-one-time-setup-token".to_owned(),
             first_admin_email: "nando@fjulian.id".to_owned(),
             first_org_slug: "fjulian".to_owned(),
+            max_body_bytes: 20_000,
             qdrant: QdrantSettings {
                 url: "http://127.0.0.1:17676".to_owned(),
                 api_key: String::new(),
@@ -412,6 +417,11 @@ impl AppConfig {
                 "Git ingestion allowlists must not be empty".to_owned(),
             ));
         }
+        if self.max_body_bytes == 0 || self.max_body_bytes > 1_000_000 {
+            return Err(QueriaError::Config(
+                "QUERIA_MAX_BODY_BYTES must be between 1 and 1000000".to_owned(),
+            ));
+        }
         if self.git.max_file_bytes == 0
             || self.git.chunk_max_lines == 0
             || self.git.chunk_overlap_lines >= self.git.chunk_max_lines
@@ -531,12 +541,33 @@ mod tests {
         assert_eq!(config.retrieval.rrf_k, 60);
         assert_eq!(config.retrieval.candidate_multiplier, 4);
         assert_eq!(config.retrieval.candidate_cap, 100);
+        assert_eq!(config.max_body_bytes, 20_000);
         assert!(
             config
                 .git
                 .allowed_ssh_repositories
                 .contains(&"nandocoeg2/fjulian.me.git".to_owned())
         );
+    }
+
+    /// IMP-23: zero or absurd max_body_bytes rejected at config validate.
+    #[test]
+    fn validation_rejects_invalid_max_body_bytes() {
+        let mut config = AppConfig::default_local();
+        config.setup_token = "a-strong-setup-token-for-tests!!".to_owned();
+        config.max_body_bytes = 0;
+        assert!(matches!(
+            config.validate().expect_err("zero max_body_bytes"),
+            QueriaError::Config(_)
+        ));
+
+        let mut config = AppConfig::default_local();
+        config.setup_token = "a-strong-setup-token-for-tests!!".to_owned();
+        config.max_body_bytes = 1_000_001;
+        assert!(matches!(
+            config.validate().expect_err("too-large max_body_bytes"),
+            QueriaError::Config(_)
+        ));
     }
 
     #[test]
