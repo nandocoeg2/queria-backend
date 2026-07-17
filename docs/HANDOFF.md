@@ -1,6 +1,6 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-17 (prod seed `fjulian-me` + eval 3/3; redeploy dual-lane + Caddy earlier same day)
+> Last verified: 2026-07-17 (embedding backfill restatus: ready 1226 / failed 3; seed eval 3/3; dual-lane + Caddy redeploy earlier same day)
 > Branch: `main`
 > Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A on `main`)
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
@@ -8,7 +8,7 @@
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
-> **Production project `fjulian-me` seeded** (git source, ingest, partial embeddings, golden eval 3/3).
+> **Production project `fjulian-me` seeded**; embedding backfill **substantially complete** (ready 1226 / failed 3 Voyage 429 residual).
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design. When other
@@ -238,7 +238,7 @@ Earlier same day, before seed: project missing; status/probe/eval all exited 1 w
 }
 ```
 
-**Probe notes:**
+**Probe notes (seed session):**
 
 - Query `deployment and site build notes` → 5 items, `retrieval.mode=hybrid`, first path `src/entry-server.tsx`, status/lane `approved`/`trusted`.
 - Query `Astro markdown content flow` → 5 items, hybrid, citation paths present.
@@ -257,14 +257,54 @@ Earlier same day, before seed: project missing; status/probe/eval all exited 1 w
 | Modes observed | hybrid + lexical_fallback mix (semantic partial while embeddings residual) |
 | Mission note | Single prod eval only; Phase 7 golden **3/3 met** on content criteria |
 
-**Ops open issues (after seed):**
+### Mission ops backfill restatus (2026-07-17, `ops-prod-embedding-backfill-restatus`)
 
-1. ~~Prod has no projects/knowledge~~ **Resolved** for `fjulian-me` (1213 approved items / 1229 chunks).
-2. **Embedding residual still large** — ready **72**, pending **1005**, failed **152**; backfill continues with Voyage 429 throttling. Failed chunks are retryable; do not treat residual as local 2026-07-05 snapshot.
-3. **TruffleHog config not in runtime image** — worker needs `/config` mount (or Dockerfile COPY of `config/trufflehog-*.txt`) on future deploys; host override `docker-compose.worker-seed.override.yml` used for this seed.
-4. **Inactive Mac path source** remains deactivated (`file:///Users/.../fjulian.me`); only GitHub SSH source is active.
-5. ~~Runtime edge `queria-proxy`~~ **Resolved** (Caddy). Dual-lane schema/image already live from redeploy.
-6. Optional: bake worker pacing (`QUERIA_EMBEDDING_BATCH_SIZE=8`, interval 2s) into permanent prod `.env` if Voyage rate limits persist.
+**Allowed:** poll embeddings status, optional probe, HANDOFF residual; worker continues pacing.  
+**Not done:** volume wipe, backfill re-enqueue, second eval, deploy/restart/migrate.
+
+| Check | Result |
+|---|---|
+| Edge healthz | **HTTP 200**, body `OK` (Caddy) |
+| Containers | api/mcp/worker/edge/admin/postgres/qdrant/minio **Up** (same dual-lane image) |
+| Embeddings status | **exit 0** (JSON below) |
+| Progress vs seed | ready **72 → 1226**; pending **1005 → 0**; failed **152 → 3** |
+| Backfill job `6528e606-…` | **succeeded** (attempts ~55; Voyage 429 retries with batch 8 / ~2s interval) |
+| Retrieval probe (optional) | **exit 0**; hybrid 5 hits for `deployment and site build notes` (README scripts/Docker deploy paths; semantic candidates 20) |
+| Second eval | **skipped** (default; counts improved substantially but prior golden 3/3 and no user-facing regression suspected) |
+| Volume wipe | **none** |
+
+**Production embeddings residual for `fjulian-me` (2026-07-17 restatus, final poll):**
+
+```json
+{
+  "project": "fjulian-me",
+  "project_exists": true,
+  "embedding_profile_version": "voyage-4-1024-v1",
+  "counts": {
+    "ready": 1226,
+    "pending": 0,
+    "failed": 3,
+    "processing": 0,
+    "stale": 0
+  },
+  "chunks_total": 1229,
+  "knowledge_items_approved": 1213,
+  "backfill_job_status": "succeeded",
+  "failed_error_class": "Voyage 429 Too Many Requests (all 3 residual)",
+  "cli_exit": 0
+}
+```
+
+**Probe notes (restatus):** query `deployment and site build notes` → 5 items, `retrieval.mode=hybrid`, `semantic_candidates=20`, top paths `README.md` (Scripts / Docker / Portainer deploy). Read-ish only.
+
+**Ops open issues (after restatus):**
+
+1. ~~Prod has no projects/knowledge~~ **Resolved** (`fjulian-me`, 1213 items / 1229 chunks).
+2. ~~Embedding residual still large~~ **Mostly resolved** — ready **1226** / pending **0** / failed **3** (Voyage 429). No wipe; optional later bounded retry of the 3 failed if quota allows (not required for golden DoD).
+3. **TruffleHog config not in runtime image** — worker needs `/config` mount or Dockerfile COPY of `config/trufflehog-*.txt` on future deploys.
+4. **Inactive Mac path source** remains deactivated; only GitHub SSH source is active.
+5. ~~Runtime edge `queria-proxy`~~ **Resolved** (Caddy).
+6. Optional: bake worker pacing (`QUERIA_EMBEDDING_BATCH_SIZE=8`, interval ≥2s) into permanent prod `.env` to reduce 429 churn on future large ingests.
 
 Security:
 
@@ -297,7 +337,7 @@ lock. Historical failed chunks remain retryable.
 `README.md: Deployment` chunk is pending, while other build/deployment chunks
 are already ready.
 
-**Production (2026-07-17 seed):** project `fjulian-me` present; embeddings ready 72 / pending 1005 / failed 152 (backfill still draining; see Mission ops seed pack).
+**Production (2026-07-17 restatus):** project `fjulian-me` present; embeddings ready **1226** / pending **0** / failed **3** (backfill job succeeded; see Mission ops backfill restatus).
 
 ## Latest Verified Retrieval Finding
 
@@ -310,9 +350,9 @@ bounded relaxed OR path; RRF still combines lexical and semantic rankings.
 Auth, approved status, active source, organization, project, and global-scope
 filters remain inside both SQL paths.
 
-**Production re-verify (2026-07-17 seed):** probe for `deployment and site build notes`
-returns structured hybrid hits (5 items). Partial embeddings still leave many
-chunks pending/failed; lexical path covers golden minimums (eval 3/3).
+**Production re-verify (2026-07-17 seed + restatus):** probe for `deployment and site build notes`
+returns structured hybrid hits (5 items) with semantic candidates populated after
+backfill completion (ready 1226). Golden eval remains 3/3 from the single seed run.
 
 ## Latest Evaluation Result
 
@@ -415,15 +455,16 @@ rtk git diff --check
 
 | Gap | Priority | Notes |
 |---|---|---|
-| Production empty seed | **Blocking DoD** | Measured 2026-07-17: 0 projects, 0 chunks, 0 eval reports. Create `fjulian-me`, register Git source, ingest, embed (requires approved ops; not done in measure pack). |
-| Production embeddings residual | High | Production counts for `fjulian-me`: all **0** (project missing). Historical local 344/717/168 is not prod. After seed, re-run `embeddings status` and bounded backfill if needed. |
-| Production acceptance pack | High | **Still open.** Healthz 200 + stack identity recorded 2026-07-17. Status/probe/eval blocked on missing project. DoD (eval 3/3, MCP client accept, backup restore, SLO spot-check) not closed. |
-| Edge still `queria-proxy` | High | Live host uses legacy proxy service; Caddy/`queria-edge` only in repo until approved redeploy. |
-| Prod container env drift | Medium | CLI needed host `--env-file` for `QUERIA_FIRST_ADMIN_EMAIL` (missing in bare container env). Fix on next compose/redeploy approval. |
-| Hard simplification cuts | Done (P0–P3) | See [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). Ops acceptance content DoD still open. |
+| Production empty seed | **Resolved** | `fjulian-me` seeded 2026-07-17; 1213 items / 1229 chunks; golden eval **3/3**. |
+| Production embeddings residual | **Low** | Restatus 2026-07-17: ready **1226** / pending **0** / failed **3** (all Voyage 429). Backfill job **succeeded**. Optional later retry of 3 failed only if needed; no wipe. |
+| Production acceptance pack | Medium | Healthz, stack identity, embeddings status, probe, **eval 3/3** recorded. Remaining Phase 7: MCP client smoke, backup restore drill, SLO spot-check. |
+| Edge still `queria-proxy` | **Resolved** | Live edge is Caddy `queria-edge` after 2026-07-17 redeploy. |
+| Prod container env drift | Medium | CLI still prefers host `--env-file` for some flags; compose `env_file` mostly aligned post-redeploy. |
+| TruffleHog config in image | Medium | Image does not COPY `config/trufflehog-*.txt`; seed used host `/config` bind-mount. Tracked feature `deploy-trufflehog-config-in-image`. |
+| Hard simplification cuts | Done (P0–P3) | See [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). |
 | Admin UI dedicated routes | Low | Embedding / retrieval probe / backup are embedded or CLI-only (see screen matrix). Optional polish only. |
 | Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP stays five tools. |
-| Future product improvements | REFERENCE backlog | Dual-lane local Slice A is a separate track; do not require on prod for ops. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
+| Future product improvements | REFERENCE backlog | Dual-lane Slice A on local + prod image; Admin promote UI later. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
 
 ## Post-audit simplification
 
@@ -447,20 +488,20 @@ as the active roadmap.
 
 Feature scaffolding for Phases 1–6 is done. Immediate work:
 
-**Ops acceptance (status after 2026-07-17 measure pack)**
+**Ops acceptance (status after 2026-07-17 seed + restatus)**
 
-1. ~~Measure edge health + stack identity~~ **done** (healthz 200; residual recorded above).
-2. ~~Attempt embeddings status / probe / one eval for `fjulian-me`~~ **done** (all blocked: project absent; honest residual recorded).
-3. **Needs approval:** create project `fjulian-me`, register allowlisted Git source, run trusted ingestion + embedding, then re-run status, probe, and **one** eval; update scores here.
-4. **Needs approval:** redeploy Caddy edge (`queria-edge`) and align container `env_file` with host `.env`.
-5. Remaining acceptance: MCP client smoke, scopes, backup restore drill, SLO spot-check (still open).
+1. ~~Measure edge health + stack identity~~ **done** (healthz 200; Caddy edge; dual-lane image).
+2. ~~Create project / Git ingest / one eval~~ **done** (`fjulian-me`, eval 3/3).
+3. ~~Embedding backfill restatus~~ **done** (ready 1226 / failed 3; job succeeded; HANDOFF residual updated).
+4. Remaining acceptance: MCP client smoke, scopes, backup restore drill, SLO spot-check (still open).
+5. Optional ops: bake embedding pacing into prod `.env`; Dockerfile COPY trufflehog config paths.
 
 **Post-cut**
 
-6. SIMPLIFICATION P0–P3 applied 2026-07-16; production host still on pre-Caddy proxy image until redeploy approval.
+6. SIMPLIFICATION P0–P3 applied 2026-07-16; prod redeployed to Caddy + dual-lane image 2026-07-17.
 7. Keep maintainer tools off the agent MCP surface unless product requires otherwise.
 
-**Product improvements (local dual-lane can proceed independently of prod seed)**
+**Product improvements**
 
-8. Backlog in [`IMPROVEMENTS.md`](./IMPROVEMENTS.md): dual-lane (`IMP-13`–`16`), packaging/filters (`IMP-17`–`19`), then write quality / docs / quotas (`IMP-21`–`26`), plus earlier quality IMP-01–12. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
+8. Backlog in [`IMPROVEMENTS.md`](./IMPROVEMENTS.md): Admin scratch/promote (`IMP-15`/`16`), packaging/filters, quality IMP-01–12. Dual-lane Slice A shipped on local + prod image. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
 
