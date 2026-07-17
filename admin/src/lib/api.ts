@@ -183,4 +183,28 @@ export async function createProject(
   return res;
 }
 
+/** Operator retrieval probe: POST /api/v1/projects/{slug}/retrieval/probe */
+export async function probeRetrieval(
+  astroRequest: Request,
+  projectSlug: string,
+  payload: {
+    query: string;
+    include_global?: boolean;
+    include_scratch?: boolean;
+    limit?: number;
+    rerank?: boolean;
+    compress?: boolean;
+  }
+) {
+  const res = await fetchFromBackend(
+    `/api/v1/projects/${encodeURIComponent(projectSlug)}/retrieval/probe`,
+    astroRequest,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+  return res;
+}
+
 

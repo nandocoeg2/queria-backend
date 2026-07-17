@@ -1,0 +1,625 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import { listProjects, probeRetrieval } from '../lib/api';
+
+const projects = await listProjects(Astro.request);
+if (!projects) {
+  return Astro.redirect('/admin/login');
+}
+
+type ProbeItem = {
+  score?: number;
+  lane?: string;
+  status?: string;
+  title?: string;
+  body?: string;
+  citation?: {
+    source_uri?: string;
+    source_path?: string | null;
+    line_start?: number | null;
+    line_end?: number | null;
+  };
+};
+
+type ProbeResult = {
+  items?: ProbeItem[];
+  retrieval?: {
+    mode?: string;
+    lexical_candidates?: number;
+    semantic_candidates?: number;
+    embedding_profile_version?: string;
+    rerank_applied?: boolean;
+    compress_dropped?: number;
+    latency_ms?: number;
+  };
+  query?: string;
+};
+
+let error = '';
+let result: ProbeResult | null = null;
+let submitted = false;
+
+let formState = {
+  project_slug: projects[0]?.slug ?? '',
+  query: '',
+  include_global: true,
+  include_scratch: false,
+  limit: 5,
+  rerank: true,
+  compress: true,
+};
+
+if (Astro.request.method === 'POST') {
+  submitted = true;
+  try {
+    const data = await Astro.request.formData();
+    const rawLimit = parseInt(data.get('limit')?.toString() || '5', 10);
+    formState = {
+      project_slug: data.get('project_slug')?.toString() || '',
+      query: data.get('query')?.toString() || '',
+      include_global: data.get('include_global') === 'true',
+      include_scratch: data.get('include_scratch') === 'true',
+      limit: Number.isFinite(rawLimit) ? rawLimit : 5,
+      rerank: data.get('rerank') === 'true',
+      compress: data.get('compress') === 'true',
+    };
+
+    if (!formState.project_slug) {
+      error = 'Select a project to probe.';
+    } else if (!formState.query.trim()) {
+      error = 'Query must not be blank.';
+    } else if (formState.limit < 1 || formState.limit > 20) {
+      error = 'Limit must be between 1 and 20.';
+    } else {
+      const res = await probeRetrieval(Astro.request, formState.project_slug, {
+        query: formState.query.trim(),
+        include_global: formState.include_global,
+        include_scratch: formState.include_scratch,
+        limit: formState.limit,
+        rerank: formState.rerank,
+        compress: formState.compress,
+      });
+
+      if (res.status === 401) {
+        return Astro.redirect('/admin/login');
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        error =
+          (errData as { error?: string }).error ||
+          `Probe failed (${res.status} ${res.statusText})`;
+      } else {
+        result = (await res.json()) as ProbeResult;
+      }
+    }
+  } catch (err) {
+    console.error('Playground probe error:', err);
+    error = 'Failed to connect to backend server.';
+  }
+}
+
+const items = result?.items ?? [];
+const diagnostics = result?.retrieval;
+
+const formatCite = (item: ProbeItem) => {
+  const c = item.citation;
+  if (!c) return '—';
+  const path = c.source_path || c.source_uri || '—';
+  if (c.line_start != null) {
+    const end = c.line_end != null && c.line_end !== c.line_start ? `–${c.line_end}` : '';
+    return `${path}:${c.line_start}${end}`;
+  }
+  return path;
+};
+
+const snippet = (body?: string, max = 220) => {
+  if (!body) return '';
+  const t = body.trim().replace(/\s+/g, ' ');
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+};
+---
+
+<AdminLayout title="Retrieval Playground" activeTab="playground">
+  {error && (
+    <div class="alert-error" role="alert">
+      <strong>Error:</strong> {error}
+    </div>
+  )}
+
+  <div class="card form-panel">
+    <div class="panel-header">
+      <h2>Probe retrieval</h2>
+      <p class="panel-sub">
+        Operator probe against project knowledge. Uses session cookie auth and the same hybrid pipeline as agents.
+      </p>
+    </div>
+
+    <form method="POST" class="probe-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="project_slug">Project</label>
+          <select
+            id="project_slug"
+            name="project_slug"
+            class="form-control"
+            required
+          >
+            {projects.length === 0 && (
+              <option value="">No projects available</option>
+            )}
+            {projects.map((p: { slug: string; name: string }) => (
+              <option
+                value={p.slug}
+                selected={p.slug === formState.project_slug}
+              >
+                {p.name} ({p.slug})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div class="form-group form-group-grow">
+          <label for="query">Query</label>
+          <input
+            type="text"
+            id="query"
+            name="query"
+            class="form-control"
+            value={formState.query}
+            placeholder="e.g. how does dual-lane scratch work?"
+            maxlength="512"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+
+      <div class="form-row form-row-controls">
+        <div class="form-group">
+          <label for="limit">Limit (1–20)</label>
+          <input
+            type="number"
+            id="limit"
+            name="limit"
+            class="form-control form-control-narrow"
+            min="1"
+            max="20"
+            value={formState.limit}
+          />
+        </div>
+
+        <fieldset class="toggle-fieldset">
+          <legend>Scope</legend>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="include_global"
+              value="true"
+              checked={formState.include_global}
+            />
+            include_global
+          </label>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="include_scratch"
+              value="true"
+              checked={formState.include_scratch}
+            />
+            include_scratch
+          </label>
+        </fieldset>
+
+        <fieldset class="toggle-fieldset">
+          <legend>Quality</legend>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="rerank"
+              value="true"
+              checked={formState.rerank}
+            />
+            rerank
+          </label>
+          <label class="toggle">
+            <input
+              type="checkbox"
+              name="compress"
+              value="true"
+              checked={formState.compress}
+            />
+            compress
+          </label>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" disabled={projects.length === 0}>
+            Run probe
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  {submitted && !error && result && (
+    <>
+      <div class="card diagnostics-strip" data-testid="diagnostics">
+        <h2>Diagnostics</h2>
+        <dl class="diag-grid">
+          <div>
+            <dt>mode</dt>
+            <dd>{diagnostics?.mode ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>latency_ms</dt>
+            <dd>{diagnostics?.latency_ms ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>rerank_applied</dt>
+            <dd class={diagnostics?.rerank_applied ? 'flag-on' : 'flag-off'}>
+              {String(diagnostics?.rerank_applied ?? false)}
+            </dd>
+          </div>
+          <div>
+            <dt>compress_dropped</dt>
+            <dd>{diagnostics?.compress_dropped ?? 0}</dd>
+          </div>
+          <div>
+            <dt>lexical_candidates</dt>
+            <dd>{diagnostics?.lexical_candidates ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>semantic_candidates</dt>
+            <dd>{diagnostics?.semantic_candidates ?? '—'}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="card results-panel">
+        <div class="panel-header">
+          <h2>Results</h2>
+          <span class="result-count">{items.length} item{items.length === 1 ? '' : 's'}</span>
+        </div>
+
+        {items.length === 0 ? (
+          <div class="empty-state" data-testid="empty-state">
+            <p>No matching knowledge for this query.</p>
+            <p class="empty-hint">Try another query, enable include_scratch, or check project indexing.</p>
+          </div>
+        ) : (
+          <ol class="result-list">
+            {items.map((item, index) => (
+              <li class="result-card">
+                <div class="result-meta">
+                  <span class="result-rank">#{index + 1}</span>
+                  <span class="score-pill">score {typeof item.score === 'number' ? item.score.toFixed(4) : '—'}</span>
+                  <span class={`badge lane-badge lane-${item.lane || 'unknown'}`}>
+                    {item.lane || '—'}
+                  </span>
+                  {item.status && (
+                    <span class="status-chip">{item.status}</span>
+                  )}
+                </div>
+                <h3 class="result-title">{item.title || '(untitled)'}</h3>
+                {item.body && (
+                  <p class="result-snippet">{snippet(item.body)}</p>
+                )}
+                <div class="result-cite">
+                  <span class="cite-label">cite</span>
+                  <code>{formatCite(item)}</code>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </>
+  )}
+
+  {!submitted && (
+    <div class="card empty-state idle-hint">
+      <p>Submit a query to run an operator retrieval probe.</p>
+    </div>
+  )}
+</AdminLayout>
+
+<style>
+  .alert-error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-default);
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    font-size: 13px;
+  }
+
+  .form-panel,
+  .diagnostics-strip,
+  .results-panel {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-size: 16px;
+  }
+
+  .panel-sub {
+    width: 100%;
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    margin-top: calc(-1 * var(--spacing-sm));
+  }
+
+  .result-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-on-surface-variant);
+  }
+
+  .probe-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    align-items: flex-end;
+  }
+
+  .form-row-controls {
+    align-items: flex-end;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 180px;
+  }
+
+  .form-group-grow {
+    flex: 1;
+    min-width: 240px;
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+  }
+
+  .form-control-narrow {
+    width: 5.5rem;
+  }
+
+  .toggle-fieldset {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    padding: var(--spacing-sm) var(--spacing-md);
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+    background: var(--color-surface-container-low);
+  }
+
+  .toggle-fieldset legend {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-on-surface-variant);
+    padding: 0 var(--spacing-xs);
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-on-surface);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .toggle input {
+    accent-color: var(--color-primary);
+  }
+
+  .form-actions {
+    margin-left: auto;
+  }
+
+  .diag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--spacing-md);
+  }
+
+  .diag-grid div {
+    background: var(--color-surface-container-low);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .diag-grid dt {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    margin-bottom: 2px;
+  }
+
+  .diag-grid dd {
+    font-family: var(--font-family-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .flag-on {
+    color: #065f46;
+  }
+
+  .flag-off {
+    color: var(--color-on-surface-variant);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+  }
+
+  .empty-state p {
+    font-style: italic;
+  }
+
+  .empty-hint {
+    margin-top: var(--spacing-sm);
+    font-size: 12px;
+    font-style: normal;
+  }
+
+  .idle-hint {
+    border-style: dashed;
+  }
+
+  .result-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .result-card {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--color-surface-container-low);
+  }
+
+  .result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .result-rank {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-on-surface-variant);
+  }
+
+  .score-pill {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--color-surface-container);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-full);
+  }
+
+  .lane-badge {
+    background-color: var(--color-secondary-container);
+    color: var(--color-on-surface);
+  }
+
+  .lane-trusted {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  .lane-scratch {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-chip {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .result-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+    color: var(--color-on-surface);
+  }
+
+  .result-snippet {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+    line-height: 1.5;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .result-cite {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: 11px;
+  }
+
+  .cite-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .result-cite code {
+    font-size: 11px;
+    background: var(--color-surface-container-lowest);
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+    word-break: break-all;
+  }
+
+  @media (max-width: 720px) {
+    .form-actions {
+      margin-left: 0;
+      width: 100%;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+    }
+  }
+</style>
