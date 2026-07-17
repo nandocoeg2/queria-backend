@@ -1,3 +1,4 @@
+use crate::compress::{compress_items, resolve_compress_enabled};
 use crate::embedding::{EmbeddingProvider, VectorIndex, VectorSearchRequest};
 use crate::hybrid::{RankedChunk, reciprocal_rank_fusion};
 use crate::qdrant::{QdrantClient, QdrantConfig};
@@ -34,6 +35,8 @@ pub struct RetrievalConfig {
     pub rrf_k: u32,
     pub candidate_multiplier: u32,
     pub candidate_cap: u32,
+    /// Default when request omits `compress` (from `QUERIA_COMPRESS_ENABLED`).
+    pub compress_enabled: bool,
 }
 
 #[async_trait]
@@ -95,6 +98,7 @@ pub fn build_pg_retrieval_service(
             rrf_k: config.retrieval.rrf_k,
             candidate_multiplier: config.retrieval.candidate_multiplier,
             candidate_cap: config.retrieval.candidate_cap,
+            compress_enabled: config.retrieval.compress_enabled,
         },
     ))
 }
@@ -194,6 +198,12 @@ where
             item.score = score_by_id.get(&item.chunk_id).copied().unwrap_or_default();
         }
 
+        // Compress after ranking/hydrate (rerank stage may reorder before this later).
+        let compress_on = resolve_compress_enabled(request.compress, self.config.compress_enabled);
+        let compress_outcome = compress_items(items, compress_on);
+        let items = compress_outcome.items;
+        let compress_dropped = compress_outcome.dropped;
+
         Ok(RetrieveContextResponse {
             project_id: request.project_id,
             query: request.query,
@@ -203,9 +213,9 @@ where
                 lexical_candidates: bounded_count(lexical.len()),
                 semantic_candidates: bounded_count(semantic.len()),
                 embedding_profile_version: self.config.embedding_profile_version.clone(),
-                // Pipeline stages populate these; placeholders until rerank/compress wire-up.
+                // Rerank still placeholder until voyage-rerank / pipeline features wire it.
                 rerank_applied: false,
-                compress_dropped: 0,
+                compress_dropped,
                 latency_ms: 0,
             },
             generated_at: Utc::now(),
@@ -672,6 +682,7 @@ mod tests {
             rrf_k: 60,
             candidate_multiplier: 4,
             candidate_cap: 100,
+            compress_enabled: true,
         }
     }
 }

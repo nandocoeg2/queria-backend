@@ -1,3 +1,4 @@
+pub mod compress;
 pub mod embedding;
 pub mod evaluation;
 pub mod hybrid;
