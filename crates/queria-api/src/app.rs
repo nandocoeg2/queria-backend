@@ -1,6 +1,6 @@
 use crate::http::{
-    approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs, knowledge_items,
-    projects, retrieval, setup, sources, tokens,
+    approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs,
+    knowledge_items, projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;

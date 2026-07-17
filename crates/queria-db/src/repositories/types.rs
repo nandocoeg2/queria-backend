@@ -256,7 +256,9 @@ pub(crate) fn approval_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<Appr
     })
 }
 
-pub(crate) fn knowledge_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<KnowledgeItemRecord> {
+pub(crate) fn knowledge_item_from_row(
+    row: sqlx::postgres::PgRow,
+) -> QueriaResult<KnowledgeItemRecord> {
     Ok(KnowledgeItemRecord {
         id: row.try_get("id").map_err(to_infrastructure_error)?,
         project_id: row.try_get("project_id").map_err(to_infrastructure_error)?,
@@ -319,7 +321,9 @@ pub(crate) fn authenticated_agent_token_from_row(
     })
 }
 
-pub(crate) fn retrieved_item_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<RetrievedContextItem> {
+pub(crate) fn retrieved_item_from_row(
+    row: sqlx::postgres::PgRow,
+) -> QueriaResult<RetrievedContextItem> {
     let scope: String = row.try_get("scope").map_err(to_infrastructure_error)?;
     let source_document_id: Uuid = row
         .try_get("source_document_id")

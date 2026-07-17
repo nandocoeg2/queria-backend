@@ -143,10 +143,7 @@ mod tests {
         ) -> QueriaResult<RetrieveContextResponse> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut responses = self.responses.lock().expect("lock");
-            assert!(
-                !responses.is_empty(),
-                "unexpected retrieve call"
-            );
+            assert!(!responses.is_empty(), "unexpected retrieve call");
             responses.remove(0)
         }
     }

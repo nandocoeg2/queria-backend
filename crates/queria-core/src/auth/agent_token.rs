@@ -55,6 +55,7 @@ impl AgentTokenIssuer {
     }
 }
 
+/// Legacy default tool set: propose-only write path (no IndexMemory).
 pub fn default_agent_tools() -> Vec<AgentToolPermission> {
     vec![
         AgentToolPermission::RetrieveContext,
@@ -87,6 +88,46 @@ mod tests {
         assert_eq!(
             AgentTokenIssuer::hash_token(&issued.raw_token),
             issued.token_hash
+        );
+    }
+
+    #[test]
+    fn default_agent_tools_remains_propose_only_without_index_memory() {
+        let tools = default_agent_tools();
+        assert!(
+            !tools.contains(&AgentToolPermission::IndexMemory),
+            "legacy default tokens must not gain index_memory"
+        );
+        assert!(tools.contains(&AgentToolPermission::ProposeMemory));
+        assert!(tools.contains(&AgentToolPermission::RetrieveContext));
+        assert!(tools.contains(&AgentToolPermission::SearchKnowledge));
+        assert!(tools.contains(&AgentToolPermission::ListProjects));
+        assert!(tools.contains(&AgentToolPermission::GetSource));
+    }
+
+    #[test]
+    fn issuer_accepts_index_memory_with_propose_memory() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::ProposeMemory,
+                AgentToolPermission::IndexMemory,
+            ],
+        };
+        let issued = AgentTokenIssuer
+            .issue(permissions.clone(), None)
+            .expect("IndexMemory + ProposeMemory token should issue");
+        assert!(
+            issued
+                .permissions
+                .can_call(&AgentToolPermission::IndexMemory)
+        );
+        assert!(
+            issued
+                .permissions
+                .can_call(&AgentToolPermission::ProposeMemory)
         );
     }
 }

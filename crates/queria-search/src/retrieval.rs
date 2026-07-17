@@ -419,10 +419,7 @@ mod tests {
             Ok(())
         }
 
-        async fn search(
-            &self,
-            request: VectorSearchRequest,
-        ) -> QueriaResult<Vec<VectorCandidate>> {
+        async fn search(&self, request: VectorSearchRequest) -> QueriaResult<Vec<VectorCandidate>> {
             *self.last_search.lock().expect("lock") = Some(request);
             Ok(self
                 .candidates

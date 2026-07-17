@@ -5,8 +5,8 @@ use queria_ingestion::scanner::SecretScanner;
 use queria_ingestion::service::{GitIngestionService, GitIngestionSource};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 struct FailScanner;
 #[async_trait]

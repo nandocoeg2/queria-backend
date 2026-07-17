@@ -156,10 +156,7 @@ mod tests {
 
     #[async_trait]
     impl JobStore for FakeJobStore {
-        async fn claim_next(
-            &self,
-            _worker_id: &str,
-        ) -> QueriaResult<Option<IngestionJobRecord>> {
+        async fn claim_next(&self, _worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>> {
             self.claim_next
                 .lock()
                 .expect("lock")

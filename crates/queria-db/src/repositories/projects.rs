@@ -1,7 +1,5 @@
 use queria_core::contracts::RetrievedContextItem;
-use queria_core::ids::{
-    AgentTokenId, ApprovalId, KnowledgeItemId, ProjectId, SourceDocumentId,
-};
+use queria_core::ids::{AgentTokenId, ApprovalId, KnowledgeItemId, ProjectId, SourceDocumentId};
 use queria_core::{QueriaError, QueriaResult};
 use serde_json::json;
 use sqlx::{PgPool, Row};
@@ -10,8 +8,8 @@ use uuid::Uuid;
 use super::types::{
     AgentTokenRecord, ApprovalRecord, ApprovedKnowledgeRecord, AuthenticatedAgentToken,
     CreateAgentTokenParams, CreateProjectParams, KnowledgeItemRecord, ProjectRecord,
-    ProposeMemoryParams, ProposedMemoryRecord, RegisterSourceDocumentParams,
-    SourceDocumentRecord, agent_token_from_row, approval_for_update, approval_from_row,
+    ProposeMemoryParams, ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord,
+    agent_token_from_row, approval_for_update, approval_from_row,
     authenticated_agent_token_from_row, count_accessible_project_slugs,
     ensure_approval_source_document, insert_approval_audit_log, knowledge_item_from_row,
     organization_id_for_user, project_from_row, project_id_for_slug, retrieved_item_from_row,

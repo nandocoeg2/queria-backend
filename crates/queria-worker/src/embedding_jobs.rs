@@ -548,10 +548,7 @@ mod tests {
 
     #[async_trait]
     impl EmbeddingJobStore for FakeEmbeddingJobStore {
-        async fn claim_next(
-            &self,
-            _worker_id: &str,
-        ) -> QueriaResult<Option<IngestionJobRecord>> {
+        async fn claim_next(&self, _worker_id: &str) -> QueriaResult<Option<IngestionJobRecord>> {
             self.claim_next
                 .lock()
                 .expect("lock")
@@ -581,10 +578,10 @@ mod tests {
             dimension: i32,
             _profile_version: &str,
         ) -> QueriaResult<()> {
-            self.mark_batch_ready_calls.lock().expect("lock").push((
-                completions.iter().map(|c| c.chunk_id).collect(),
-                dimension,
-            ));
+            self.mark_batch_ready_calls
+                .lock()
+                .expect("lock")
+                .push((completions.iter().map(|c| c.chunk_id).collect(), dimension));
             Ok(())
         }
 
@@ -602,18 +599,11 @@ mod tests {
             Ok(())
         }
 
-        async fn qdrant_delete_points(
-            &self,
-            _job_id: IngestionJobId,
-        ) -> QueriaResult<Vec<Uuid>> {
+        async fn qdrant_delete_points(&self, _job_id: IngestionJobId) -> QueriaResult<Vec<Uuid>> {
             Ok(Vec::new())
         }
 
-        async fn complete_job(
-            &self,
-            job_id: IngestionJobId,
-            result: Value,
-        ) -> QueriaResult<bool> {
+        async fn complete_job(&self, job_id: IngestionJobId, result: Value) -> QueriaResult<bool> {
             self.complete_job_calls
                 .lock()
                 .expect("lock")
@@ -657,10 +647,7 @@ mod tests {
             Ok(true)
         }
 
-        async fn cancellation_requested(
-            &self,
-            _job_id: IngestionJobId,
-        ) -> QueriaResult<bool> {
+        async fn cancellation_requested(&self, _job_id: IngestionJobId) -> QueriaResult<bool> {
             let mut results = self.cancellation_results.lock().expect("lock");
             if results.is_empty() {
                 Ok(false)

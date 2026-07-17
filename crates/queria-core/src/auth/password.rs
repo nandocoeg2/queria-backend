@@ -1,8 +1,8 @@
+use crate::{QueriaError, QueriaResult};
 use argon2::password_hash::{
     PasswordHash, PasswordHasher as _, PasswordVerifier as _, SaltString, rand_core::OsRng,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
-use crate::{QueriaError, QueriaResult};
 
 #[derive(Clone, Debug, Default)]
 pub struct PasswordHasher;

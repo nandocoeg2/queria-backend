@@ -125,16 +125,12 @@ async fn test_postgres_backup_and_drill() {
         .expect("failed to upload manifest");
 
     // 3. Verify artifacts without restore_drill (module lives in queria-cli)
-    let loaded = store
-        .get_object(&m_key)
-        .await
-        .expect("download manifest");
+    let loaded = store.get_object(&m_key).await.expect("download manifest");
     let verified = BackupManifest::from_json_bytes(&loaded).expect("parse manifest");
     assert!(verified.verify_signature(secret_key));
     let pg_bytes = store.get_object(&pg_key).await.expect("download pg dump");
     assert!(verified.verify_checksum(&pg_key, &pg_bytes));
 }
-
 
 #[tokio::test]
 async fn test_database_retention() {
