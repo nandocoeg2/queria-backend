@@ -15,17 +15,32 @@ See the full matrix in [`docs/HANDOFF.md`](docs/HANDOFF.md). Short version:
 | Auth, setup, projects, sources, approvals, tokens, jobs | `COMPLETED` |
 | Git ingestion and trusted auto-approval | `COMPLETED` |
 | Hybrid retrieval (Voyage + Qdrant + FTS/RRF) | `COMPLETED` |
-| MCP agent tools | `COMPLETED` |
+| MCP agent tools | `COMPLETED` (includes dual-lane `index_memory` + `include_scratch`) |
 | Admin API + Astro Admin UI | `COMPLETED` (P0 lean applied: no React/Three/shadcn) |
 | Backup/restore, Caddy edge, production compose | `COMPLETED` (Pingora removed P1; restore-drill still P2 defer) |
 | Production acceptance pack | `OPEN` |
+
+## Dual-lane knowledge (CURRENT)
+
+Agents retrieve and write in two lanes. Contract: [`docs/PRODUCT.md`](docs/PRODUCT.md). Backlog/follow-ups: [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md). Runtime residual: [`docs/HANDOFF.md`](docs/HANDOFF.md).
+
+| Lane | Agent write | Enter trusted |
+|---|---|---|
+| **scratch** | `index_memory` when the token has **IndexMemory** | Not direct — promote/propose + approval (if enabled) |
+| **trusted** | Not direct | `propose_memory` → approve, or trusted Git ingest |
+
+- `retrieve_context`: **`include_scratch` defaults to `true`** (project scratch ∪ trusted). Set `false` for trusted-only probes.
+- Without **IndexMemory**, agents stay propose-only (legacy).
+- Scratch is project-scoped only (never global). Prefer trusted over scratch when ranking near-duplicates.
+- Admin UI does **not** manage scratch yet (operator surfaces stay token/approvals/sources as today).
 
 ## Docs
 
 | Doc | Role |
 |---|---|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Canonical current state |
-| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract |
+| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract (dual-lane trust model) |
+| [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) | Post-MVP backlog (REFERENCE) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | As-is vs post-cut |
 | [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md) | Hard cut plan |
 | [`docs/runbooks/`](docs/runbooks/) | Ops |
