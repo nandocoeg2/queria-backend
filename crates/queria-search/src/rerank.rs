@@ -235,10 +235,13 @@ fn truncate_doc(body: &str) -> String {
 
 /// Run optional rerank with fail-open semantics.
 ///
-/// - `enabled=false` or empty items → preserve order, `applied=false`
-/// - `reranker=None` (missing key) → preserve order, `applied=false`
-/// - client error / empty → preserve RRF order and scores, `applied=false`
+/// - `enabled=false` or empty items → preserve order, truncate to `top_k`, `applied=false`
+/// - `reranker=None` (missing key) → preserve order, truncate to `top_k`, `applied=false`
+/// - client error / empty → preserve RRF order and scores, truncate to `top_k`, `applied=false`
 /// - success → reorder by hits, `top_k`, `applied=true`
+///
+/// Always clamps final length to `top_k` (request limit) so an oversampled
+/// hydrated pool cannot leak past the client limit when rerank is skipped.
 pub async fn rerank_items(
     enabled: bool,
     reranker: Option<&VoyageReranker>,
@@ -246,9 +249,15 @@ pub async fn rerank_items(
     items: Vec<RetrievedContextItem>,
     top_k: usize,
 ) -> RerankOutcome {
-    if !enabled || items.is_empty() || top_k == 0 {
+    if items.is_empty() {
         return RerankOutcome {
             items,
+            applied: false,
+        };
+    }
+    if !enabled || top_k == 0 {
+        return RerankOutcome {
+            items: take_top(items, top_k),
             applied: false,
         };
     }
@@ -256,7 +265,7 @@ pub async fn rerank_items(
     let Some(client) = reranker else {
         tracing::warn!("rerank desired but Voyage API key is not configured; keeping RRF order");
         return RerankOutcome {
-            items,
+            items: take_top(items, top_k),
             applied: false,
         };
     };
@@ -266,10 +275,10 @@ pub async fn rerank_items(
         Ok(hits) if !hits.is_empty() => {
             let reordered = apply_rerank_hits(items.clone(), &hits, top_k);
             if reordered.is_empty() {
-                // Defensive: no valid indices → keep RRF order.
+                // Defensive: no valid indices → keep RRF order, still clamp.
                 tracing::warn!("voyage rerank hits mapped to no items; keeping RRF order");
                 RerankOutcome {
-                    items,
+                    items: take_top(items, top_k),
                     applied: false,
                 }
             } else {
@@ -282,7 +291,7 @@ pub async fn rerank_items(
         Ok(_) => {
             tracing::warn!("voyage rerank returned no hits; keeping RRF order");
             RerankOutcome {
-                items,
+                items: take_top(items, top_k),
                 applied: false,
             }
         }
@@ -292,11 +301,15 @@ pub async fn rerank_items(
                 "voyage rerank failed; keeping RRF order"
             );
             RerankOutcome {
-                items,
+                items: take_top(items, top_k),
                 applied: false,
             }
         }
     }
+}
+
+fn take_top(items: Vec<RetrievedContextItem>, top_k: usize) -> Vec<RetrievedContextItem> {
+    items.into_iter().take(top_k).collect()
 }
 
 fn sanitized_rerank_error(error: &QueriaError) -> String {
@@ -443,6 +456,30 @@ mod tests {
         assert_eq!(outcome.items[0].chunk_id, a_id);
         assert_eq!(outcome.items[1].chunk_id, b_id);
         assert!((outcome.items[0].score - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// Oversampled pool + fail-open still clamps to top_k (request limit).
+    #[tokio::test]
+    async fn fail_open_clamps_oversampled_pool_to_top_k() {
+        let items: Vec<_> = (0..8)
+            .map(|i| item(&format!("doc{i}"), 1.0 - i as f32 * 0.1))
+            .collect();
+        let first_id = items[0].chunk_id;
+        let second_id = items[1].chunk_id;
+        let outcome = rerank_items(true, None, "q", items, 2).await;
+        assert!(!outcome.applied);
+        assert_eq!(outcome.items.len(), 2);
+        assert_eq!(outcome.items[0].chunk_id, first_id);
+        assert_eq!(outcome.items[1].chunk_id, second_id);
+    }
+
+    /// Disabled rerank also clamps to top_k.
+    #[tokio::test]
+    async fn disabled_clamps_oversampled_pool_to_top_k() {
+        let items: Vec<_> = (0..6).map(|i| item(&format!("x{i}"), 0.5)).collect();
+        let outcome = rerank_items(false, None, "q", items, 3).await;
+        assert!(!outcome.applied);
+        assert_eq!(outcome.items.len(), 3);
     }
 
     /// VAL-RET-006: rerank=false skips even if client present.
