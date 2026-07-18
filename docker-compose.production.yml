@@ -83,8 +83,13 @@ services:
     command: queria-worker
     env_file:
       - .env
+    volumes:
+      # Host-seeded git checkout for source_path under QUERIA_GIT_ALLOWED_ROOTS.
+      - /tmp/seed10001:/tmp/seed10001:ro
+      - ./docker/worker-gitconfig:/etc/gitconfig:ro
     environment:
       - QUERIA_ENV=production
+      - HOME=/tmp
       - QUERIA_GIT_ALLOWED_ROOTS=/tmp
       - QUERIA_WORKER_HEALTH_ADDR=0.0.0.0:17673
       # Absolute paths baked into the image (override host .env relative paths).
