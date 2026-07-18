@@ -1,8 +1,8 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-18 (prod redeploy: agent-driven onboarding + current main image; stack identity below)
+> Last verified: 2026-07-18 (prod: dashboard NULL-decode fix `deddf63` live; agent-setup also on image)
 > Branch: `main`
-> Deployed image commit: `3bab3b4ebc9551929bef09a7d70c07a25e68298c` (agent-driven onboarding API; includes prior dual-lane + Playground/rerank/compress). Compose worker DB URL fix landed as `097192f` on host via rsync (host may lack GitHub fetch keys).
+> Deployed image commit: `deddf634a78fd5bc0cf2ad9e333bec65ceece5d1` (fixes Admin dashboard 500 when latest ingestion `error_message` is NULL; prior agent-setup `3bab3b4` included). Host sync still via rsync when GitHub SSH unavailable.
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
