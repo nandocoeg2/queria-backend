@@ -1,6 +1,6 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-18 (prod: dashboard NULL-decode fix `deddf63` live; agent-setup also on image)
+> Last verified: 2026-07-18 (local main: multi-org isolation MVP + docs; prod image still pre-multi-org until post-mission redeploy)
 > Branch: `main`
 > Deployed image commit: `deddf634a78fd5bc0cf2ad9e333bec65ceece5d1` (fixes Admin dashboard 500 when latest ingestion `error_message` is NULL; prior agent-setup `3bab3b4` included). Host sync still via rsync when GitHub SSH unavailable.
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
@@ -9,6 +9,7 @@
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
 > **Production project `fjulian-me` seeded**; embedding backfill **substantially complete** (ready 1226 / failed 3 Voyage 429 residual).
+> **Local main multi-org isolation MVP** (schema → session → orgs/invites → Admin orgs/accept → tenant enforce). Production not redeployed for this yet.
 
 This is the canonical continuation document for Queria backend work. It
 separates implemented behavior from approved target-state design. When other
@@ -116,6 +117,7 @@ not a Rust proxy crate.
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`, `index_memory` (scratch). Optional `rerank`/`compress` on retrieve/search. Maintainer actions stay on session Admin HTTP, not MCP. |
 | Agent-driven onboarding docs | `COMPLETED` (prod 2026-07-18) | Public `GET /api/v1/docs/agent-setup` (alias `/docs/setup`), `GET /api/v1/setup/mcp-snippet`, `GET /api/v1/setup/agents-block`. Live on edge `:17674`. LLM applies MCP + AGENTS.md on the agent machine. Runbook Part C: [`runbooks/onboarding.md`](./runbooks/onboarding.md). |
+| Multi-org isolation MVP | `COMPLETED` (local main 2026-07-18) | Migration `20260718000100_multi_org_tenancy` (`org_membership`, `org_invite`, `is_platform_super_admin`, `user_session.active_organization_id`, one-org unique, backfill). Session binds active org + super-admin (DB flag and/or `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS`). API: `POST/GET /api/v1/orgs`, invites, accept, current members. Admin: `/admin/orgs`, `/admin/invites/accept`, `/admin/members`. Tenant handlers + MCP/agent tokens filter home org only; SA without membership 403s tenant routes. **Prod image not redeployed** for multi-org yet. Product note: [`PRODUCT.md`](./PRODUCT.md). Ops: section **Multi-org isolation MVP** below. |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
@@ -137,6 +139,9 @@ not a Rust proxy crate.
 | Embedding Status | `EMBEDDED` | No dedicated `/admin/embedding` route. Visible via dashboard summary, source detail chunk-state counts, jobs list, and CLI `embeddings status`. |
 | Retrieval Probe / Playground | `COMPLETED` | Dedicated lean SSR `/admin/playground` (nav: Playground). Session probe reuses `POST /api/v1/projects/{slug}/retrieval/probe` with rerank/compress toggles, scores, lane, diagnostics. Eval remains CLI only. CLI `retrieval probe` flags still available. |
 | Agent Tokens | `COMPLETED` | `/admin/tokens` |
+| Organizations (platform) | `COMPLETED` (local main) | `/admin/orgs` — super-admin list/create; one-time invite token after create |
+| Invite accept | `COMPLETED` (local main) | Public `/admin/invites/accept` (token + password); no SMTP |
+| Org members | `COMPLETED` (local main) | `/admin/members` — home org members + further invite |
 | Audit Logs | `COMPLETED` | `/admin/audit` |
 | Evaluation | `CLI` | Admin page + evaluation HTTP removed. Run `queria-cli eval run --project <slug>`; dashboard may show last report if present |
 | Backup/Restore | `API/CLI` | No dedicated Admin UI page. Backup/restore is CLI + `queria-backup` + runbook. |
@@ -463,15 +468,88 @@ rtk cargo clippy --workspace --all-targets --all-features -- -D warnings
 rtk git diff --check
 ```
 
+## Multi-org isolation MVP (local main 2026-07-18)
+
+Product contract: [`PRODUCT.md`](./PRODUCT.md) § Multi-organization tenancy.  
+Team B path for operators: [`runbooks/onboarding.md`](./runbooks/onboarding.md) Part D.
+
+### What shipped (code on `main`)
+
+| Layer | Behavior |
+|---|---|
+| Schema | Bundled migration `20260718000100` / `multi_org_tenancy`: `org_membership` (unique on `user_id`), `org_invite` (hash+prefix only), `user_account.is_platform_super_admin` default false, `user_session.active_organization_id`, membership backfill from existing users |
+| Session | Login binds `active_organization_id` from sole membership; `/api/v1/auth/me` exposes `active_organization_id`, `active_organization_slug`, `is_platform_super_admin` |
+| Platform API | `POST/GET /api/v1/orgs` super-admin only; body create `{ slug, name, first_admin_email }` → response includes `invite_token` **once** |
+| Invites | `POST /api/v1/orgs/{slug}/invites`, public `POST /api/v1/invites/accept` `{ token, password, name? }`; `GET /api/v1/orgs/current/members` |
+| Isolation | Tenant Admin/API require active org (403 if missing). Agent token mint binds home org; Qdrant/search filters `organization_id = home`. Super-admin without membership cannot list/retrieve tenant knowledge |
+| Admin UI | Orgs nav only when `is_platform_super_admin`; `/admin/orgs`, `/admin/invites/accept`, `/admin/members` |
+
+**v1 non-goals (do not expect; not bugs):** share grants, per-org git allowlist, multi-membership org switcher, SMTP mailer trait, production redeploy as part of this feature.
+
+### Super-admin bootstrap (ops)
+
+Both paths make `require_platform_super_admin` succeed at session load. Prefer documenting **both** so local/prod match.
+
+**1. Env (comma-separated, case-insensitive match):**
+
+```bash
+# e.g. in local .env or prod runtime env
+export QUERIA_PLATFORM_SUPER_ADMIN_EMAILS='nando@fjulian.id'
+# multiple: email1@example.com,email2@example.com
+```
+
+Restart `queria-api` after changing env. Existing login sessions re-evaluate flag on load.
+
+**2. One-time SQL (DB flag):**
+
+```sql
+update user_account
+set is_platform_super_admin = true
+where lower(email) = lower('nando@fjulian.id');
+```
+
+Verify:
+
+```sql
+select email, is_platform_super_admin from user_account
+where lower(email) = lower('nando@fjulian.id');
+```
+
+Then login → `GET /api/v1/auth/me` shows `"is_platform_super_admin": true`. Super-admin **without** `org_membership` has null active org: `POST/GET /api/v1/orgs` work; `GET /api/v1/projects` (and other tenant routes) return **403** `active_organization_required`.
+
+### Migrate note
+
+```bash
+# local (with QUERIA_DATABASE_URL)
+cargo run -p queria-cli -- database migrate
+# expect {"status":"migrated"} — multi_org_tenancy is in the bundled list
+```
+
+After migrate, legacy users with `user_account.organization_id` have a backfilled `org_membership` and keep single-org login.
+
+### Isolation smoke checklist (ops / validators)
+
+1. Flag super-admin (env and/or SQL above).
+2. As SA: create org Team B with `first_admin_email` → capture **one-time** `invite_token` (Admin `/admin/orgs` or API). Token must **not** reappear on list/refresh.
+3. Public accept → login as Team B admin → `/admin/projects` empty of Team A data; create a project under B only.
+4. Session A vs B: `GET /api/v1/projects` sets are disjoint (no cross-org rows).
+5. SA without membership: `GET /api/v1/projects` → 403; `GET /api/v1/orgs` → 200.
+6. No SMTP required for any step. Do not block on share grants / git-per-org / switcher.
+
+### Prod note
+
+Live host image listed under **Stack identity** is still pre–multi-org. Redeploy + migrate on production is **post-mission** ops only (out of feature work). Do not wipe volumes.
+
 ## Security Boundaries
 
-- Never commit provider keys, Cloudflare credentials, setup tokens, sessions, or agent tokens.
+- Never commit provider keys, Cloudflare credentials, setup tokens, sessions, agent tokens, or **raw invite tokens**.
 - Infisical is the primary runtime secret source; `.env` remains local fallback only.
-- Raw agent tokens are shown once; Postgres stores token prefix and hash.
-- Project Git paths and SSH repositories must pass explicit allowlists.
+- Raw agent tokens and raw invite tokens are shown once; Postgres stores token prefix and hash.
+- Project Git paths and SSH repositories must pass explicit allowlists (instance-level; not per-org in v1).
 - TruffleHog must pass before trusted Git auto-approval.
 - Agent proposals never receive trusted Git auto-approval.
-- Global retrieval requires both `include_global=true` and token permission.
+- Global retrieval requires both `include_global=true` and token permission (**global = org-global trusted**, not cross-tenant).
+- Super-admin is platform catalog only; membership is required for tenant knowledge access.
 - Database writes, migrations, dependency additions, pushes, and deployments require explicit approval.
 
 ## Residual Gaps (current)
@@ -489,6 +567,7 @@ rtk git diff --check
 | Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP does not expose maintainer mutations. |
 | Production redeploy for retrieval quality | Medium | Local main has rerank/compress/Playground; live host image still dual-lane Slice A (`c1cdfd7`). Redeploy only when operator requests (out of this docs feature). |
 | Future product improvements | REFERENCE backlog | IMP-01/02/03 done on local main. Still open: IMP-04 metrics, IMP-15/16 Admin scratch/promote, agent DX. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
+| Multi-org on production | Medium | Code + docs on local `main`; host image still pre-multi-org. After local validators green: redeploy, migrate, flag super-admin, smoke Team B path. **Not** share grants / switcher / SMTP. |
 
 ## Post-audit simplification
 
@@ -528,4 +607,8 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 **Product improvements**
 
 8. Retrieval quality IMP-01/02 + Admin Playground IMP-03 shipped on **local main** (2026-07-18); docs/runbook aligned. Next backlog: durable metrics (`IMP-04`), Admin scratch/promote (`IMP-15`/`16`), agent DX. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
+
+**Multi-org (local complete; prod follow-up)**
+
+9. Isolation MVP is on local `main` (schema, session, orgs/invites, Admin, enforce). Bootstrap + Team B path: **Multi-org isolation MVP** section and [`runbooks/onboarding.md`](./runbooks/onboarding.md) Part D. After validators: production redeploy + migrate + super-admin flag only when operator requests.
 

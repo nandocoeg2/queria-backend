@@ -40,11 +40,13 @@ If health fails, stack is not ready. Fix infra first ([`local-development.md`](.
 
 Use a human session cookie via Admin UI (or authenticated Admin HTTP). Agents never perform these steps.
 
+**Multi-org note:** every Admin session is bound to **one** home organization (`active_organization_id`). Projects, tokens, sources, knowledge, and retrieval stay inside that home. Creating a second tenant (Team B) is **Part D** (platform super-admin), not Part A.
+
 ### A1. First-run setup (once per empty install)
 
 1. Open `{BASE}/admin/setup` (or `/admin/login` if setup already consumed).
 2. Complete first-run with the setup token from env (`QUERIA_SETUP_TOKEN` when required).
-3. Log in as admin.
+3. Log in as admin (setup creates one org + membership; login binds that org as session home).
 
 Production org/user for this deployment is already bootstrapped (see HANDOFF). Skip setup if login works.
 
@@ -325,6 +327,101 @@ cargo run -p queria-cli -- doctor mcp --url "$QUERIA_MCP_URL"
 | Voyage 429 | Embedding batch/interval env; see local-development |
 | Agent sees wrong project | Token `project_slugs` |
 | Client docs disagree | This runbook + HANDOFF win over stale mcp-clients ports |
+| Cross-tenant data appears | Isolation bug: confirm session home org; multi-org migration applied; do not assume global operator |
+| Create-org 403 | User is not platform super-admin — apply env/SQL in Part D0 |
+| Invite accept “already in another org” | v1: one org per user; use a different email for Team B |
+
+---
+
+## Part D — Second organization (Team B) / multi-org isolation
+
+Use this when a **second team** needs its own hard-isolated knowledge hub on the same QuerIa stack. Product rules and non-goals: [`../PRODUCT.md`](../PRODUCT.md) § Multi-organization tenancy. Runtime: [`../HANDOFF.md`](../HANDOFF.md) § Multi-org isolation MVP.
+
+**Requires:** multi-org migration applied (`20260718000100_multi_org_tenancy` via `queria-cli database migrate`). Local `main` has this; production only after redeploy+migrate.
+
+### D0. Flag a platform super-admin
+
+One of:
+
+```bash
+# Env (restart API). Comma-separated, case-insensitive.
+export QUERIA_PLATFORM_SUPER_ADMIN_EMAILS='nando@fjulian.id'
+```
+
+```sql
+-- Or one-time SQL on Postgres
+update user_account
+set is_platform_super_admin = true
+where lower(email) = lower('nando@fjulian.id');
+```
+
+Login as that user → `{BASE}/admin/orgs` should be available (Orgs nav only for super-admin). Super-admin **without** membership may create/list orgs but cannot open other tenants’ project/knowledge data until they themselves accept an invite into one org (v1: one membership max).
+
+### D1. Create Team B + capture invite token once
+
+**Admin UI:** `{BASE}/admin/orgs` → create form (`slug`, `name`, `first_admin_email`) → submit → **copy the raw invite token immediately**. Refresh/list will not show the secret again.
+
+**API:**
+
+```bash
+curl -sS -X POST "$API/api/v1/orgs" \
+  -H 'Content-Type: application/json' \
+  -H "Cookie: $QUERIA_SESSION_COOKIE" \
+  -d '{
+    "slug": "team-b",
+    "name": "Team B",
+    "first_admin_email": "admin@teamb.example"
+  }'
+# Response includes invite_token (qinv_…) once + organization metadata
+```
+
+**No SMTP.** Deliver the token to the first admin out of band (chat, password manager, etc.). Invite rows store hash only.
+
+Optional further members later: `POST $API/api/v1/orgs/team-b/invites` with `{ "email", "role" }` as org_admin of that org (or super-admin), or Admin `/admin/members` for the **home** org after login as Team B.
+
+### D2. Accept invite (public; new Team B admin)
+
+1. Open `{BASE}/admin/invites/accept` (optional `?token=` prefill).
+2. Paste token + set password (≥12 chars) + name if new user.
+3. Success redirects to login. Then log in as that email.
+
+API equivalent:
+
+```bash
+curl -sS -X POST "$API/api/v1/invites/accept" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "token": "qinv_…",
+    "password": "correct horse battery staple",
+    "name": "Team B Admin"
+  }'
+```
+
+Accept rejects: expired/used/revoked tokens; users already in **another** org (v1 one-org-per-user).
+
+### D3. Operate only inside Team B
+
+As Team B admin (session home = Team B):
+
+1. Continue **Part A2–A6** to create projects, register sources, issue agent tokens, smoke Playground — all data is Team B only.
+2. Configure agents with **Part B** using a token minted under this session (token home = Team B).
+
+Isolation checks:
+
+| Check | Expect |
+|---|---|
+| Team A projects list | No Team B slugs |
+| Team B projects list | No Team A slugs |
+| Cross-org project GET | 404/403, no foreign body leak |
+| Super-admin without membership | 403 on `/api/v1/projects` (not a global catalog) |
+
+### D4. Explicit non-goals (do not wait for these)
+
+- Outbound **email/SMTP** for invites  
+- Cross-org **share grants**  
+- **Per-org git** allowlist tables (instance env only)  
+- Multi-membership **org switcher**  
+- Super-admin silent browse of all tenants’ knowledge  
 
 ---
 
@@ -365,8 +462,8 @@ These ship in `queria-api`. Through Caddy they are available under the public ed
 
 | Doc | Use |
 |---|---|
-| [`../HANDOFF.md`](../HANDOFF.md) | What is actually deployed |
-| [`../PRODUCT.md`](../PRODUCT.md) | Lanes and tool contract |
+| [`../HANDOFF.md`](../HANDOFF.md) | What is actually deployed; multi-org bootstrap + isolation smoke |
+| [`../PRODUCT.md`](../PRODUCT.md) | Lanes, tool contract, multi-org v1 non-goals |
 | [`local-development.md`](./local-development.md) | Compose, migrate, backfill |
 | [`hybrid-retrieval.md`](./hybrid-retrieval.md) | Rerank/compress/probe |
 | [`deployment.md`](./deployment.md) | Production host |

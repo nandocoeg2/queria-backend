@@ -105,6 +105,60 @@ After the hard simplification plan in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
 Post-MVP backlog (metrics, Admin scratch, agent DX, etc.) lives in
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) (`REFERENCE`). Runtime status remains HANDOFF-only.
 
+## Multi-organization tenancy (v1 isolation MVP)
+
+> Status: CURRENT (local `main`; production may lag until post-mission redeploy)  
+> Runtime detail: [`HANDOFF.md`](./HANDOFF.md) · Onboarding Team B: [`runbooks/onboarding.md`](./runbooks/onboarding.md)
+
+QuerIa is a **single-stack multi-tenant** system. Isolation is by `organization_id` on every tenant surface (Admin session home, agent token home, Postgres rows, Qdrant payload filter). Dual-lane knowledge (scratch vs trusted) remains **inside** each org.
+
+### Model
+
+| Concept | v1 rule |
+|---|---|
+| Who creates orgs | Platform **super-admin** only (`POST/GET /api/v1/orgs`) |
+| Who joins | **Email invite only** (token in create/invite API response once; no SMTP required) |
+| Membership | **One org per user** (unique membership; accept rejects second org) |
+| Session home | `user_session.active_organization_id` = sole membership; exposed on `/api/v1/auth/me` |
+| Agent home | `agent_token.organization_id` at mint; `project_slugs` must belong to that org |
+| Tenant APIs | Require active org (or token org); no home → **403**, not global empty 200 |
+| Super-admin without membership | May manage orgs; **cannot** browse tenant projects/knowledge/retrieve as global |
+
+### Bootstrap platform super-admin
+
+Either path works (both evaluated at session load; case-insensitive email):
+
+1. Env: `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS=nando@fjulian.id` (comma-separated list).
+2. SQL once:  
+   `update user_account set is_platform_super_admin = true where lower(email) = lower('nando@fjulian.id');`
+
+Flag alone elevates the DB column; env list elevates matching emails even if the column is still `false`.
+
+### Provision Team B (happy path)
+
+```text
+Super-admin → POST /api/v1/orgs { slug, name, first_admin_email }
+  → org + first org_invite; raw invite_token returned once
+Invitee → POST /api/v1/invites/accept { token, password, name? }
+  → membership + user_account.organization_id aligned
+Login → session active org = Team B
+Operate → projects / tokens / retrieve only for Team B
+```
+
+Admin: `/admin/orgs` (super-admin), public `/admin/invites/accept`, home `/admin/members`.
+
+### Non-goals (v1 — do not expect in product or validators)
+
+- Cross-org **share grants** / soft read sharing
+- **Per-org git allowlist** (instance env allowlists only)
+- **Multi-membership** or org **switcher** UI
+- **SMTP / InviteMailer** (token via API response + optional log of accept path; never require mailer)
+- Super-admin default browse of all tenants’ knowledge
+- Per-org Voyage keys or separate DB/Qdrant per tenant
+- `org_member` permission matrix (invite role may store `org_member`; v1 powers are org-admin-equivalent)
+
+Full design history: [`archive/superpowers/specs/2026-07-18-multi-org-tenancy-design.md`](./archive/superpowers/specs/2026-07-18-multi-org-tenancy-design.md) (REFERENCE).
+
 ## Sahara UI
 
 Visual direction: workspace [`DESIGN.md`](../../../DESIGN.md). Warm minimalism; whitespace over chrome.
