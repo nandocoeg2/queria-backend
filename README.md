@@ -105,11 +105,14 @@ Local endpoints:
 | Qdrant | `127.0.0.1:17676` |
 | MinIO | `http://127.0.0.1:17678` |
 
-## Git ingestion API
+## Git ingestion
 
-All ingestion endpoints require the admin session cookie.
+**Admin UI:** `/admin/sources` — **Register Git Source** form and **Trigger Ingest** per source (session cookie). Token mint at `/admin/tokens` requires **name** + **project_slugs**. Ops path: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) Part A.
+
+**API** (admin session cookie; optional if UI is enough):
 
 ```text
+POST /api/v1/sources
 POST /api/v1/sources/{source_document_id}/ingest
 GET  /api/v1/ingestion-jobs?status=running&limit=50
 GET  /api/v1/ingestion-jobs/{job_id}

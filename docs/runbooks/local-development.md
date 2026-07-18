@@ -1,8 +1,9 @@
 # Local Development Runbook
 
 > Status: CURRENT for implemented local backend workflows.
-> Last verified: 2026-07-05.
+> Last verified: 2026-07-18.
 > Known gaps and current counts: [`../HANDOFF.md`](../HANDOFF.md).
+> Operator UI path (project / Git source / token): [`onboarding.md`](./onboarding.md) **Part A**.
 
 ## Services
 
@@ -26,6 +27,8 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- database migrate
 
 For local-only development without Infisical, copy `.env.example` to `.env` and set provider keys manually.
 
+After the stack is up (API/worker/Admin as needed), use **[onboarding Part A](./onboarding.md)** for the Admin UI path: create project → Register Git Source → Trigger Ingest → mint agent token (name + project_slugs). CLI steps below remain valid for digs and eval.
+
 ## First Project
 
 The seeded first project is:
@@ -33,7 +36,7 @@ The seeded first project is:
 - project slug: `fjulian-me`
 - source path: `/Users/fernandojulian/project/fjulian/fjulian.me`
 
-Run Git ingestion first if the source registry/chunks need refresh:
+Prefer Admin `/admin/sources` (Register Git Source + Trigger Ingest) after local login. Or run Git ingestion via worker if the source registry/chunks need a CLI refresh:
 
 ```bash
 rtk infisical run --env=dev -- cargo run -p queria-worker

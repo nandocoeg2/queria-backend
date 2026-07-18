@@ -1,5 +1,9 @@
 # Production Deployment Runbook
 
+> Status: CURRENT  
+> Last verified: 2026-07-18  
+> Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)
+
 This runbook documents the deployment process for Queria's production environment.
 
 ## Production Host Access
@@ -19,11 +23,12 @@ cd /home/ubuntu/queria-backend
 
 Do not commit private keys. Prefer agent-forwarding or a secrets manager for shared operator access.
 
-Notes from live host (verified 2026-07-16):
+Notes from live host (verified 2026-07-18):
 
-- Queria stack already runs via `docker-compose.production.yml` under `/home/ubuntu/queria-backend`.
-- Public edge is Caddy (`queria-edge`) on host port `17674` (not exclusive claim on 443; host Nginx already owns 80/443 for other sites). Path routing lives in `docker/Caddyfile`.
+- Queria stack runs via `docker-compose.production.yml` under `/home/ubuntu/queria-backend`.
+- Public edge is Caddy (`queria-edge`) on host port `17674` (host Nginx already owns 80/443 for other sites). Path routing lives in `docker/Caddyfile`.
 - Shared host: monitoring, other Postgres app stacks, and non-Queria containers coexist.
+- **Primary deploy path is manual rsync + build on host** — not git-push CI, and not host `git fetch`/`git pull` (GitHub SSH from the host is often broken).
 
 ## Pre-flight Host Verification
 
@@ -34,8 +39,8 @@ Before starting deployment, verify that the host meets the following requirement
 - **CPU**: Minimum 2 Cores
 - **Disk**: Minimum 190 GB free space
 - **Docker**: Docker Engine and Compose plugin installed and active
-- **DNS**: DNS records configured for the public domain (e.g., `fjulian.id`)
-- **Port**: Public entry path decided (`443` via Nginx reverse-proxy, or direct `17674` for MVP)
+- **DNS** (optional): domain `fjulian.id` only if Nginx is wired to the edge; may still 404 — prefer host `:17674` smoke below
+- **Port**: Primary public MVP path is host port **`17674`** (Caddy edge). Port `443` via Nginx is optional and may not route to Queria
 
 Run local pre-flight checks on the host:
 
@@ -61,7 +66,8 @@ rtk infisical login
 rtk infisical export --env=prod --format=dotenv > .env.production
 ```
 
-Verify that `.env.production` contains all necessary keys without committing it:
+Copy `.env.production` to the host deploy directory (never commit it). Verify it contains the keys your stack needs (names vary by env setup; do not invent or paste secret values here), commonly including:
+
 - `DATABASE_PASSWORD`
 - `QDRANT_API_KEY`
 - `VOYAGE_API_KEY`
@@ -72,56 +78,96 @@ Verify that `.env.production` contains all necessary keys without committing it:
 - `OCI_STORAGE_SECRET_KEY`
 - `OCI_STORAGE_REGION`
 
-## Build and Package
+## Primary deploy: rsync → build on host (aarch64)
 
-Build the Docker images locally or in CI, tagging them with the target commit:
+Do **not** rely on CI push or on-host git checkout when GitHub access is broken. Sync a known-good tree from the workstation, then build for the host architecture.
+
+From the **workstation** (workspace root or `queria/backend` as appropriate):
 
 ```bash
-# Export the current commit hash
-export QUERIA_SOURCE_COMMIT=$(git rev-parse HEAD)
-
-# Build the Rust workspace Docker image
-docker build --build-arg QUERIA_SOURCE_COMMIT=$QUERIA_SOURCE_COMMIT -t queria-backend:latest .
-
-# Build the Astro Admin UI Docker image
-docker compose -f docker-compose.production.yml build queria-admin
+# Example: sync backend tree to host deploy dir (adjust excludes as needed)
+rsync -az --delete \
+  --exclude '.git' \
+  --exclude 'target' \
+  --exclude 'node_modules' \
+  --exclude '.env*' \
+  /Users/fernandojulian/project/knowledge-based-rag/queria/backend/ \
+  ubuntu@168.110.214.130:/home/ubuntu/queria-backend/
 ```
 
-## Database Migration
+Ensure secrets (`.env.production` or compose env files) are present on the host separately — rsync above excludes `.env*`.
 
-Run database migrations once before booting the application containers to prevent concurrent migration attempts:
+On the **host**:
 
 ```bash
-# entrypoint wraps binaries; use queria-cli subcommand (not bare "database")
+cd /home/ubuntu/queria-backend
+export QUERIA_SOURCE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "rsync-$(date +%Y%m%d)")
+
+# Build production images on aarch64 host
+docker compose -f docker-compose.production.yml build
+
+# Migrations once before boot (entrypoint wraps binaries)
 docker compose -f docker-compose.production.yml run --rm --no-deps queria-api queria-cli database migrate
-```
 
-## Deploying the Stack
-
-Start all services in detached mode:
-
-```bash
+# Start stack
 docker compose -f docker-compose.production.yml up -d
-```
 
-Verify that all services are running and healthy:
-
-```bash
 docker compose -f docker-compose.production.yml ps
 ```
 
-## Verification Checks
+### Admin-only rebuild (Astro changes only)
 
-After deployment, perform verification checks:
+When only `queria-admin` changed, avoid full stack rebuild:
 
-1. **Proxy Health Check**:
+```bash
+cd /home/ubuntu/queria-backend
+docker compose -f docker-compose.production.yml build queria-admin
+docker compose -f docker-compose.production.yml up -d --no-deps queria-admin
+```
+
+## Optional: local pre-build / package notes
+
+If you build images locally for transfer (less common than host build on aarch64):
+
+```bash
+export QUERIA_SOURCE_COMMIT=$(git rev-parse HEAD)
+docker build --build-arg QUERIA_SOURCE_COMMIT=$QUERIA_SOURCE_COMMIT -t queria-backend:latest .
+docker compose -f docker-compose.production.yml build queria-admin
+```
+
+Prefer **build on host** so image arch matches Oracle aarch64.
+
+## Verification Checks (primary smoke)
+
+After deployment, use the **host edge** first:
+
+1. **Health**:
    ```bash
-   curl -i https://fjulian.id/healthz
-   # Should return 200 OK
+   curl -i http://168.110.214.130:17674/healthz
+   # expect 200 OK
    ```
-2. **API Access**:
+2. **Admin login**:
+   Open `http://168.110.214.130:17674/admin/login` and confirm the page loads.
+3. **Compose status**:
    ```bash
-   curl -i https://fjulian.id/api/v1/healthz
+   docker compose -f docker-compose.production.yml ps
    ```
-3. **Admin UI Access**:
-   Access the dashboard at `https://fjulian.id/admin/` and verify the page loads correctly.
+
+### Domain (optional)
+
+If Nginx is reverse-proxied for `fjulian.id` → edge, you may also try:
+
+```bash
+curl -i https://fjulian.id/healthz
+```
+
+Treat domain/path failures as **proxy/DNS config**, not necessarily a broken stack — host `:17674` is the authoritative smoke until Nginx is confirmed wired.
+
+## Related
+
+| Doc | Use |
+|---|---|
+| [`../HANDOFF.md`](../HANDOFF.md) | Deployed commit, stack identity |
+| [`rollback.md`](./rollback.md) | Rsync known-good + rebuild without volume wipe |
+| [`onboarding.md`](./onboarding.md) | Post-deploy admin/agent path |
+| [`local-development.md`](./local-development.md) | Local compose (ports/env) |

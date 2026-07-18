@@ -1,13 +1,13 @@
 # Queria Architecture
 
 > Status: CURRENT (as-is) + PLANNED (post-hard-cut + dual-lane)
-> Last verified: 2026-07-17
+> Last verified: 2026-07-18
 > Runtime truth: [`HANDOFF.md`](./HANDOFF.md)
 > Product contract: [`PRODUCT.md`](./PRODUCT.md)
 > Cut plan: [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
 > Backlog: [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
 
-## As-is (2026-07-16)
+## As-is (2026-07-18)
 
 ```mermaid
 flowchart LR
@@ -47,7 +47,7 @@ flowchart LR
 | `queria-backup` | S3 backup + retention | restore_drill moved to queria-cli |
 | edge | Caddy `docker/Caddyfile` | Replaces deleted `queria-proxy` / Pingora |
 
-Admin: pure Astro SSR + CSS tokens (P0: React/Three.js/shadcn removed 2026-07-16).
+Admin: pure Astro SSR + Violet Void CSS tokens (P0: React/Three.js/shadcn removed 2026-07-16). No React islands.
 
 ## Post-hard-cut target
 
@@ -97,9 +97,9 @@ Admin: stat cards and SSR tables only (P0 applied).
 
 Contract and rules: [`PRODUCT.md`](./PRODUCT.md). Backlog: `IMP-13`–`IMP-16` in [`IMPROVEMENTS.md`](./IMPROVEMENTS.md). Runtime: [`HANDOFF.md`](./HANDOFF.md).
 
-**As-is (Slice A shipped):** MCP `index_memory` → scratch (project-scoped, sync embed); MCP `propose_memory` → approval → trusted; worker Git → trusted; retrieve with `include_scratch` default true (eval/CLI trusted-only).
+**As-is (Slice A + retrieval quality shipped on local main):** MCP `index_memory` → scratch (project-scoped, sync embed); MCP `propose_memory` → approval → trusted; worker Git → trusted; retrieve with `include_scratch` default true (eval/CLI trusted-only). Pipeline: pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compress (**prefer trusted**). Admin Playground SSR. Prod image may lag.
 
-**Still deferred:** Admin list/delete scratch (`IMP-15`); `promote_memory` (`IMP-16`); prefer-trusted near-dup compress (`IMP-02`).
+**Still deferred:** Admin list/delete scratch (`IMP-15`); `promote_memory` (`IMP-16`). Prefer-trusted compress and rerank are **shipped** (`IMP-01`/`IMP-02`), not deferred.
 
 Write paths:
 
@@ -125,7 +125,7 @@ flowchart LR
 | Global | Trusted standards | Still trusted-only; no scratch global | — |
 | Qdrant / FTS filter | org, project, status, approved | + status `scratch` / lane filters | — |
 | Eval / golden | Approved knowledge | Trusted lane only (`include_scratch=false`) | — |
-| Rank ties | RRF only | RRF only | Prefer trusted over scratch (IMP-02) |
+| Rank / near-dup | RRF only | RRF + rerank + compress prefer trusted (local main; prod may lag) | Durable metrics (IMP-04) |
 | Admin scratch / promote | N/A | N/A | IMP-15 / IMP-16 |
 
 Crate impact (Slice A): `queria-db` migrations + hybrid filters; `queria-search` scratch embed + retrieval; `queria-mcp` `index_memory`; `queria-core` `IndexMemory` permission + contracts.

@@ -71,7 +71,7 @@ Then update HANDOFF completion matrix and residual gaps.
 
 - Correctness and security review
 - Replacing Voyage / Qdrant / Postgres
-- Sahara redesign
+- Visual redesign beyond **Violet Void** already applied in Admin (`DESIGN.md` / admin tokens)
 - Implementing cuts without an explicit execution request
 
 ## Progress log

@@ -159,6 +159,15 @@ Admin: `/admin/orgs` (super-admin), public `/admin/invites/accept`, home `/admin
 
 Full design history: [`archive/superpowers/specs/2026-07-18-multi-org-tenancy-design.md`](./archive/superpowers/specs/2026-07-18-multi-org-tenancy-design.md) (REFERENCE).
 
-## Sahara UI
+## Violet Void / Dark Centered Platform
 
-Visual direction: workspace [`DESIGN.md`](../../../DESIGN.md). Warm minimalism; whitespace over chrome.
+Visual direction: workspace [`DESIGN.md`](../../../DESIGN.md) (**REFERENCE** — approved UI direction, not live implementation status). Runtime/admin status: [`HANDOFF.md`](./HANDOFF.md).
+
+| Token | Value | Role |
+|---|---|---|
+| `surface.inverse` | `#0A0A0A` | Full composition ground |
+| `surface.card` | `#111111` | Cards / elevated surfaces |
+| `accent.primary` | `#582CFF` | Primary actions, interactive highlights |
+| Typography | Inter / Geist / Funnel Sans | Headings / body / captions |
+
+Admin implementation follows the dark ground and card surfaces; neon streak decorative overlays in DESIGN may be **skipped** in Admin SSR for density and SSR simplicity unless product reopens them.

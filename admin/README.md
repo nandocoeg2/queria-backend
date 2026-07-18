@@ -54,5 +54,8 @@ npx playwright test
 
 ## Notes
 
-- Approvals approve/reject use native `confirm()` dialogs and SSR POST handlers.
+- **Sources** (`/admin/sources`): Register Git Source form (uri, title, branch, optional path) + Trigger Ingest per row.
+- **Agent Tokens** (`/admin/tokens`): mint requires **name** + at least one **project_slugs**.
+- **Approvals**: approve/reject use native confirm dialogs and SSR POST handlers.
+- Theme is Violet Void throughout (see tokens above).
 - Full product/route status: [`../docs/HANDOFF.md`](../docs/HANDOFF.md).

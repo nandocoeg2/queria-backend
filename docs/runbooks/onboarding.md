@@ -80,7 +80,9 @@ Record the project **slug**. MCP retrieve uses project **UUID** in `project_id` 
 
 Trusted code knowledge enters via the **Git pipeline** (allowlisted remote, TruffleHog, chunk, embed). Not via agent `index_memory`.
 
-Admin UI today is strongest for **list / detail / trigger ingest** on existing sources (`/admin/sources`). Register via API if the UI has no create form:
+**Prefer Admin UI:** `{BASE}/admin/sources` → **Register Git Source** (title, uri, branch, optional `source_path`) → **Trigger Ingest** on the source row. List/detail and re-ingest also live on that page.
+
+**API fallback** (automation / no browser session):
 
 ```bash
 curl -sS -X POST "$API/api/v1/sources" \
@@ -97,7 +99,7 @@ curl -sS -X POST "$API/api/v1/sources" \
   }'
 ```
 
-Then queue ingest (UI **Ingest** on source row, or):
+Then queue ingest:
 
 ```bash
 curl -sS -X POST "$API/api/v1/sources/$SOURCE_ID/ingest" \
@@ -123,7 +125,9 @@ Ready counts in HANDOFF / dashboard. Retrieval quality needs non-zero **ready** 
 
 Tokens are bearer credentials for MCP (`Authorization: Bearer …`). Raw token is shown **once**.
 
-**Reliable path (API):** full payload with scopes and tools.
+**Prefer Admin UI:** `{BASE}/admin/tokens` → create form requires **name** + **project_slugs**. Optional: `allow_global_knowledge`, `expires_in`. List/revoke on the same page.
+
+**API** when you need advanced tool lists or automation:
 
 ```bash
 curl -sS -X POST "$API/api/v1/agent-tokens" \
@@ -149,12 +153,13 @@ Response includes `token` (raw, e.g. `qria_…`) and metadata. Store it only in 
 
 Notes:
 
-- Default tools (if `tools` omitted) are **propose-only** write path: no `index_memory`. Include `index_memory` explicitly for scratch DX.
+- Default tools (if `tools` omitted) are **propose-only** write path: no `index_memory`. Include `index_memory` explicitly for scratch DX (UI may not expose full tool list; use API for custom grants).
 - `project_slugs` bound the token; agents only see those projects in `list_projects`.
 - `allow_global_knowledge: true` is required for retrieve with global trusted knowledge.
-- Admin UI `{BASE}/admin/tokens` can generate/list/revoke. Prefer the API above when you need explicit project slugs and `index_memory`. If UI create is description-only and fails validation, use the API.
 
 ### A6. Operator smoke (before agents)
+
+Approvals use native HTML <dialog> confirm UI for approve/reject (SSR POST; not a custom modal framework).
 
 1. `{BASE}/admin/playground` — query the project; expect citations when embeddings are ready. Toggles: rerank / compress (see hybrid runbook).
 2. CLI:
