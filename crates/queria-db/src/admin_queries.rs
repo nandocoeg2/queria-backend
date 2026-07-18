@@ -252,26 +252,32 @@ impl PgAdminQueriesRepository {
                 .map(|j| j.try_get("status"))
                 .transpose()
                 .map_err(to_infrastructure_error)?,
+            // Job columns may be SQL NULL even when a job row exists (e.g. succeeded
+            // jobs clear error_message). Decode as Option and flatten into the field.
             latest_ingestion_started_at: latest_job
                 .as_ref()
-                .map(|j| j.try_get("started_at"))
+                .map(|j| j.try_get::<Option<DateTime<Utc>>, _>("started_at"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
             latest_ingestion_finished_at: latest_job
                 .as_ref()
-                .map(|j| j.try_get("finished_at"))
+                .map(|j| j.try_get::<Option<DateTime<Utc>>, _>("finished_at"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
             latest_ingestion_error_message: latest_job
                 .as_ref()
-                .map(|j| j.try_get("error_message"))
+                .map(|j| j.try_get::<Option<String>, _>("error_message"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
             latest_ingestion_result: latest_job
                 .as_ref()
-                .map(|j| j.try_get("result"))
+                .map(|j| j.try_get::<Option<serde_json::Value>, _>("result"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
 
             chunks_pending: counts_row
                 .try_get("pending")
@@ -433,19 +439,22 @@ impl PgAdminQueriesRepository {
                 .map_err(to_infrastructure_error)?,
             latest_ingestion_started_at: latest_job
                 .as_ref()
-                .map(|j| j.try_get("started_at"))
+                .map(|j| j.try_get::<Option<DateTime<Utc>>, _>("started_at"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
             latest_ingestion_finished_at: latest_job
                 .as_ref()
-                .map(|j| j.try_get("finished_at"))
+                .map(|j| j.try_get::<Option<DateTime<Utc>>, _>("finished_at"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
             latest_ingestion_error_message: latest_job
                 .as_ref()
-                .map(|j| j.try_get("error_message"))
+                .map(|j| j.try_get::<Option<String>, _>("error_message"))
                 .transpose()
-                .map_err(to_infrastructure_error)?,
+                .map_err(to_infrastructure_error)?
+                .flatten(),
 
             latest_evaluation_id: latest_eval
                 .as_ref()
