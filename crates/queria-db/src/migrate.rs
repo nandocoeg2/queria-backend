@@ -137,6 +137,11 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "scratch_content_hash",
             sql: include_str!("../../../migrations/20260717000200_scratch_content_hash.sql"),
         },
+        Migration {
+            version: "20260718000100",
+            name: "multi_org_tenancy",
+            sql: include_str!("../../../migrations/20260718000100_multi_org_tenancy.sql"),
+        },
     ]
 }
 
@@ -323,6 +328,54 @@ mod tests {
         assert!(
             migration.sql.contains("where status = 'scratch'"),
             "unique index must be partial on scratch status only"
+        );
+    }
+
+    /// Multi-org isolation MVP: membership, invite, super-admin flag, session active org.
+    #[test]
+    fn bundled_migrations_include_multi_org_tenancy() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260718000100")
+            .expect("missing multi-org tenancy migration");
+
+        assert_eq!(migration.name, "multi_org_tenancy");
+
+        for required in [
+            "is_platform_super_admin",
+            "create table if not exists org_membership",
+            "idx_org_membership_one_org_per_user",
+            "idx_org_membership_org",
+            "active_organization_id",
+            "create table if not exists org_invite",
+            "token_hash",
+            "token_prefix",
+            "idx_org_invite_org_email",
+            "insert into org_membership",
+            "org_admin",
+            "org_member",
+        ] {
+            assert!(
+                migration.sql.to_lowercase().contains(&required.to_lowercase())
+                    || migration.sql.contains(required),
+                "multi-org migration is missing {required}"
+            );
+        }
+
+        // No plaintext invite token column; hash + prefix only.
+        assert!(
+            !migration.sql.contains("token text")
+                && !migration.sql.to_lowercase().contains("raw_token"),
+            "invite table must not store plaintext tokens"
+        );
+
+        // Must not drop or nullify legacy user_account.organization_id.
+        let lower = migration.sql.to_lowercase();
+        assert!(
+            !lower.contains("drop column organization_id")
+                && !lower.contains("alter column organization_id drop not null"),
+            "must preserve user_account.organization_id NOT NULL"
         );
     }
 }
