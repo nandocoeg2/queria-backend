@@ -1,32 +1,52 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
-import { listAgentTokens, fetchFromBackend } from '../../lib/api';
+import { listAgentTokens, listProjects, fetchFromBackend } from '../../lib/api';
 
 let message = '';
 let isError = false;
 let generatedToken = '';
 
-// Handle generate token POST
+// Handle generate / revoke token POST
 if (Astro.request.method === 'POST') {
   try {
     const data = await Astro.request.formData();
     const action = data.get('action');
-    
-    if (action === 'generate') {
-      const description = data.get('description') || 'Admin generated token';
-      const res = await fetchFromBackend('/api/v1/agent-tokens', Astro.request, {
-        method: 'POST',
-        body: JSON.stringify({ description }),
-      });
 
-      if (res.ok) {
-        const result = await res.json();
-        generatedToken = result.token;
-        message = 'Agent token successfully generated.';
-      } else {
-        const errorRes = await res.json().catch(() => ({}));
-        message = errorRes.error || 'Failed to generate agent token.';
+    if (action === 'generate') {
+      const name = (data.get('name')?.toString() || '').trim();
+      const selectedSlugs = data
+        .getAll('project_slugs')
+        .map((v) => v.toString())
+        .filter(Boolean);
+      const allowGlobal = data.get('allow_global_knowledge') === 'on';
+      const expiresIn = data.get('expires_in')?.toString() || '7_days';
+
+      if (!name) {
+        message = 'Token name is required.';
         isError = true;
+      } else if (selectedSlugs.length === 0) {
+        message = 'Select at least one project.';
+        isError = true;
+      } else {
+        const res = await fetchFromBackend('/api/v1/agent-tokens', Astro.request, {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            project_slugs: selectedSlugs,
+            allow_global_knowledge: allowGlobal,
+            expires_in: expiresIn,
+          }),
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          generatedToken = result.token;
+          message = 'Agent token successfully generated.';
+        } else {
+          const errorRes = await res.json().catch(() => ({}));
+          message = errorRes.error || 'Failed to generate agent token.';
+          isError = true;
+        }
       }
     } else if (action === 'revoke') {
       const tokenId = data.get('token_id');
@@ -51,10 +71,16 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-const tokens = await listAgentTokens(Astro.request);
-if (!tokens) {
+const [tokens, projects] = await Promise.all([
+  listAgentTokens(Astro.request),
+  listProjects(Astro.request),
+]);
+
+if (!tokens || !projects) {
   return Astro.redirect('/admin/login');
 }
+
+const hasProjects = Array.isArray(projects) && projects.length > 0;
 
 // Format dates
 const formatDate = (dateStr?: string) => {
@@ -103,8 +129,9 @@ const formatDate = (dateStr?: string) => {
           <table class="tokens-table">
             <thead>
               <tr>
-                <th>Description</th>
+                <th>Name</th>
                 <th>Prefix</th>
+                <th>Projects</th>
                 <th>Created At</th>
                 <th>Last Used At</th>
                 <th>Actions</th>
@@ -113,8 +140,13 @@ const formatDate = (dateStr?: string) => {
             <tbody>
               {tokens.map((t: any) => (
                 <tr>
-                  <td class="token-desc">{t.description}</td>
-                  <td><code class="prefix-code">{t.prefix}***</code></td>
+                  <td class="token-desc">{t.name}</td>
+                  <td><code class="prefix-code">{t.token_prefix}***</code></td>
+                  <td class="token-projects">
+                    {Array.isArray(t.project_slugs) && t.project_slugs.length > 0
+                      ? t.project_slugs.join(', ')
+                      : '—'}
+                  </td>
                   <td>{formatDate(t.created_at)}</td>
                   <td>{formatDate(t.last_used_at)}</td>
                   <td>
@@ -141,21 +173,65 @@ const formatDate = (dateStr?: string) => {
       <div class="panel-header">
         <h2>Generate Agent Token</h2>
       </div>
-      <form method="POST">
-        <input type="hidden" name="action" value="generate" />
-        <div class="form-group">
-          <label for="description">Token Description</label>
-          <input 
-            type="text" 
-            name="description" 
-            id="description" 
-            placeholder="e.g. Claude Code MCP Gateway" 
-            required
-            class="form-control"
-          />
+
+      {!hasProjects ? (
+        <div class="empty-state form-empty">
+          <p>No projects exist yet. Create a project first, then generate an agent token scoped to it.</p>
+          <a href="/admin/projects" class="btn btn-primary btn-block">Go to Projects</a>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Generate Token</button>
-      </form>
+      ) : (
+        <form method="POST">
+          <input type="hidden" name="action" value="generate" />
+
+          <div class="form-group">
+            <label for="name">Token name</label>
+            <input 
+              type="text" 
+              name="name" 
+              id="name" 
+              placeholder="e.g. Claude Code MCP Gateway" 
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Projects</label>
+            <p class="field-hint">Select at least one project this token can access.</p>
+            <div class="checkbox-list">
+              {projects.map((p: any) => (
+                <label class="checkbox-row">
+                  <input type="checkbox" name="project_slugs" value={p.slug} />
+                  <span class="checkbox-label">
+                    <span class="project-name">{p.name || p.slug}</span>
+                    <code class="project-slug">{p.slug}</code>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-row single">
+              <input type="checkbox" name="allow_global_knowledge" id="allow_global_knowledge" />
+              <span class="checkbox-label">Allow global knowledge</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="expires_in">Expires in</label>
+            <select name="expires_in" id="expires_in" class="form-control">
+              <option value="1_day">1 day</option>
+              <option value="7_days" selected>7 days</option>
+              <option value="30_days">30 days</option>
+              <option value="1_year">1 year</option>
+              <option value="no_expire">No expiry</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Generate Token</button>
+        </form>
+      )}
     </div>
   </div>
 </AdminLayout>
@@ -280,6 +356,14 @@ const formatDate = (dateStr?: string) => {
     font-weight: 600;
   }
 
+  .token-projects {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    max-width: 160px;
+    word-break: break-word;
+  }
+
   .prefix-code {
     font-family: var(--font-family-mono);
     font-size: 11px;
@@ -294,7 +378,7 @@ const formatDate = (dateStr?: string) => {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
   }
 
   .form-group label {
@@ -304,6 +388,16 @@ const formatDate = (dateStr?: string) => {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
+  }
+
+  .field-hint {
+    font-family: var(--font-family-caption);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    margin: 0 0 4px;
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: normal;
   }
 
   .form-control {
@@ -321,6 +415,64 @@ const formatDate = (dateStr?: string) => {
   .form-control:focus {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  select.form-control {
+    appearance: auto;
+    cursor: pointer;
+  }
+
+  .checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-lowest);
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--color-on-surface);
+    cursor: pointer;
+  }
+
+  .checkbox-row.single {
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: normal;
+  }
+
+  .checkbox-row input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  .checkbox-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .project-name {
+    color: var(--color-on-surface);
+  }
+
+  .project-slug {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
   }
 
   .btn-block {
@@ -343,6 +495,19 @@ const formatDate = (dateStr?: string) => {
     padding: var(--spacing-xxl);
     color: var(--color-on-surface-variant);
     font-style: italic;
+  }
+
+  .form-empty {
+    padding: var(--spacing-lg) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    font-style: normal;
+  }
+
+  .form-empty p {
+    font-style: italic;
+    margin: 0;
   }
 
   @media (max-width: 1024px) {
