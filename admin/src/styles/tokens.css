@@ -1,53 +1,54 @@
 @import "tailwindcss";
 
-/* Sahara Design System Tokens & shadcn/ui Compatibility */
+/* Violet Void Design System Tokens & shadcn/ui Compatibility */
 
 :root {
-  /* Color Palette (Warm Editorial / Sahara Style) */
-  --color-primary: #964407;
-  --color-primary-container: #b65c21;
+  /* Color Palette (Violet Void / dark-first) */
+  --color-primary: #582cff;
+  --color-primary-container: #6f4bff;
   --color-on-primary: #ffffff;
-  --color-secondary: #605e59;
-  --color-secondary-container: #e6e2db;
+  --color-secondary: #bf40ff;
+  --color-secondary-container: #2a1a3d;
   --color-on-secondary: #ffffff;
-  --color-tertiary: #944242;
-  --color-tertiary-container: #b35a59;
-  --color-on-tertiary: #ffffff;
-  
-  --color-background: #fff8f5;
-  --color-on-background: #221a14;
-  
-  --color-surface: #fff8f5;
-  --color-surface-dim: #e8d7ce;
-  --color-surface-bright: #fff8f5;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #fff1ea;
-  --color-surface-container: #fceae1;
-  --color-surface-container-high: #f6e5dc;
-  --color-surface-container-highest: #f0dfd6;
-  
-  --color-on-surface: #221a14;
-  --color-on-surface-variant: #554339;
-  
-  --color-outline: #887368;
-  --color-outline-variant: #dbc1b5;
-  
-  --color-error: #ba1a1a;
+  --color-tertiary: #00f2ff;
+  --color-tertiary-container: #0a2a2e;
+  --color-on-tertiary: #0a0a0a;
+
+  --color-background: #0a0a0a;
+  --color-on-background: #ffffff;
+
+  --color-surface: #0a0a0a;
+  --color-surface-dim: #050505;
+  --color-surface-bright: #1a1a1a;
+  --color-surface-container-lowest: #0d0d0d;
+  --color-surface-container-low: #111111;
+  --color-surface-container: #111111;
+  --color-surface-container-high: #16161c;
+  --color-surface-container-highest: #1c1c24;
+
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #a1a1a1;
+
+  --color-outline: #3a3a4a;
+  --color-outline-variant: #222233;
+
+  --color-error: #ff4444;
   --color-on-error: #ffffff;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #93000a;
+  --color-error-container: #3d1212;
+  --color-on-error-container: #ffb4b4;
 
-  /* Typography Fonts */
-  --font-family-headline: 'EB Garamond', Garamond, Georgia, serif;
-  --font-family-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* Typography Fonts — Inter / Geist / Funnel Sans */
+  --font-family-headline: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-body: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-caption: 'Funnel Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 
-  /* Roundness (Standard is 8px / 0.5rem) */
+  /* Roundness — sm 4px / lg (default cards) 8px */
   --radius-sm: 0.25rem;     /* 4px */
   --radius-default: 0.5rem; /* 8px */
-  --radius-md: 0.75rem;     /* 12px */
-  --radius-lg: 1rem;        /* 16px */
-  --radius-xl: 1.5rem;      /* 24px */
+  --radius-md: 0.5rem;      /* 8px */
+  --radius-lg: 0.5rem;      /* 8px cards/panels */
+  --radius-xl: 0.75rem;     /* 12px */
   --radius-full: 9999px;
 
   /* Spacing Base (8px Grid) */
@@ -57,31 +58,34 @@
   --spacing-lg: 1rem;       /* 16px */
   --spacing-xl: 1.5rem;     /* 24px */
   --spacing-xxl: 2rem;      /* 32px */
-  
+
   --layout-margin: 2rem;
   --layout-gutter: 1.5rem;
 
-  /* HSL Colors mapped for shadcn/ui compatibility */
-  --background: 18 100% 98%;           /* #fff8f5 */
-  --foreground: 24 24% 11%;            /* #221a14 */
-  --card: 0 0% 100%;                   /* #ffffff */
-  --card-foreground: 24 24% 11%;
-  --popover: 18 100% 98%;
-  --popover-foreground: 24 24% 11%;
-  --primary: 26 91% 31%;               /* #964407 */
+  /* Elevation */
+  --shadow-elevated: 0 12px 24px #000000b3;
+
+  /* HSL Colors mapped for shadcn/ui compatibility (dark Violet Void) */
+  --background: 0 0% 4%;                /* #0A0A0A */
+  --foreground: 0 0% 100%;              /* #FFFFFF */
+  --card: 0 0% 7%;                      /* #111111 */
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 255 100% 59%;              /* #582CFF */
   --primary-foreground: 0 0% 100%;
-  --secondary: 40 4% 91%;              /* #e6e2db */
-  --secondary-foreground: 24 24% 11%;
-  --muted: 21 13% 92%;
-  --muted-foreground: 21 13% 47%;
-  --accent: 18 100% 95%;               /* #fff1ea */
-  --accent-foreground: 26 91% 31%;
-  --destructive: 0 84% 41%;            /* #ba1a1a */
+  --secondary: 280 100% 62%;            /* #BF40FF-ish */
+  --secondary-foreground: 0 0% 100%;
+  --muted: 240 10% 12%;
+  --muted-foreground: 0 0% 63%;         /* #A1A1A1 */
+  --accent: 255 40% 18%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 100% 63%;            /* #FF4444 */
   --destructive-foreground: 0 0% 100%;
-  --border: 20 36% 78%;                /* #dbc1b5 */
-  --input: 21 13% 47%;                 /* #887368 */
-  --ring: 26 91% 31%;
-  --radius: 0.5rem;
+  --border: 240 20% 16%;                /* #222233 */
+  --input: 240 20% 16%;
+  --ring: 255 100% 59%;                 /* #582CFF */
+  --radius: 0.5rem;                     /* 8px */
 }
 
 @theme {
@@ -104,10 +108,10 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  
+
   --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-sm: 0.25rem;
 }
 
 
@@ -130,7 +134,7 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-family-headline);
   color: var(--color-on-surface);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -158,7 +162,7 @@ code, pre {
   font-family: var(--font-family-body);
   font-size: 13px;
   font-weight: 600;
-  border-radius: var(--radius-default);
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
@@ -174,50 +178,59 @@ code, pre {
 }
 
 .btn-secondary {
-  background-color: var(--color-surface-container-lowest);
+  background-color: var(--color-surface-container-low);
   border-color: var(--color-outline-variant);
   color: var(--color-on-surface);
 }
 
 .btn-secondary:hover {
-  background-color: var(--color-surface-container-low);
+  background-color: var(--color-surface-container-high);
+  border-color: var(--color-outline);
 }
 
 .card {
-  background-color: var(--color-surface-container-lowest);
+  background-color: var(--color-surface-container);
   border: 1px solid var(--color-outline-variant);
-  border-radius: var(--radius-default);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-xl);
+  box-shadow: var(--shadow-elevated);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.5rem;
+  font-family: var(--font-family-caption);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-radius: var(--radius-sm);
   line-height: 1;
+  border: 1px solid transparent;
 }
 
+/* Dark-tinted semantic badges (readable on #0A0A0A / #111) */
 .badge-pending {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: #3d2e0a;
+  color: #fbbf24;
+  border-color: #5c4510;
 }
 
 .badge-approved {
-  background-color: #d1fae5;
-  color: #065f46;
+  background-color: #0a2e1f;
+  color: #34d399;
+  border-color: #145c40;
 }
 
 .badge-rejected {
-  background-color: #fee2e2;
-  color: #991b1b;
+  background-color: #3d1212;
+  color: #f87171;
+  border-color: #5c1f1f;
 }
 
 .badge-stale {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: #1c1c24;
+  color: #a1a1a1;
+  border-color: #222233;
 }
