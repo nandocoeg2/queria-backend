@@ -27,6 +27,7 @@ struct LoginResponse {
     email: Option<String>,
     expires_at: Option<String>,
     active_organization_id: Option<String>,
+    active_organization_slug: Option<String>,
     is_platform_super_admin: Option<bool>,
     error: Option<String>,
 }
@@ -37,6 +38,7 @@ struct MeResponse {
     user_id: Option<String>,
     email: Option<String>,
     active_organization_id: Option<String>,
+    active_organization_slug: Option<String>,
     is_platform_super_admin: Option<bool>,
     error: Option<String>,
 }
@@ -114,6 +116,12 @@ async fn login(
         headers.insert(header::SET_COOKIE, value);
     }
 
+    let active_organization_slug = if active_organization_id.is_some() {
+        user.membership_organization_slug
+    } else {
+        None
+    };
+
     (
         StatusCode::OK,
         headers,
@@ -123,6 +131,7 @@ async fn login(
             email: Some(user.email),
             expires_at: Some(expires_at.to_rfc3339()),
             active_organization_id: active_organization_id.map(|id| id.to_string()),
+            active_organization_slug,
             is_platform_super_admin: Some(is_platform_super_admin),
             error: None,
         }),
@@ -142,6 +151,7 @@ async fn me(State(state): State<ApiState>, headers: HeaderMap) -> (StatusCode, J
             user_id: Some(session.user_id.to_string()),
             email: Some(session.email),
             active_organization_id: session.active_organization_id.map(|id| id.to_string()),
+            active_organization_slug: session.active_organization_slug,
             is_platform_super_admin: Some(session.is_platform_super_admin),
             error: None,
         }),
@@ -217,6 +227,7 @@ fn login_error(
             email: None,
             expires_at: None,
             active_organization_id: None,
+            active_organization_slug: None,
             is_platform_super_admin: None,
             error: Some(message.to_owned()),
         }),
@@ -231,6 +242,7 @@ fn me_error(message: &str) -> (StatusCode, Json<MeResponse>) {
             user_id: None,
             email: None,
             active_organization_id: None,
+            active_organization_slug: None,
             is_platform_super_admin: None,
             error: Some(message.to_owned()),
         }),
@@ -272,6 +284,7 @@ mod tests {
             email: "ops@example.com".to_owned(),
             expires_at: Utc::now() + Duration::hours(1),
             active_organization_id,
+            active_organization_slug: active_organization_id.map(|_| "home-org".to_owned()),
             is_platform_super_admin,
         }
     }
@@ -553,6 +566,12 @@ mod tests {
         assert_eq!(
             json["active_organization_id"].as_str(),
             Some(org_id.to_string().as_str())
+        );
+        assert!(
+            json["active_organization_slug"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty()),
+            "me must expose active_organization_slug for members: {json}"
         );
         assert_eq!(json["is_platform_super_admin"], true);
 

@@ -67,6 +67,8 @@ async fn list_knowledge_items(
     let session = auth::require_session(&state, &headers)
         .await
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let Some(repository) = state.admin_queries_repository() else {
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -113,6 +115,8 @@ async fn get_knowledge_item(
     let session = auth::require_session(&state, &headers)
         .await
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let Some(repository) = state.project_repository() else {
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,

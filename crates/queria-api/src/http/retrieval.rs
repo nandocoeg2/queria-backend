@@ -61,6 +61,8 @@ async fn retrieve_context(
     let session = auth::require_session(&state, &headers)
         .await
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     request.validate().map_err(map_error)?;
 
     let service = retrieval_service(&state)?;
@@ -85,6 +87,8 @@ async fn retrieve_context_by_slug(
     let session = auth::require_session(&state, &headers)
         .await
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     if !valid_slug(&slug) {
         return Err(error(StatusCode::BAD_REQUEST, "invalid_project_slug"));
     }

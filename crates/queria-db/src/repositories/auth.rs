@@ -126,9 +126,11 @@ impl PgAuthRepository {
                     u.password_hash,
                     u.organization_id,
                     u.is_platform_super_admin,
-                    m.organization_id as membership_organization_id
+                    m.organization_id as membership_organization_id,
+                    o.slug as membership_organization_slug
              from user_account u
              left join org_membership m on m.user_id = u.id
+             left join organization o on o.id = m.organization_id
              where lower(u.email) = lower($1)",
         )
         .bind(email)
@@ -142,6 +144,7 @@ impl PgAuthRepository {
                 password_hash: row.try_get("password_hash")?,
                 organization_id: row.try_get("organization_id")?,
                 membership_organization_id: row.try_get("membership_organization_id")?,
+                membership_organization_slug: row.try_get("membership_organization_slug")?,
                 is_platform_super_admin: row.try_get("is_platform_super_admin")?,
             })
         })
@@ -187,10 +190,12 @@ impl PgAuthRepository {
                     s.expires_at,
                     u.is_platform_super_admin,
                     m.organization_id as membership_organization_id,
+                    o.slug as membership_organization_slug,
                     s.active_organization_id as session_active_organization_id
              from user_session s
              join user_account u on u.id = s.user_id
              left join org_membership m on m.user_id = u.id
+             left join organization o on o.id = m.organization_id
              where s.token_hash = $1
                and s.revoked_at is null
                and s.expires_at > now()",
@@ -202,16 +207,24 @@ impl PgAuthRepository {
         .map(|row| {
             let membership_organization_id: Option<Uuid> =
                 row.try_get("membership_organization_id")?;
-            // Membership is source of truth when present; otherwise keep stored session
-            // value only if no membership (super-admin null path uses None).
+            let membership_organization_slug: Option<String> =
+                row.try_get("membership_organization_slug")?;
+            // Membership is source of truth when present; otherwise None
+            // (super-admin without membership has null home).
             let active_organization_id =
                 resolve_active_organization_id(membership_organization_id, Uuid::nil());
+            let active_organization_slug = if active_organization_id.is_some() {
+                membership_organization_slug
+            } else {
+                None
+            };
 
             Ok(AuthenticatedSession {
                 user_id: row.try_get("user_id")?,
                 email: row.try_get("email")?,
                 expires_at: row.try_get("expires_at")?,
                 active_organization_id,
+                active_organization_slug,
                 is_platform_super_admin: row.try_get("is_platform_super_admin")?,
             })
         })

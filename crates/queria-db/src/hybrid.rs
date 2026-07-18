@@ -127,8 +127,8 @@ impl PgHybridRetrievalRepository {
         let organization_id = sqlx::query_scalar::<_, Uuid>(
             "select p.organization_id
              from project p
-             join user_account u on u.organization_id = p.organization_id
-             where u.id = $1 and p.id = $2",
+             join org_membership m on m.organization_id = p.organization_id
+             where m.user_id = $1 and p.id = $2",
         )
         .bind(user_id)
         .bind(project_id.as_uuid())

@@ -109,9 +109,9 @@ impl PgAdminQueriesRepository {
                     ki.status::text as status, ki.title, ki.body, ki.category,
                     ki.tags, ki.approved_at, ki.created_at, ki.updated_at
              from knowledge_item ki
-             join user_account u on u.organization_id = ki.organization_id
+             join org_membership m on m.organization_id = ki.organization_id
              left join project p on p.id = ki.project_id
-             where u.id = $1
+             where m.user_id = $1
                and ($2::text is null or ki.scope::text = $2)
                and ($3::text is null or p.slug = $3)
                and ($4::text is null or ki.category = $4)
@@ -149,8 +149,8 @@ impl PgAdminQueriesRepository {
                     sd.source_path, sd.branch, sd.commit_sha, sd.content_hash,
                     sd.metadata, sd.created_at, sd.updated_at
              from source_document sd
-             join user_account u on u.organization_id = sd.organization_id
-             where u.id = $1 and sd.id = $2",
+             join org_membership m on m.organization_id = sd.organization_id
+             where m.user_id = $1 and sd.id = $2",
         )
         .bind(user_id)
         .bind(source_uuid)
@@ -317,8 +317,8 @@ impl PgAdminQueriesRepository {
                     al.action, al.resource_type, al.resource_id, al.ip_hash,
                     al.user_agent_hash, al.metadata, al.created_at
              from audit_log al
-             join user_account u on u.organization_id = al.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = al.organization_id
+             where m.user_id = $1
                and ($2::text is null or al.actor_id = $2)
                and ($3::text is null or al.action = $3)
                and ($4::text is null or al.resource_type = $4)
@@ -348,10 +348,10 @@ impl PgAdminQueriesRepository {
         // 1. Get organizational stats
         let stats = sqlx::query(
             "select
-               (select count(*) from project p join user_account u on u.organization_id = p.organization_id where u.id = $1) as project_count,
-               (select count(*) from source_document sd join user_account u on u.organization_id = sd.organization_id where u.id = $1 and sd.source_root_id is null and sd.is_active) as source_count,
-               (select count(*) from approval a join knowledge_item ki on ki.id = a.knowledge_item_id join user_account u on u.organization_id = ki.organization_id where u.id = $1 and a.status = 'pending') as pending_approvals,
-               (select count(*) from ingestion_job j join user_account u on u.organization_id = j.organization_id where u.id = $1 and j.status = 'failed' and j.created_at >= now() - interval '7 days') as failed_jobs"
+               (select count(*) from project p join org_membership m on m.organization_id = p.organization_id where m.user_id = $1) as project_count,
+               (select count(*) from source_document sd join org_membership m on m.organization_id = sd.organization_id where m.user_id = $1 and sd.source_root_id is null and sd.is_active) as source_count,
+               (select count(*) from approval a join knowledge_item ki on ki.id = a.knowledge_item_id join org_membership m on m.organization_id = ki.organization_id where m.user_id = $1 and a.status = 'pending') as pending_approvals,
+               (select count(*) from ingestion_job j join org_membership m on m.organization_id = j.organization_id where m.user_id = $1 and j.status = 'failed' and j.created_at >= now() - interval '7 days') as failed_jobs"
         )
         .bind(user_id)
         .fetch_one(&self.pool)
@@ -368,8 +368,8 @@ impl PgAdminQueriesRepository {
                count(case when c.embedding_status = 'stale' then 1 end) as stale
              from chunk c
              join knowledge_item ki on ki.id = c.knowledge_item_id
-             join user_account u on u.organization_id = ki.organization_id
-             where u.id = $1",
+             join org_membership m on m.organization_id = ki.organization_id
+             where m.user_id = $1",
         )
         .bind(user_id)
         .fetch_one(&self.pool)
@@ -380,8 +380,8 @@ impl PgAdminQueriesRepository {
         let latest_job = sqlx::query(
             "select j.id, j.status::text as status, j.started_at, j.finished_at, j.error_message
              from ingestion_job j
-             join user_account u on u.organization_id = j.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = j.organization_id
+             where m.user_id = $1
              order by j.created_at desc
              limit 1",
         )
@@ -395,8 +395,8 @@ impl PgAdminQueriesRepository {
             "select r.id, r.project_slug, r.regression_score::double precision as score, (r.status = 'passed') as passed, r.created_at
              from evaluation_report r
              join project p on p.slug = r.project_slug
-             join user_account u on u.organization_id = p.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = p.organization_id
+             where m.user_id = $1
              order by r.created_at desc
              limit 1",
         )

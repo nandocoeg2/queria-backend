@@ -78,6 +78,8 @@ async fn list_approvals(
     Query(query): Query<ListApprovalsQuery>,
 ) -> ApiResult<Vec<ApprovalResponse>> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let status = query.status.as_deref().map(str::trim);
     if let Some(status) = status
         && !matches!(status, "pending" | "approved" | "rejected")
@@ -102,6 +104,8 @@ async fn get_approval(
     Path(approval_id): Path<ApprovalId>,
 ) -> ApiResult<ApprovalResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let Some(approval) = repository
         .get_approval(session.user_id, approval_id)
@@ -120,6 +124,8 @@ async fn approve_approval(
     Path(approval_id): Path<ApprovalId>,
 ) -> ApiResult<ApprovedKnowledgeResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let Some(approved) = repository
         .approve_approval(session.user_id, approval_id)
@@ -139,6 +145,8 @@ async fn reject_approval(
     body: Bytes,
 ) -> ApiResult<ApprovalResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let payload: RejectApprovalRequest = serde_json::from_slice(&body)
         .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_reject_payload"))?;
 

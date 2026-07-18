@@ -32,8 +32,8 @@ impl PgProjectRepository {
             "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
                     p.include_global_default, p.created_at, p.updated_at
              from project p
-             join user_account u on u.organization_id = p.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = p.organization_id
+             where m.user_id = $1
              order by p.slug",
         )
         .bind(user_id)
@@ -54,8 +54,8 @@ impl PgProjectRepository {
             "select p.id, p.slug, p.name, p.description, p.default_embedding_model,
                     p.include_global_default, p.created_at, p.updated_at
              from project p
-             join user_account u on u.organization_id = p.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = p.organization_id
+             where m.user_id = $1
                and p.slug = $2",
         )
         .bind(user_id)
@@ -75,8 +75,8 @@ impl PgProjectRepository {
         let row = sqlx::query(
             "with requester as (
                select organization_id
-               from user_account
-               where id = $1
+               from org_membership
+               where user_id = $1
              )
              insert into project(
                organization_id, slug, name, description,
@@ -116,8 +116,8 @@ impl PgProjectRepository {
             "with scoped_project as (
                select p.id as project_id, p.organization_id
                from project p
-               join user_account u on u.organization_id = p.organization_id
-               where u.id = $1
+               join org_membership m on m.organization_id = p.organization_id
+               where m.user_id = $1
                  and p.slug = $2
              )
              insert into source_document(
@@ -165,8 +165,8 @@ impl PgProjectRepository {
                     sd.metadata, sd.created_at, sd.updated_at
              from source_document sd
              join project p on p.id = sd.project_id
-             join user_account u on u.organization_id = sd.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = sd.organization_id
+             where m.user_id = $1
                and p.slug = $2
                and sd.source_root_id is null
              order by sd.created_at desc, sd.title",
@@ -191,8 +191,8 @@ impl PgProjectRepository {
                     sd.source_path, sd.branch, sd.commit_sha, sd.content_hash,
                     sd.metadata, sd.created_at, sd.updated_at
              from source_document sd
-             join user_account u on u.organization_id = sd.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = sd.organization_id
+             where m.user_id = $1
                and sd.id = $2",
         )
         .bind(user_id)
@@ -231,15 +231,15 @@ impl PgProjectRepository {
              from chunk c
              join knowledge_item ki on ki.id = c.knowledge_item_id
              left join source_document sd on sd.id = coalesce(c.source_document_id, ki.source_document_id)
-             join user_account u on u.organization_id = ki.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = ki.organization_id
+             where m.user_id = $1
                and ki.status = 'approved'
                and coalesce(c.source_document_id, ki.source_document_id) is not null
                and exists (
                  select 1
                  from project p
-                 join user_account requester on requester.organization_id = p.organization_id
-                 where requester.id = $1
+                 join org_membership requester on requester.organization_id = p.organization_id
+                 where requester.user_id = $1
                    and p.id = $2
                )
                and (
@@ -346,8 +346,8 @@ impl PgProjectRepository {
                     at.permissions, at.expires_at, at.revoked_at,
                     at.last_used_at, at.created_at
              from agent_token at
-             join user_account u on u.organization_id = at.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = at.organization_id
+             where m.user_id = $1
              order by at.created_at desc",
         )
         .bind(user_id)
@@ -369,8 +369,8 @@ impl PgProjectRepository {
                     at.permissions, at.expires_at, at.revoked_at,
                     at.last_used_at, at.created_at
              from agent_token at
-             join user_account u on u.organization_id = at.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = at.organization_id
+             where m.user_id = $1
                and at.id = $2",
         )
         .bind(user_id)
@@ -390,9 +390,9 @@ impl PgProjectRepository {
         sqlx::query(
             "update agent_token at
              set revoked_at = coalesce(at.revoked_at, now())
-             from user_account u
-             where u.organization_id = at.organization_id
-               and u.id = $1
+             from org_membership m
+             where m.organization_id = at.organization_id
+               and m.user_id = $1
                and at.id = $2
              returning at.id, at.name, at.token_prefix, at.allow_global_knowledge,
                        at.permissions, at.expires_at, at.revoked_at,
@@ -1030,8 +1030,8 @@ impl PgProjectRepository {
                     a.reason, a.created_at, a.decided_at, ki.approved_at
              from approval a
              join knowledge_item ki on ki.id = a.knowledge_item_id
-             join user_account u on u.organization_id = ki.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = ki.organization_id
+             where m.user_id = $1
                and ($2::text is null or a.status::text = $2)
              order by a.created_at desc",
         )
@@ -1058,8 +1058,8 @@ impl PgProjectRepository {
                     a.reason, a.created_at, a.decided_at, ki.approved_at
              from approval a
              join knowledge_item ki on ki.id = a.knowledge_item_id
-             join user_account u on u.organization_id = ki.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = ki.organization_id
+             where m.user_id = $1
                and a.id = $2",
         )
         .bind(user_id)
@@ -1081,8 +1081,8 @@ impl PgProjectRepository {
                     ki.status::text as status, ki.title, ki.body, ki.category,
                     ki.tags, ki.approved_at, ki.created_at, ki.updated_at
              from knowledge_item ki
-             join user_account u on u.organization_id = ki.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = ki.organization_id
+             where m.user_id = $1
                and ki.id = $2",
         )
         .bind(user_id)

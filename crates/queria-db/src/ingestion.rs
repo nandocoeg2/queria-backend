@@ -132,8 +132,8 @@ impl PgIngestionRepository {
             "with accessible_source as (
                select sd.organization_id, sd.project_id, sd.id
                from source_document sd
-               join user_account u on u.organization_id = sd.organization_id
-               where u.id = $1
+               join org_membership m on m.organization_id = sd.organization_id
+               where m.user_id = $1
                  and sd.id = $2
                  and sd.kind = 'git_repo'
                  and sd.source_root_id is null
@@ -175,8 +175,8 @@ impl PgIngestionRepository {
                     job.retry_of_id, job.cancel_requested_at, job.started_at,
                     job.finished_at, job.created_at, job.updated_at
              from ingestion_job job
-             join user_account u on u.organization_id = job.organization_id
-             where u.id = $1
+             join org_membership m on m.organization_id = job.organization_id
+             where m.user_id = $1
                and ($2::text is null or job.status::text = $2)
              order by job.created_at desc
              limit $3",
@@ -204,8 +204,8 @@ impl PgIngestionRepository {
                     job.retry_of_id, job.cancel_requested_at, job.started_at,
                     job.finished_at, job.created_at, job.updated_at
              from ingestion_job job
-             join user_account u on u.organization_id = job.organization_id
-             where u.id = $1 and job.id = $2",
+             join org_membership m on m.organization_id = job.organization_id
+             where m.user_id = $1 and job.id = $2",
         )
         .bind(user_id)
         .bind(job_id.as_uuid())
@@ -225,8 +225,8 @@ impl PgIngestionRepository {
             "with retryable as (
                select job.*
                from ingestion_job job
-               join user_account u on u.organization_id = job.organization_id
-               where u.id = $1
+               join org_membership m on m.organization_id = job.organization_id
+               where m.user_id = $1
                  and job.id = $2
                  and job.status in ('failed', 'cancelled')
              )
@@ -267,9 +267,9 @@ impl PgIngestionRepository {
                  cancel_requested_at = now(),
                  finished_at = case when status = 'queued' then now() else finished_at end,
                  updated_at = now()
-             from user_account u
-             where u.id = $1
-               and u.organization_id = job.organization_id
+             from org_membership m
+             where m.user_id = $1
+               and m.organization_id = job.organization_id
                and job.id = $2
                and job.status in ('queued', 'running')
              returning job.id, job.organization_id, job.project_id, job.source_document_id,
@@ -616,8 +616,8 @@ impl PgIngestionRepository {
         let exists = sqlx::query_scalar::<_, bool>(
             "select exists(
                select 1 from ingestion_job job
-               join user_account u on u.organization_id = job.organization_id
-               where u.id = $1 and job.id = $2
+               join org_membership m on m.organization_id = job.organization_id
+               where m.user_id = $1 and job.id = $2
              )",
         )
         .bind(user_id)

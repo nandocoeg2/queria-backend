@@ -79,6 +79,8 @@ async fn list_agent_tokens(
     headers: HeaderMap,
 ) -> ApiResult<Vec<AgentTokenResponse>> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let tokens = repository
         .list_agent_tokens(session.user_id)
@@ -96,6 +98,8 @@ async fn create_agent_token(
     body: Bytes,
 ) -> ApiResult<CreateAgentTokenResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let payload: CreateAgentTokenRequest = serde_json::from_slice(&body)
         .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_agent_token_payload"))?;
     let expires_at = payload.expires_at()?;
@@ -131,6 +135,8 @@ async fn get_agent_token(
     Path(agent_token_id): Path<AgentTokenId>,
 ) -> ApiResult<AgentTokenResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let Some(token) = repository
         .get_agent_token(session.user_id, agent_token_id)
@@ -149,6 +155,8 @@ async fn revoke_agent_token(
     Path(agent_token_id): Path<AgentTokenId>,
 ) -> ApiResult<AgentTokenResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let Some(token) = repository
         .revoke_agent_token(session.user_id, agent_token_id)

@@ -226,6 +226,8 @@ pub struct AuthUser {
     pub password_hash: String,
     /// Sole `org_membership.organization_id` when present (preferred over legacy).
     pub membership_organization_id: Option<Uuid>,
+    /// Slug for sole membership org when present.
+    pub membership_organization_slug: Option<String>,
     /// Legacy `user_account.organization_id` (always set; NOT NULL in schema).
     pub organization_id: Uuid,
     pub is_platform_super_admin: bool,
@@ -238,6 +240,8 @@ pub struct AuthenticatedSession {
     pub expires_at: DateTime<Utc>,
     /// Home org for tenant routes; None for platform super-admin without membership.
     pub active_organization_id: Option<Uuid>,
+    /// Slug of home org when `active_organization_id` is set (for Admin further-invite without listOrgs).
+    pub active_organization_slug: Option<String>,
     pub is_platform_super_admin: bool,
 }
 
@@ -446,15 +450,20 @@ pub(crate) fn parse_optional_u32(value: Option<String>) -> QueriaResult<Option<u
         .transpose()
 }
 
+/// Home organization for a user: sole `org_membership` row only.
+/// Returns PermissionDenied when the user has no membership (no silent legacy fallback).
 pub(crate) async fn organization_id_for_user(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     user_id: Uuid,
 ) -> QueriaResult<Uuid> {
-    sqlx::query_scalar::<_, Uuid>("select organization_id from user_account where id = $1")
-        .bind(user_id)
-        .fetch_one(&mut **transaction)
-        .await
-        .map_err(to_infrastructure_error)
+    sqlx::query_scalar::<_, Uuid>(
+        "select organization_id from org_membership where user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(to_infrastructure_error)?
+    .ok_or(QueriaError::PermissionDenied)
 }
 
 pub(crate) async fn count_accessible_project_slugs(
@@ -506,8 +515,8 @@ pub(crate) async fn approval_for_update(
                 a.reason, a.created_at, a.decided_at, ki.approved_at
          from approval a
          join knowledge_item ki on ki.id = a.knowledge_item_id
-         join user_account u on u.organization_id = ki.organization_id
-         where u.id = $1
+         join org_membership m on m.organization_id = ki.organization_id
+         where m.user_id = $1
            and a.id = $2
          for update of a, ki",
     )

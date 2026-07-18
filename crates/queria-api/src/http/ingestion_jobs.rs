@@ -67,6 +67,8 @@ async fn trigger_ingestion(
     Path(source_document_id): Path<SourceDocumentId>,
 ) -> ApiResult<IngestionJobResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = repository(&state)?;
     let Some(job) = repository
         .trigger(session.user_id, source_document_id)
@@ -85,6 +87,8 @@ async fn list_jobs(
     Query(query): Query<ListJobsQuery>,
 ) -> ApiResult<Vec<IngestionJobResponse>> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let status = query.status.as_deref().map(str::trim);
     if status.is_some_and(|status| !valid_status(status)) {
         return Err(error(StatusCode::BAD_REQUEST, "invalid_ingestion_status"));
@@ -107,6 +111,8 @@ async fn get_job(
     Path(job_id): Path<IngestionJobId>,
 ) -> ApiResult<IngestionJobResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let Some(job) = repository(&state)?
         .get_for_user(session.user_id, job_id)
         .await
@@ -123,6 +129,8 @@ async fn retry_job(
     Path(job_id): Path<IngestionJobId>,
 ) -> ApiResult<IngestionJobResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     mutation_response(
         repository(&state)?
             .retry(session.user_id, job_id)
@@ -137,6 +145,8 @@ async fn cancel_job(
     Path(job_id): Path<IngestionJobId>,
 ) -> ApiResult<IngestionJobResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     mutation_response(
         repository(&state)?
             .cancel(session.user_id, job_id)

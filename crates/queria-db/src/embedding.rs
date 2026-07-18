@@ -141,8 +141,8 @@ impl PgEmbeddingRepository {
             "with accessible_project as (
                select p.organization_id, p.id
                from project p
-               join user_account u on u.organization_id = p.organization_id
-               where u.id = $1 and p.id = $2
+               join org_membership m on m.organization_id = p.organization_id
+               where m.user_id = $1 and p.id = $2
              )
              insert into ingestion_job(
                organization_id, project_id, job_type, payload

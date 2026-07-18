@@ -66,6 +66,8 @@ async fn list_sources(
     Query(query): Query<ListSourcesQuery>,
 ) -> ApiResult<Vec<SourceDocumentResponse>> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     if !valid_slug(query.project_slug.trim()) {
         return Err(error(StatusCode::BAD_REQUEST, "invalid_project_slug"));
     }
@@ -90,6 +92,8 @@ async fn register_source(
     Json(payload): Json<RegisterSourceRequest>,
 ) -> ApiResult<SourceDocumentResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let params = payload.into_params()?;
     let repository = project_repository(&state)?;
     let source = repository
@@ -183,6 +187,8 @@ async fn get_source(
     Path(source_document_id): Path<SourceDocumentId>,
 ) -> Result<Json<SourceDocumentDetailResponse>, (StatusCode, Json<ErrorResponse>)> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let Some(repository) = state.admin_queries_repository() else {
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,

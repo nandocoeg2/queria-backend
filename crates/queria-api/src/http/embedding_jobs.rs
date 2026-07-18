@@ -39,6 +39,8 @@ async fn trigger_backfill(
     Path(slug): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let (project_id, repository) = project_and_repository(&state, session.user_id, &slug).await?;
     let job = repository
         .enqueue_backfill(
@@ -59,6 +61,8 @@ async fn list_project_jobs(
     Query(query): Query<JobQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let (project_id, _) = project_and_repository(&state, session.user_id, &slug).await?;
     let repository = state.ingestion_repository().ok_or_else(|| {
         error(
@@ -84,6 +88,8 @@ async fn retrieval_status(
     Path(slug): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let (project_id, repository) = project_and_repository(&state, session.user_id, &slug).await?;
     let counts = repository
         .status_counts(project_id, &state.config.embedding.profile_version)
@@ -102,6 +108,8 @@ async fn get_job(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = state.ingestion_repository().ok_or_else(|| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -140,6 +148,8 @@ async fn mutate_job(
     retry: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let session = require_session(state, headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = state.ingestion_repository().ok_or_else(|| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,

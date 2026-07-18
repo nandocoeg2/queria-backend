@@ -58,8 +58,8 @@ impl PgEvaluationRepository {
             "with accessible_project as (
                select p.organization_id, p.id
                from project p
-               join user_account u on u.organization_id = p.organization_id
-               where u.id = $1 and p.slug = $2
+               join org_membership m on m.organization_id = p.organization_id
+               where m.user_id = $1 and p.slug = $2
              )
              insert into evaluation_report(
                organization_id, project_id, project_slug, golden_question_file, status,
@@ -102,9 +102,9 @@ impl PgEvaluationRepository {
                     report.failed_questions, report.regression_score,
                     report.report_json, report.created_by, report.created_at
              from evaluation_report report
-             join user_account u on u.organization_id = report.organization_id
+             join org_membership m on m.organization_id = report.organization_id
              join project p on p.id = report.project_id
-             where u.id = $1 and p.slug = $2
+             where m.user_id = $1 and p.slug = $2
              order by report.created_at desc, report.id desc
              limit $3",
         )
