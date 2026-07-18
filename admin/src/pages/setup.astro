@@ -67,20 +67,21 @@ if (Astro.request.method === 'POST') {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>First-Run Setup Wizard | Queria</title>
+    <!-- Violet Void type stack: Inter / Geist / Funnel Sans -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Funnel+Sans:ital,wght@0,300..800;1,300..800&family=Geist:wght@100..900&family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
   </head>
   <body class="setup-body">
     <div class="setup-container">
       <div class="setup-header">
-        <div class="logo">Q</div>
+        <div class="logo" aria-hidden="true">Q</div>
         <h1>Queria</h1>
         <p>First-Run Infrastructure Setup Wizard</p>
       </div>
 
       <div class="card setup-card">
-        {error && <div class="error-alert">{error}</div>}
+        {error && <div class="error-alert" role="alert">{error}</div>}
 
         <form method="POST">
           <div class="section-title">
@@ -183,6 +184,7 @@ if (Astro.request.method === 'POST') {
     min-height: 100vh;
     font-family: var(--font-family-body);
     padding: var(--spacing-xxl) var(--spacing-xl);
+    color: var(--color-on-background);
   }
 
   .setup-container {
@@ -204,7 +206,7 @@ if (Astro.request.method === 'POST') {
   .logo {
     width: 48px;
     height: 48px;
-    border-radius: var(--radius-default);
+    border-radius: var(--radius-sm);
     background-color: var(--color-primary);
     color: var(--color-on-primary);
     display: flex;
@@ -217,16 +219,23 @@ if (Astro.request.method === 'POST') {
 
   .setup-header h1 {
     font-size: 32px;
+    font-family: var(--font-family-headline);
+    font-weight: 600;
     color: var(--color-on-surface);
   }
 
   .setup-header p {
     font-size: 13px;
+    font-family: var(--font-family-caption);
     color: var(--color-on-surface-variant);
   }
 
   .setup-card {
     padding: var(--spacing-xxl);
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-elevated);
   }
 
   .section-title {
@@ -237,7 +246,8 @@ if (Astro.request.method === 'POST') {
   }
 
   .section-title h3 {
-    font-size: 14px;
+    font-size: 12px;
+    font-family: var(--font-family-caption);
     color: var(--color-primary);
     font-weight: 700;
     text-transform: uppercase;
@@ -264,6 +274,7 @@ if (Astro.request.method === 'POST') {
   .form-group label {
     font-size: 11px;
     font-weight: 700;
+    font-family: var(--font-family-caption);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
@@ -281,18 +292,25 @@ if (Astro.request.method === 'POST') {
     letter-spacing: normal;
     font-size: 13px;
     font-weight: 500;
+    font-family: var(--font-family-body);
   }
 
   .form-control {
     width: 100%;
     padding: 0.5rem var(--spacing-md);
     border: 1px solid var(--color-outline-variant);
-    border-radius: var(--radius-default);
+    border-radius: var(--radius-sm);
     background-color: var(--color-surface-container-lowest);
     color: var(--color-on-surface);
     font-family: var(--font-family-body);
     font-size: 13px;
     outline: none;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
 
   .btn-block {

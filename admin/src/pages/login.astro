@@ -57,14 +57,15 @@ if (Astro.request.method === 'POST') {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign In | Queria Console</title>
+    <!-- Violet Void type stack: Inter / Geist / Funnel Sans -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Funnel+Sans:ital,wght@0,300..800;1,300..800&family=Geist:wght@100..900&family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
   </head>
   <body class="login-body">
     <div class="login-container">
       <div class="login-header">
-        <div class="logo">Q</div>
+        <div class="logo" aria-hidden="true">Q</div>
         <h1>Queria</h1>
         <p>Knowledge Base Administration Console</p>
       </div>
@@ -73,7 +74,7 @@ if (Astro.request.method === 'POST') {
         {justAccepted && !error && (
           <div class="success-alert">Invite accepted. Sign in with the email and password you set.</div>
         )}
-        {error && <div class="error-alert">{error}</div>}
+        {error && <div class="error-alert" role="alert">{error}</div>}
 
         <form method="POST">
           <div class="form-group">
@@ -86,6 +87,7 @@ if (Astro.request.method === 'POST') {
               value={prefillEmail}
               placeholder="nando@fjulian.id" 
               class="form-control"
+              autocomplete="username"
             />
           </div>
 
@@ -98,6 +100,7 @@ if (Astro.request.method === 'POST') {
               required 
               placeholder="••••••••" 
               class="form-control"
+              autocomplete="current-password"
             />
           </div>
 
@@ -117,6 +120,7 @@ if (Astro.request.method === 'POST') {
     min-height: 100vh;
     font-family: var(--font-family-body);
     padding: var(--spacing-xl);
+    color: var(--color-on-background);
   }
 
   .login-container {
@@ -138,7 +142,7 @@ if (Astro.request.method === 'POST') {
   .logo {
     width: 48px;
     height: 48px;
-    border-radius: var(--radius-default);
+    border-radius: var(--radius-sm);
     background-color: var(--color-primary);
     color: var(--color-on-primary);
     display: flex;
@@ -151,16 +155,23 @@ if (Astro.request.method === 'POST') {
 
   .login-header h1 {
     font-size: 32px;
+    font-family: var(--font-family-headline);
+    font-weight: 600;
     color: var(--color-on-surface);
   }
 
   .login-header p {
     font-size: 13px;
+    font-family: var(--font-family-caption);
     color: var(--color-on-surface-variant);
   }
 
   .login-card {
     padding: var(--spacing-xxl);
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-elevated);
   }
 
   .error-alert {
@@ -174,7 +185,7 @@ if (Astro.request.method === 'POST') {
   }
 
   .success-alert {
-    background-color: var(--color-surface-container);
+    background-color: var(--color-surface-container-high);
     color: var(--color-on-surface);
     border: 1px solid var(--color-outline-variant);
     border-radius: var(--radius-sm);
@@ -193,6 +204,7 @@ if (Astro.request.method === 'POST') {
   .form-group label {
     font-size: 11px;
     font-weight: 700;
+    font-family: var(--font-family-caption);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
@@ -202,18 +214,18 @@ if (Astro.request.method === 'POST') {
     width: 100%;
     padding: 0.75rem var(--spacing-md);
     border: 1px solid var(--color-outline-variant);
-    border-radius: var(--radius-default);
+    border-radius: var(--radius-sm);
     background-color: var(--color-surface-container-lowest);
     color: var(--color-on-surface);
     font-family: var(--font-family-body);
     font-size: 14px;
     outline: none;
-    transition: all 0.15s ease-in-out;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
   }
 
   .form-control:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-outline-variant);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
 
   .btn-block {
