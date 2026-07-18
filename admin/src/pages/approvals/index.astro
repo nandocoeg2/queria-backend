@@ -92,16 +92,24 @@ const formatDate = (dateStr?: string) => {
                 </td>
                 <td>{formatDate(approval.created_at)}</td>
                 <td class="action-cell">
-                  <form method="POST" style="display:inline">
-                    <input type="hidden" name="action" value="approve" />
-                    <input type="hidden" name="approval_id" value={approval.id} />
-                    <button type="submit" class="btn btn-primary btn-sm">Approve</button>
-                  </form>
-                  <form method="POST" style="display:inline">
-                    <input type="hidden" name="action" value="reject" />
-                    <input type="hidden" name="approval_id" value={approval.id} />
-                    <button type="submit" class="btn btn-secondary btn-sm btn-danger-hover">Reject</button>
-                  </form>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-open-confirm="approve"
+                    data-approval-id={approval.id}
+                    data-approval-title={approval.title || 'Untitled proposal'}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm btn-danger-hover"
+                    data-open-confirm="reject"
+                    data-approval-id={approval.id}
+                    data-approval-title={approval.title || 'Untitled proposal'}
+                  >
+                    Reject
+                  </button>
                 </td>
               </tr>
             ))}
@@ -114,6 +122,85 @@ const formatDate = (dateStr?: string) => {
       </div>
     )}
   </div>
+
+  <!-- Approve confirmation (SSR POST; dark Violet Void dialog) -->
+  <dialog id="approve-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Approve proposal</h3>
+      <button type="button" class="dialog-close" data-close-dialog="approve-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Confirm approval of <strong id="approve-confirm-title">this proposal</strong>? Approved items join the knowledge base.
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="approve" />
+      <input type="hidden" name="approval_id" id="approve-confirm-id" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="approve-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+          Confirm Approve
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reject confirmation (SSR POST; distinct destructive confirm) -->
+  <dialog id="reject-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Reject proposal</h3>
+      <button type="button" class="dialog-close" data-close-dialog="reject-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Confirm rejection of <strong id="reject-confirm-title">this proposal</strong>? It will leave the pending queue without being published.
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="reject" />
+      <input type="hidden" name="approval_id" id="reject-confirm-id" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="reject-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-secondary btn-danger-confirm">
+          Confirm Reject
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <script is:inline>
+    (function () {
+      function openConfirm(kind, id, title) {
+        const dialog = document.getElementById(kind === 'approve' ? 'approve-confirm-dialog' : 'reject-confirm-dialog');
+        const idInput = document.getElementById(kind === 'approve' ? 'approve-confirm-id' : 'reject-confirm-id');
+        const titleEl = document.getElementById(kind === 'approve' ? 'approve-confirm-title' : 'reject-confirm-title');
+        if (!dialog || !idInput || !titleEl) return;
+        idInput.value = id || '';
+        titleEl.textContent = title || 'this proposal';
+        if (typeof dialog.showModal === 'function') {
+          dialog.showModal();
+        }
+      }
+
+      document.querySelectorAll('[data-open-confirm]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          openConfirm(
+            btn.getAttribute('data-open-confirm'),
+            btn.getAttribute('data-approval-id'),
+            btn.getAttribute('data-approval-title')
+          );
+        });
+      });
+
+      document.querySelectorAll('[data-close-dialog]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const dialog = document.getElementById(btn.getAttribute('data-close-dialog'));
+          if (dialog && typeof dialog.close === 'function') dialog.close();
+        });
+      });
+    })();
+  </script>
 </AdminLayout>
 
 <style>
@@ -256,10 +343,96 @@ const formatDate = (dateStr?: string) => {
     background-color: var(--color-error-container);
   }
 
+  .btn-danger-confirm {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .btn-danger-confirm:hover {
+    background-color: color-mix(in srgb, var(--color-error) 22%, transparent);
+    color: #fff;
+    border-color: var(--color-error);
+  }
+
   .empty-state {
     text-align: center;
     padding: var(--spacing-xxl);
     color: var(--color-on-surface-variant);
     font-style: italic;
+  }
+
+  /* Confirm dialogs — dark elevated panels (match projects create dialog) */
+  .confirm-dialog {
+    max-width: 26rem;
+    width: calc(100% - 2rem);
+    margin: auto;
+    padding: var(--spacing-xl);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .confirm-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.65);
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .dialog-header h3 {
+    font-size: 1.125rem;
+    font-family: var(--font-family-headline);
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .dialog-close {
+    background: transparent;
+    border: none;
+    color: var(--color-on-surface-variant);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+  }
+
+  .dialog-close:hover {
+    color: var(--color-primary);
+  }
+
+  .dialog-body {
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+    line-height: 1.5;
+    margin: 0 0 var(--spacing-lg);
+  }
+
+  .dialog-body strong {
+    color: var(--color-on-surface);
+    font-weight: 600;
+  }
+
+  .dialog-form {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--color-outline-variant);
   }
 </style>
