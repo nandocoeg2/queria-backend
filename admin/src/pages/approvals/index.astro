@@ -128,7 +128,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .panel-header h2 {
+    font-family: var(--font-family-headline);
     font-size: 16px;
+    color: var(--color-on-surface);
   }
 
   .alert-message {
@@ -139,9 +141,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .alert-message.success {
-    background-color: #d1fae5;
-    color: #065f46;
-    border: 1px solid #10b981;
+    background-color: #0a2e1f;
+    color: #34d399;
+    border: 1px solid #145c40;
   }
 
   .alert-message.error {
@@ -163,8 +165,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .approvals-table th {
-    background-color: var(--color-surface-container);
+    background-color: var(--color-surface-container-high);
     color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -181,22 +184,25 @@ const formatDate = (dateStr?: string) => {
   }
 
   .approvals-table tbody tr:hover {
-    background-color: var(--color-surface-container-lowest);
+    background-color: var(--color-surface-container-high);
   }
 
   .proposal-title {
     font-weight: 600;
     margin-bottom: var(--spacing-xs);
+    color: var(--color-on-surface);
   }
 
   .proposal-body {
-    background-color: var(--color-surface-container-low);
+    background-color: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
     padding: var(--spacing-sm);
     border-radius: var(--radius-sm);
     max-width: 400px;
     max-height: 120px;
     overflow-y: auto;
     font-size: 11px;
+    color: var(--color-on-surface-variant);
     white-space: pre-wrap;
     word-break: break-all;
   }
@@ -208,10 +214,16 @@ const formatDate = (dateStr?: string) => {
   .actor-code {
     font-family: var(--font-family-mono);
     font-size: 11px;
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    padding: 0.125rem 0.25rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
   }
 
   .scope-cell {
     display: block;
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -221,6 +233,11 @@ const formatDate = (dateStr?: string) => {
   .source-link {
     font-size: 11px;
     font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .source-link:hover {
+    color: var(--color-primary-container);
   }
 
   .action-cell {

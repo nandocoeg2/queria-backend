@@ -352,11 +352,14 @@ const snippet = (body?: string, max = 220) => {
   }
 
   .panel-header h2 {
+    font-family: var(--font-family-headline);
     font-size: 16px;
+    color: var(--color-on-surface);
   }
 
   .panel-sub {
     width: 100%;
+    font-family: var(--font-family-caption);
     font-size: 12px;
     color: var(--color-on-surface-variant);
     margin-top: calc(-1 * var(--spacing-sm));
@@ -398,6 +401,7 @@ const snippet = (body?: string, max = 220) => {
   }
 
   .form-group label {
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -419,6 +423,12 @@ const snippet = (body?: string, max = 220) => {
 
   .form-control:focus {
     border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .form-control option {
+    background: var(--color-surface-container);
+    color: var(--color-on-surface);
   }
 
   .form-control-narrow {
@@ -492,7 +502,7 @@ const snippet = (body?: string, max = 220) => {
   }
 
   .flag-on {
-    color: #065f46;
+    color: #34d399;
   }
 
   .flag-off {
@@ -562,13 +572,15 @@ const snippet = (body?: string, max = 220) => {
   }
 
   .lane-trusted {
-    background-color: #d1fae5;
-    color: #065f46;
+    background-color: #0a2e1f;
+    color: #34d399;
+    border: 1px solid #145c40;
   }
 
   .lane-scratch {
-    background-color: #fef3c7;
-    color: #92400e;
+    background-color: #2a2410;
+    color: #fbbf24;
+    border: 1px solid #5c4a14;
   }
 
   .status-chip {
