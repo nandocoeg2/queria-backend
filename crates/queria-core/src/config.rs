@@ -93,6 +93,9 @@ pub struct AppConfig {
     pub setup_token: String,
     pub first_admin_email: String,
     pub first_org_slug: String,
+    /// Comma-separated emails elevated as platform super-admin at session load.
+    /// Env: `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS`. Complements DB flag.
+    pub platform_super_admin_emails: Vec<String>,
     /// Shared max UTF-8 body bytes for MCP `index_memory` and `propose_memory` (IMP-23).
     /// Env: `QUERIA_MAX_BODY_BYTES`. Default 20_000.
     pub max_body_bytes: usize,
@@ -138,6 +141,10 @@ impl AppConfig {
             setup_token: read_env("QUERIA_SETUP_TOKEN", &defaults.setup_token),
             first_admin_email: read_env("QUERIA_FIRST_ADMIN_EMAIL", &defaults.first_admin_email),
             first_org_slug: read_env("QUERIA_FIRST_ORG_SLUG", &defaults.first_org_slug),
+            platform_super_admin_emails: read_csv_env(
+                "QUERIA_PLATFORM_SUPER_ADMIN_EMAILS",
+                &defaults.platform_super_admin_emails,
+            ),
             max_body_bytes: read_number_env("QUERIA_MAX_BODY_BYTES", defaults.max_body_bytes)?,
             qdrant: QdrantSettings {
                 url: read_env("QUERIA_QDRANT_URL", &defaults.qdrant.url),
@@ -297,6 +304,7 @@ impl AppConfig {
             setup_token: "change-me-one-time-setup-token".to_owned(),
             first_admin_email: "nando@fjulian.id".to_owned(),
             first_org_slug: "fjulian".to_owned(),
+            platform_super_admin_emails: Vec::new(),
             max_body_bytes: 20_000,
             qdrant: QdrantSettings {
                 url: "http://127.0.0.1:17676".to_owned(),

@@ -224,6 +224,11 @@ pub struct AuthUser {
     pub id: Uuid,
     pub email: String,
     pub password_hash: String,
+    /// Sole `org_membership.organization_id` when present (preferred over legacy).
+    pub membership_organization_id: Option<Uuid>,
+    /// Legacy `user_account.organization_id` (always set; NOT NULL in schema).
+    pub organization_id: Uuid,
+    pub is_platform_super_admin: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -231,6 +236,9 @@ pub struct AuthenticatedSession {
     pub user_id: Uuid,
     pub email: String,
     pub expires_at: DateTime<Utc>,
+    /// Home org for tenant routes; None for platform super-admin without membership.
+    pub active_organization_id: Option<Uuid>,
+    pub is_platform_super_admin: bool,
 }
 
 pub(crate) fn project_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<ProjectRecord> {

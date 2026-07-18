@@ -4,7 +4,7 @@ mod auth;
 mod projects;
 mod types;
 
-pub use auth::PgAuthRepository;
+pub use auth::{PgAuthRepository, resolve_active_organization_id};
 pub use projects::PgProjectRepository;
 pub use types::{
     AgentTokenRecord, ApprovalRecord, ApprovedKnowledgeRecord, AuthUser, AuthenticatedAgentToken,

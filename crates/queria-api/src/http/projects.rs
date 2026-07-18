@@ -50,6 +50,9 @@ async fn list_projects(
     headers: HeaderMap,
 ) -> ApiResult<Vec<ProjectResponse>> {
     let session = require_session(&state, &headers).await?;
+    // Tenant gate: super-admin without membership must not get empty global list.
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let repository = project_repository(&state)?;
     let projects = repository
         .list_projects(session.user_id)
@@ -67,6 +70,8 @@ async fn create_project(
     Json(payload): Json<CreateProjectRequest>,
 ) -> ApiResult<ProjectResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     let params = payload.into_params()?;
     let repository = project_repository(&state)?;
     let project = repository
@@ -83,6 +88,8 @@ async fn get_project(
     Path(slug): Path<String>,
 ) -> ApiResult<ProjectResponse> {
     let session = require_session(&state, &headers).await?;
+    let _home_org = auth::require_active_org(&session)
+        .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
     if !valid_slug(&slug) {
         return Err(error(StatusCode::BAD_REQUEST, "invalid_project_slug"));
     }
