@@ -163,6 +163,18 @@ const formatDate = (dateStr?: string) => {
     width: auto;
     min-width: 200px;
     padding: 0.5rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+  }
+
+  .inline-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
   }
 
   .alert-message {
@@ -173,9 +185,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .alert-message.success {
-    background-color: #d1fae5;
-    color: #065f46;
-    border: 1px solid #10b981;
+    background-color: #0a2e1f;
+    color: #34d399;
+    border: 1px solid #145c40;
   }
 
   .alert-message.error {
@@ -196,13 +208,17 @@ const formatDate = (dateStr?: string) => {
 
   .panel-header h2 {
     font-size: 16px;
+    color: var(--color-on-surface);
+    font-family: var(--font-family-headline);
   }
 
   .project-slug-title {
     font-family: var(--font-family-mono);
-    background-color: var(--color-surface-container-low);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
     padding: 0.125rem 0.25rem;
     border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
   }
 
   .table-container {
@@ -218,8 +234,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .sources-table th {
-    background-color: var(--color-surface-container);
+    background-color: var(--color-surface-container-high);
     color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -235,7 +252,7 @@ const formatDate = (dateStr?: string) => {
   }
 
   .sources-table tbody tr:hover {
-    background-color: var(--color-surface-container-lowest);
+    background-color: var(--color-surface-container-high);
   }
 
   .source-title {

@@ -49,7 +49,7 @@ const formatDate = (dateStr?: string) => {
 
 <AdminLayout title="Projects Management" activeTab="projects">
   {error && (
-    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6 text-sm">
+    <div class="alert-message error">
       <strong>Error:</strong> {error}
     </div>
   )}
@@ -57,7 +57,7 @@ const formatDate = (dateStr?: string) => {
   <div class="card projects-panel">
     <div class="panel-header">
       <h2>Registered Projects</h2>
-      <button class="btn btn-primary" onclick="document.getElementById('create-project-dialog').showModal()">
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('create-project-dialog').showModal()">
         Create Project
       </button>
     </div>
@@ -106,88 +106,77 @@ const formatDate = (dateStr?: string) => {
     )}
   </div>
 
-  <!-- Create Project Dialog Modal -->
-  <dialog id="create-project-dialog" class="backdrop:bg-black/50 p-6 rounded-lg border border-[#dbc1b5] shadow-2xl bg-[#fff8f5] text-[#221a14] max-w-md w-full focus:outline-none">
-    <div class="flex justify-between items-center mb-4 border-b border-[#dbc1b5]/50 pb-2">
-      <h3 class="text-lg font-headline font-semibold text-[#964407]">Create New Project</h3>
-      <button type="button" class="text-sm font-semibold text-[#605e59] hover:text-[#964407] cursor-pointer" onclick="document.getElementById('create-project-dialog').close()">✕</button>
+  <!-- Create Project Dialog Modal (tokenized Violet Void) -->
+  <dialog id="create-project-dialog" class="create-dialog">
+    <div class="dialog-header">
+      <h3>Create New Project</h3>
+      <button type="button" class="dialog-close" onclick="document.getElementById('create-project-dialog').close()" aria-label="Close">✕</button>
     </div>
-    
-    <form method="POST" class="space-y-4">
-      <div class="flex flex-col gap-1">
-        <label for="slug" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Project Slug</label>
-        <input 
-          type="text" 
-          id="slug" 
-          name="slug" 
-          required 
-          placeholder="e.g. my-awesome-project" 
+
+    <form method="POST" class="dialog-form">
+      <div class="field">
+        <label for="slug">Project slug</label>
+        <input
+          type="text"
+          id="slug"
+          name="slug"
+          required
+          placeholder="e.g. my-awesome-project"
           pattern="[a-z0-9-]{3,64}"
           title="Slug must be lowercase alphanumeric and dashes only, 3-64 chars."
-          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
         />
       </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="name" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Project Name</label>
-        <input 
-          type="text" 
-          id="name" 
-          name="name" 
-          required 
-          placeholder="e.g. My Awesome Project" 
+      <div class="field">
+        <label for="name">Project name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          required
+          placeholder="e.g. My Awesome Project"
           maxlength="128"
-          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
         />
       </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="description" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Description</label>
-        <textarea 
-          id="description" 
-          name="description" 
-          placeholder="Describe your project..." 
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea
+          id="description"
+          name="description"
+          placeholder="Describe your project..."
           rows="3"
-          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407] resize-none"
         ></textarea>
       </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="default_embedding_model" class="text-xs font-bold uppercase tracking-wider text-[#554339]">Default Embedding Model</label>
-        <select 
-          id="default_embedding_model" 
-          name="default_embedding_model"
-          class="w-full px-3 py-2 border border-[#dbc1b5] rounded-md bg-[#ffffff] text-[#221a14] font-body text-sm outline-none focus:border-[#964407]"
-        >
+      <div class="field">
+        <label for="default_embedding_model">Default embedding model</label>
+        <select id="default_embedding_model" name="default_embedding_model">
           <option value="voyage-4" selected>Voyage 4 (voyage-4)</option>
           <option value="voyage-code-3">Voyage Code 3 (voyage-code-3)</option>
         </select>
       </div>
 
-      <div class="flex items-center gap-2 pt-2">
-        <input 
-          type="checkbox" 
-          id="include_global_default" 
-          name="include_global_default" 
-          value="true" 
+      <div class="field-check">
+        <input
+          type="checkbox"
+          id="include_global_default"
+          name="include_global_default"
+          value="true"
           checked
-          class="rounded border-[#dbc1b5] text-[#964407] focus:ring-[#964407]"
         />
-        <label for="include_global_default" class="text-sm font-medium text-[#221a14]">Include global knowledge by default</label>
+        <label for="include_global_default">Include global knowledge by default</label>
       </div>
 
-      <div class="flex justify-end gap-3 pt-4 border-t border-[#dbc1b5]/50">
-        <button 
-          type="button" 
-          class="px-4 py-2 border border-[#dbc1b5] rounded-md text-sm font-semibold hover:bg-[#fff1ea] text-[#221a14] cursor-pointer" 
+      <div class="dialog-actions">
+        <button
+          type="button"
+          class="btn btn-secondary"
           onclick="document.getElementById('create-project-dialog').close()"
         >
           Cancel
         </button>
-        <button 
-          type="submit" 
-          class="px-4 py-2 bg-[#964407] text-[#ffffff] rounded-md text-sm font-semibold hover:bg-[#b65c21] cursor-pointer"
-        >
+        <button type="submit" class="btn btn-primary">
           Create Project
         </button>
       </div>
@@ -196,6 +185,19 @@ const formatDate = (dateStr?: string) => {
 </AdminLayout>
 
 <style>
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
   .projects-panel {
     padding: var(--spacing-xl);
   }
@@ -211,6 +213,8 @@ const formatDate = (dateStr?: string) => {
 
   .panel-header h2 {
     font-size: 16px;
+    color: var(--color-on-surface);
+    font-family: var(--font-family-headline);
   }
 
   .table-container {
@@ -226,8 +230,9 @@ const formatDate = (dateStr?: string) => {
   }
 
   .projects-table th {
-    background-color: var(--color-surface-container);
+    background-color: var(--color-surface-container-high);
     color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -243,15 +248,17 @@ const formatDate = (dateStr?: string) => {
   }
 
   .projects-table tbody tr:hover {
-    background-color: var(--color-surface-container-lowest);
+    background-color: var(--color-surface-container-high);
   }
 
   .project-slug {
     font-family: var(--font-family-mono);
     font-size: 11px;
-    background-color: var(--color-surface-container-low);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
     padding: 0.125rem 0.25rem;
     border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
   }
 
   .project-name {
@@ -268,6 +275,7 @@ const formatDate = (dateStr?: string) => {
   .model-code {
     font-family: var(--font-family-mono);
     font-size: 11px;
+    color: var(--color-on-surface-variant);
   }
 
   .muted {
@@ -289,5 +297,131 @@ const formatDate = (dateStr?: string) => {
     padding: var(--spacing-xxl);
     color: var(--color-on-surface-variant);
     font-style: italic;
+  }
+
+  /* Dark create dialog */
+  .create-dialog {
+    max-width: 28rem;
+    width: calc(100% - 2rem);
+    margin: auto;
+    padding: var(--spacing-xl);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .create-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.65);
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .dialog-header h3 {
+    font-size: 1.125rem;
+    font-family: var(--font-family-headline);
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .dialog-close {
+    background: transparent;
+    border: none;
+    color: var(--color-on-surface-variant);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+  }
+
+  .dialog-close:hover {
+    color: var(--color-primary);
+  }
+
+  .dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .field label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
+  }
+
+  .field input,
+  .field textarea,
+  .field select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .field input:focus,
+  .field textarea:focus,
+  .field select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .field textarea {
+    resize: none;
+  }
+
+  .field select {
+    appearance: auto;
+  }
+
+  .field-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+  }
+
+  .field-check input[type="checkbox"] {
+    accent-color: var(--color-primary);
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .field-check label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-on-surface);
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding-top: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+    border-top: 1px solid var(--color-outline-variant);
   }
 </style>
