@@ -7,40 +7,94 @@ if (!projects) {
   return Astro.redirect('/admin/login');
 }
 
+const hasProjects = Array.isArray(projects) && projects.length > 0;
 const url = new URL(Astro.request.url);
 const selectedSlug = url.searchParams.get('project_slug') || projects[0]?.slug;
 
 let message = '';
 let isError = false;
 
-// Handle trigger ingestion form post
-if (Astro.request.method === 'POST' && selectedSlug) {
+// Handle form POSTs (register source / trigger ingestion)
+if (Astro.request.method === 'POST') {
   try {
     const data = await Astro.request.formData();
     const action = data.get('action');
-    const sourceId = data.get('source_id');
 
-    if (action === 'ingest' && sourceId) {
-      const res = await fetchFromBackend(`/api/v1/sources/${sourceId}/ingest`, Astro.request, {
-        method: 'POST',
-      });
+    if (action === 'register') {
+      const projectSlug = (data.get('project_slug')?.toString() || selectedSlug || '').trim();
+      const title = (data.get('title')?.toString() || '').trim();
+      const uri = (data.get('uri')?.toString() || '').trim();
+      const branch = (data.get('branch')?.toString() || 'main').trim() || 'main';
+      const sourcePathRaw = (data.get('source_path')?.toString() || '').trim();
 
-      if (res.ok) {
-        message = 'Ingestion job successfully queued.';
-      } else {
-        const errorRes = await res.json().catch(() => ({}));
-        message = errorRes.error || 'Failed to trigger ingestion job.';
+      if (!projectSlug) {
+        message = 'Select a project first.';
         isError = true;
+      } else if (!uri) {
+        message = 'Git URI is required.';
+        isError = true;
+      } else if (uri.length > 2048) {
+        message = 'Git URI must be 2048 characters or fewer.';
+        isError = true;
+      } else if (!title) {
+        message = 'Title is required.';
+        isError = true;
+      } else if (title.length > 256) {
+        message = 'Title must be 256 characters or fewer.';
+        isError = true;
+      } else {
+        const body: Record<string, unknown> = {
+          project_slug: projectSlug,
+          kind: 'git_repo',
+          uri,
+          title,
+          branch,
+          content_hash: 'initial',
+          metadata: {},
+        };
+        if (sourcePathRaw) {
+          body.source_path = sourcePathRaw;
+        }
+
+        const res = await fetchFromBackend('/api/v1/sources', Astro.request, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+
+        if (res.ok) {
+          message = 'Git source registered successfully.';
+        } else {
+          const errorRes = await res.json().catch(() => ({}));
+          message = errorRes.error || 'Failed to register git source.';
+          isError = true;
+        }
+      }
+    } else if (action === 'ingest' && selectedSlug) {
+      const sourceId = data.get('source_id');
+
+      if (sourceId) {
+        const res = await fetchFromBackend(`/api/v1/sources/${sourceId}/ingest`, Astro.request, {
+          method: 'POST',
+        });
+
+        if (res.ok) {
+          message = 'Ingestion job successfully queued.';
+        } else {
+          const errorRes = await res.json().catch(() => ({}));
+          message = errorRes.error || 'Failed to trigger ingestion job.';
+          isError = true;
+        }
       }
     }
   } catch (err) {
-    console.error('Trigger Ingestion error:', err);
+    console.error('Sources action error:', err);
     message = 'Error communicating with server.';
     isError = true;
   }
 }
 
 const sources = selectedSlug ? await listSources(Astro.request, selectedSlug) : [];
+const sourcesList = Array.isArray(sources) ? sources : [];
 
 // Format dates nicely
 const formatDate = (dateStr?: string) => {
@@ -52,23 +106,30 @@ const formatDate = (dateStr?: string) => {
 ---
 
 <AdminLayout title="Source Documents" activeTab="sources">
-  <div class="project-selector-bar card">
-    <form method="GET" class="filter-form">
-      <label for="project_slug">Select Project:</label>
-      <select 
-        name="project_slug" 
-        id="project_slug" 
-        class="form-control inline-select"
-        onchange="this.form.submit()"
-      >
-        {projects.map((p: any) => (
-          <option value={p.slug} selected={p.slug === selectedSlug}>
-            {p.name} ({p.slug})
-          </option>
-        ))}
-      </select>
-    </form>
-  </div>
+  {hasProjects ? (
+    <div class="project-selector-bar card">
+      <form method="GET" class="filter-form">
+        <label for="project_slug">Select Project:</label>
+        <select
+          name="project_slug"
+          id="project_slug"
+          class="form-control inline-select"
+          onchange="this.form.submit()"
+        >
+          {projects.map((p: any) => (
+            <option value={p.slug} selected={p.slug === selectedSlug}>
+              {p.name} ({p.slug})
+            </option>
+          ))}
+        </select>
+      </form>
+    </div>
+  ) : (
+    <div class="card empty-guidance">
+      <p>No projects exist yet. Create a project first, then register git sources for it.</p>
+      <a href="/admin/projects" class="btn btn-primary">Go to Projects</a>
+    </div>
+  )}
 
   {message && (
     <div class={`alert-message ${isError ? 'error' : 'success'}`}>
@@ -76,67 +137,139 @@ const formatDate = (dateStr?: string) => {
     </div>
   )}
 
-  <div class="card sources-panel">
-    <div class="panel-header">
-      <h2>Active Sources for <code class="project-slug-title">{selectedSlug}</code></h2>
-    </div>
+  {hasProjects && (
+    <div class="sources-split-layout">
+      <div class="card sources-panel">
+        <div class="panel-header">
+          <h2>Active Sources for <code class="project-slug-title">{selectedSlug}</code></h2>
+        </div>
 
-    {sources.length > 0 ? (
-      <div class="table-container">
-        <table class="sources-table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Kind</th>
-              <th>URI</th>
-              <th>Branch / Commit</th>
-              <th>Created At</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sources.map((source: any) => (
-              <tr>
-                <td class="source-title">{source.title}</td>
-                <td><span class="kind-label">{source.kind}</span></td>
-                <td class="source-uri"><code class="uri-code">{source.uri}</code></td>
-                <td class="source-git">
-                  {source.branch ? (
-                    <div>
-                      <span class="branch">branch: {source.branch}</span>
-                      {source.commit_sha && <code class="commit">sha: {source.commit_sha.substring(0, 7)}</code>}
-                    </div>
-                  ) : (
-                    <span class="muted">—</span>
-                  )}
-                </td>
-                <td>{formatDate(source.created_at)}</td>
-                <td class="action-cell">
-                  <a href={`/admin/sources/detail?id=${source.id}`} class="btn btn-secondary btn-sm">
-                    View Details
-                  </a>
-                  
-                  {source.kind === 'git_repo' && (
-                    <form method="POST" style="display:inline">
-                      <input type="hidden" name="action" value="ingest" />
-                      <input type="hidden" name="source_id" value={source.id} />
-                      <button type="submit" class="btn btn-primary btn-sm">
-                        Trigger Ingest
-                      </button>
-                    </form>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {sourcesList.length > 0 ? (
+          <div class="table-container">
+            <table class="sources-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Kind</th>
+                  <th>URI</th>
+                  <th>Branch / Commit</th>
+                  <th>Created At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourcesList.map((source: any) => (
+                  <tr>
+                    <td class="source-title">{source.title}</td>
+                    <td><span class="kind-label">{source.kind}</span></td>
+                    <td class="source-uri"><code class="uri-code">{source.uri}</code></td>
+                    <td class="source-git">
+                      {source.branch ? (
+                        <div>
+                          <span class="branch">branch: {source.branch}</span>
+                          {source.commit_sha && <code class="commit">sha: {source.commit_sha.substring(0, 7)}</code>}
+                        </div>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                    <td>{formatDate(source.created_at)}</td>
+                    <td class="action-cell">
+                      <a href={`/admin/sources/detail?id=${source.id}`} class="btn btn-secondary btn-sm">
+                        View Details
+                      </a>
+
+                      {source.kind === 'git_repo' && (
+                        <form method="POST" style="display:inline">
+                          <input type="hidden" name="action" value="ingest" />
+                          <input type="hidden" name="source_id" value={source.id} />
+                          <button type="submit" class="btn btn-primary btn-sm">
+                            Trigger Ingest
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div class="empty-state">
+            <p>No source documents registered for this project.</p>
+          </div>
+        )}
       </div>
-    ) : (
-      <div class="empty-state">
-        <p>No source documents registered for this project.</p>
+
+      <div class="card register-panel">
+        <div class="panel-header">
+          <h2>Register Git Source</h2>
+        </div>
+
+        <form method="POST" class="register-form">
+          <input type="hidden" name="action" value="register" />
+          <input type="hidden" name="project_slug" value={selectedSlug} />
+
+          <div class="form-group">
+            <label for="title">Title</label>
+            <input
+              type="text"
+              name="title"
+              id="title"
+              class="form-control"
+              required
+              maxlength="256"
+              placeholder="e.g. my-service"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="uri">Git URI</label>
+            <input
+              type="text"
+              name="uri"
+              id="uri"
+              class="form-control"
+              required
+              maxlength="2048"
+              placeholder="git@github.com:org/repo.git"
+            />
+            <p class="field-hint">SSH or HTTPS clone URL. Worker must allowlist the host.</p>
+          </div>
+
+          <div class="form-group">
+            <label for="branch">Branch</label>
+            <input
+              type="text"
+              name="branch"
+              id="branch"
+              class="form-control"
+              value="main"
+              placeholder="main"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="source_path">Source path <span class="optional">(optional)</span></label>
+            <input
+              type="text"
+              name="source_path"
+              id="source_path"
+              class="form-control"
+              placeholder="e.g. docs/"
+            />
+            <p class="field-hint">Subdirectory within the repo to index, if not the root.</p>
+          </div>
+
+          <p class="field-meta">
+            Project: <code>{selectedSlug}</code> · Kind: <code>git_repo</code>
+          </p>
+
+          <button type="submit" class="btn btn-primary btn-block">Register Source</button>
+        </form>
       </div>
-    )}
-  </div>
+    </div>
+  )}
 </AdminLayout>
 
 <style>
@@ -177,6 +310,22 @@ const formatDate = (dateStr?: string) => {
     box-shadow: 0 0 0 1px var(--color-primary);
   }
 
+  .empty-guidance {
+    padding: var(--spacing-xl);
+    text-align: center;
+    margin-bottom: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  .empty-guidance p {
+    color: var(--color-on-surface-variant);
+    font-size: 14px;
+    margin: 0;
+  }
+
   .alert-message {
     padding: var(--spacing-md);
     border-radius: var(--radius-sm);
@@ -196,7 +345,15 @@ const formatDate = (dateStr?: string) => {
     border: 1px solid var(--color-error);
   }
 
-  .sources-panel {
+  .sources-split-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-lg);
+    align-items: start;
+  }
+
+  .sources-panel,
+  .register-panel {
     padding: var(--spacing-xl);
   }
 
@@ -303,5 +460,79 @@ const formatDate = (dateStr?: string) => {
     padding: var(--spacing-xxl);
     color: var(--color-on-surface-variant);
     font-style: italic;
+  }
+
+  .register-form .form-group {
+    margin-bottom: var(--spacing-md);
+  }
+
+  .register-form label {
+    display: block;
+    font-family: var(--font-family-caption);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    margin-bottom: 0.375rem;
+  }
+
+  .register-form .optional {
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: normal;
+    color: var(--color-on-surface-variant);
+    opacity: 0.8;
+  }
+
+  .register-form .form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  .register-form .form-control:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .field-hint {
+    margin: 0.25rem 0 0;
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
+  }
+
+  .field-meta {
+    margin: 0 0 var(--spacing-md);
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
+  }
+
+  .field-meta code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-lowest);
+    padding: 0.1rem 0.25rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
+  }
+
+  .btn-block {
+    width: 100%;
+  }
+
+  @media (max-width: 960px) {
+    .sources-split-layout {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
