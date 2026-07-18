@@ -1,5 +1,5 @@
 use crate::http::{
-    approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs,
+    agent_setup, approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs,
     knowledge_items, projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
@@ -74,6 +74,8 @@ fn build_app_with_state(state: ApiState) -> Router {
     Router::new()
         .merge(health::router())
         .nest("/api/v1/setup", setup::router())
+        // Public agent-driven onboarding: /api/v1/docs/* and /api/v1/setup/* GET helpers.
+        .nest("/api/v1", agent_setup::router())
         .nest("/api/v1/auth", auth::router())
         .nest(
             "/api/v1/projects",

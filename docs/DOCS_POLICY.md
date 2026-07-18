@@ -37,7 +37,7 @@ queria/backend/docs/
   ARCHITECTURE.md
   SIMPLIFICATION.md
   IMPROVEMENTS.md     # REFERENCE backlog (enowx-informed); not runtime truth
-  runbooks/           # live ops only
+  runbooks/           # live ops only (includes onboarding Admin→Agent)
   archive/            # SUPERSEDED plans, specs, walkthroughs
 ```
 

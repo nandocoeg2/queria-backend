@@ -115,6 +115,7 @@ not a Rust proxy crate.
 | Evaluation baseline | `COMPLETED` (CLI) | Shared executor via `queria-cli eval run`; Admin evaluation HTTP routes removed. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`, `index_memory` (scratch). Optional `rerank`/`compress` on retrieve/search. Maintainer actions stay on session Admin HTTP, not MCP. |
+| Agent-driven onboarding docs | `COMPLETED` (local main 2026-07-18) | Public `GET /api/v1/docs/agent-setup` (alias `/docs/setup`), `GET /api/v1/setup/mcp-snippet`, `GET /api/v1/setup/agents-block`. LLM applies MCP + AGENTS.md on the agent machine; no server-side write to remote homes. Runbook Part C: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Prod image may lag until redeploy. |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |

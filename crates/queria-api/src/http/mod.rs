@@ -1,3 +1,4 @@
+pub mod agent_setup;
 pub mod approvals;
 pub mod audit_logs;
 pub mod auth;
