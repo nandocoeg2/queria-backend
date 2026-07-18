@@ -1,68 +1,58 @@
-# Multi-Organization Tenancy Implementation Plan
+# Multi-Organization Tenancy Implementation Plan (v1 isolation MVP)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship multi-tenant QuerIa where Team B has isolated projects/ingest/retrieve by default, super-admin creates orgs, org-admins invite members by email, and org-admins can grant **read-only** cross-org shares.
+**Goal:** Org-scoped ACL so Team B is isolated from Team A; super-admin creates orgs; first admin (and further users) join via email invite only.
 
-**Architecture:** Single stack; `organization_id` is the hard ACL. Add `org_membership`, email `org_invite`, `knowledge_share_grant`, `org_git_allowlist`. Sessions gain `active_organization_id`. Agent tokens bind to one org. Qdrant points already (or after backfill) filter on `organization_id`. Retrieval merges home org ∪ grant-readable scopes; writes stay home-org only.
+**Architecture:** Single stack. Add `org_membership` + `org_invite`, session `active_organization_id`, and `is_platform_super_admin`. All tenant APIs and agent tokens filter `organization_id = home`. Qdrant filter home org only. No share grants, no per-org git allowlist, no mailer trait in v1.
 
-**Tech Stack:** Rust workspace (`queria-db`, `queria-api`, `queria-mcp`, `queria-worker`, `queria-search`, `queria-ingestion`, `queria-core`), Postgres migrations, Astro Admin, existing session cookies + agent tokens, Voyage + Qdrant.
+**Tech Stack:** Rust (`queria-db`, `queria-api`, `queria-mcp`, `queria-search`, `queria-core`), Postgres migrations, Astro Admin, existing sessions + agent tokens, Voyage + Qdrant.
 
-**Spec:** [`../specs/2026-07-18-multi-org-tenancy-design.md`](../specs/2026-07-18-multi-org-tenancy-design.md)
+**Spec:** [`../specs/2026-07-18-multi-org-tenancy-design.md`](../specs/2026-07-18-multi-org-tenancy-design.md) (ponytail-cut v1)
 
 ## Global Constraints
 
-- Single stack multi-tenant (no per-tenant deploy/DB)
-- Super-admin creates orgs only; first org admin + members via **email invite only** (no temp password create)
-- Soft isolation: default deny cross-org; explicit **read** grants only; no foreign write
-- Scratch lane **never** shared across orgs
-- Same Qdrant collection(s); payload + filter `organization_id`
-- Per-org git allowlist (plus optional instance defaults)
-- Preserve dual-lane (scratch/trusted) **inside** each org
-- Leakage tests required before claiming multi-tenant ready
-- Super-admin does **not** default-browse tenant knowledge
-- Do not dual-write status outside HANDOFF after ship
-- Sahara Admin (pure Astro SSR); match existing patterns in `admin/src/`
-- Host production may need rsync if GitHub SSH missing (ops note only)
+- Isolation MVP only: create org + invite + enforce org filter
+- Super-admin creates orgs; invite-only join (return token once + log; no InviteMailer)
+- One membership per user in v1 (no switcher)
+- Humans treated as org_admin powers; no org_member restriction matrix
+- No knowledge_share_grant, no org_git_allowlist, no shares UI
+- Instance git env allowlist unchanged
+- Qdrant: ensure org payload/filter if missing; no new permanent CLI product for backfill
+- Leakage smoke: A cannot read B
+- Match Sahara Admin patterns; update HANDOFF/PRODUCT/onboarding when shipping
 
-## File map (locked decomposition)
+## File map
 
 | Area | Files |
 |---|---|
 | Schema | `migrations/20260718000100_multi_org_tenancy.sql` |
-| Domain types | `crates/queria-core/src/auth/` (roles), `crates/queria-db/src/repositories/` |
-| Session + auth | `crates/queria-db/src/repositories/auth.rs`, `crates/queria-api/src/http/auth.rs` |
-| Orgs/invites/shares APIs | `crates/queria-api/src/http/orgs.rs`, `invites.rs`, `share_grants.rs`, `git_allowlist.rs`; wire in `app.rs` |
-| Enforce org on existing APIs | `projects.rs`, `sources.rs`, `tokens.rs`, `approvals.rs`, `dashboard.rs`, `retrieval.rs`, `knowledge_items.rs`, … |
-| Retrieval grants | `crates/queria-search/src/retrieval.rs`, `qdrant.rs` |
-| MCP token scope | `crates/queria-mcp/src/`, `queria-core` agent token permissions |
-| Git allowlist | `crates/queria-ingestion/src/git.rs`, worker job path |
-| Admin UI | `admin/src/pages/orgs/`, `members/`, `shares/`, `invites/accept.astro`; nav in `AdminLayout.astro` |
-| Email | `crates/queria-core` or `queria-api` mail sink (`log` + optional SMTP env) |
-| Tests | db unit/integration + API oneshot + leakage suite |
-| Docs | `PRODUCT.md`, `HANDOFF.md`, `runbooks/onboarding.md` |
+| Roles/session | `crates/queria-core/src/auth/` (existing mod, not a new file for a tiny enum), `queria-db` auth repo, `queria-api` auth handlers |
+| Orgs + invites | **One** `crates/queria-api/src/http/orgs.rs` (orgs + invites + members) |
+| Enforce | Existing handlers under `crates/queria-api/src/http/*` + token mint |
+| Vectors | `queria-search` upsert/search filter home org |
+| Admin | `admin/src/pages/orgs/`, `invites/accept.astro`, optional `members/`; `AdminLayout.astro` |
+| Docs | PRODUCT, HANDOFF, onboarding |
+
+Deferred (spec appendices only): share_grants, git_allowlist modules, grant-aware retrieve.
 
 ---
 
-### Task 1: Schema — membership, invites, grants, git allowlist, session active org
+### Task 1: Schema — membership, invite, super-admin flag, session active org
 
 **Files:**
 - Create: `migrations/20260718000100_multi_org_tenancy.sql`
-- Modify: `crates/queria-db/src/migrate.rs` (if migrations are enumerated)
-- Test: `cargo test -p queria-db` migrate smoke / `queria-cli database migrate` local
+- Modify: migrate registration if required
+- Test: `cargo run -p queria-cli -- database migrate`
 
-**Interfaces:**
-- Produces: tables `org_membership`, `org_invite`, `knowledge_share_grant`, `org_git_allowlist`; columns `user_account.is_platform_super_admin`, `user_session.active_organization_id`
+**Produces:** `org_membership`, `org_invite`, `user_account.is_platform_super_admin`, `user_session.active_organization_id`
 
-- [ ] **Step 1: Write migration SQL**
+- [ ] **Step 1: Migration SQL (no grant/git tables)**
 
 ```sql
--- 20260718000100_multi_org_tenancy.sql
-
 alter table user_account
   add column if not exists is_platform_super_admin boolean not null default false;
 
--- Membership (user may belong to multiple orgs later; backfill from user_account.organization_id)
 create table if not exists org_membership (
   user_id uuid not null references user_account(id) on delete cascade,
   organization_id uuid not null references organization(id) on delete cascade,
@@ -70,6 +60,9 @@ create table if not exists org_membership (
   created_at timestamptz not null default now(),
   primary key (user_id, organization_id)
 );
+
+create unique index if not exists idx_org_membership_one_org_per_user
+  on org_membership (user_id);  -- v1: at most one org
 
 create index if not exists idx_org_membership_org on org_membership(organization_id);
 
@@ -94,404 +87,205 @@ create table if not exists org_invite (
 
 create index if not exists idx_org_invite_org_email on org_invite(organization_id, email);
 
-create table if not exists knowledge_share_grant (
-  id uuid primary key default gen_random_uuid(),
-  source_organization_id uuid not null references organization(id) on delete cascade,
-  target_organization_id uuid not null references organization(id) on delete cascade,
-  scope_type text not null check (scope_type in ('project', 'organization_global')),
-  scope_project_id uuid references project(id) on delete cascade,
-  created_by_user_id uuid references user_account(id) on delete set null,
-  created_at timestamptz not null default now(),
-  expires_at timestamptz,
-  revoked_at timestamptz,
-  check (
-    (scope_type = 'project' and scope_project_id is not null)
-    or (scope_type = 'organization_global' and scope_project_id is null)
-  ),
-  check (source_organization_id <> target_organization_id)
-);
-
-create index if not exists idx_share_grant_target on knowledge_share_grant(target_organization_id)
-  where revoked_at is null;
-
-create table if not exists org_git_allowlist (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organization(id) on delete cascade,
-  kind text not null check (kind in ('ssh_host', 'ssh_repository', 'path_root')),
-  value text not null,
-  created_at timestamptz not null default now(),
-  unique (organization_id, kind, value)
-);
-
--- Backfill memberships from legacy single-org user_account.organization_id
 insert into org_membership (user_id, organization_id, role)
 select id, organization_id,
   case when role = 'admin' then 'org_admin' else 'org_member' end
 from user_account
 on conflict do nothing;
-
--- Flag first-org admins as platform super-admin when env migration is applied manually,
--- or: update user_account set is_platform_super_admin = true where email = lower(trim(...));
--- Prefer a one-row ops step in Task 7, not hard-coded email in SQL.
 ```
 
-- [ ] **Step 2: Run migrate locally**
-
-```bash
-cd queria/backend
-# with local postgres + env
-cargo run -p queria-cli -- database migrate
-```
-
-Expected: `{"status":"migrated"}` or equivalent success; `\d org_membership` exists.
+- [ ] **Step 2: Migrate locally** — expect success; `\d org_membership`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add migrations/20260718000100_multi_org_tenancy.sql crates/queria-db/src/migrate.rs
-git commit -m "feat(db): multi-org membership invites grants git allowlist schema"
+git commit -m "feat(db): org membership invites and active organization session"
 ```
 
 ---
 
-### Task 2: Auth domain — roles, membership repo, session active org
+### Task 2: Session binds active organization
 
 **Files:**
-- Create: `crates/queria-core/src/auth/org_roles.rs`
-- Modify: `crates/queria-db/src/repositories/auth.rs`, `types.rs`, `mod.rs`
-- Modify: `crates/queria-api/src/http/auth.rs` (login sets active org)
-- Test: unit tests in `org_roles.rs` + auth repository tests if present
+- Modify: `crates/queria-db/src/repositories/auth.rs`, `types.rs`
+- Modify: `crates/queria-api/src/http/auth.rs`
+- Optionally tiny `OrgRole` in existing `permissions.rs` / auth mod (not a new crate file unless needed)
 
-**Interfaces:**
-- Produces:
-  - `enum OrgRole { OrgAdmin, OrgMember }`
-  - `struct OrgMembership { user_id, organization_id, role }`
-  - `AuthenticatedSession { user_id, active_organization_id: Option<Uuid>, is_platform_super_admin: bool, org_role: Option<OrgRole> }`
-  - `fn require_org_admin(session) -> Result`
-  - `fn require_org_member(session) -> Result` (admin or member)
-  - `fn require_platform_super_admin(session) -> Result`
+**Produces:** `AuthenticatedSession { user_id, active_organization_id, is_platform_super_admin, … }`
 
-- [ ] **Step 1: Add role types + helpers**
-
-```rust
-// crates/queria-core/src/auth/org_roles.rs
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OrgRole {
-    OrgAdmin,
-    OrgMember,
-}
-
-impl OrgRole {
-    pub fn can_admin(self) -> bool { matches!(self, Self::OrgAdmin) }
-}
-```
-
-- [ ] **Step 2: Extend session load to join membership for active_organization_id**
-
-On login / session lookup:
-
-1. Load user (`is_platform_super_admin`, legacy `organization_id`).
-2. Load memberships.
-3. Choose `active_organization_id`: request body/cookie override if membership exists; else single membership; else legacy `user.organization_id`; else `None` for super-admin-only.
-4. Persist `active_organization_id` on `user_session` when creating/refreshing session.
-5. Return role for active org from `org_membership`.
-
-- [ ] **Step 3: Failing test first — member of org A cannot use org B session without membership**
-
-```rust
-#[test]
-fn org_role_admin_can_admin() {
-    assert!(OrgRole::OrgAdmin.can_admin());
-    assert!(!OrgRole::OrgMember.can_admin());
-}
-```
-
-- [ ] **Step 4: Commit**
-
-```bash
-git commit -m "feat(auth): org roles membership and active organization session"
-```
-
----
-
-### Task 3: Org + invite API (super-admin create org, email invites)
-
-**Files:**
-- Create: `crates/queria-api/src/http/orgs.rs`, `invites.rs`
-- Create: `crates/queria-api/src/mail.rs` (trait `InviteMailer` with `LogInviteMailer`)
-- Modify: `crates/queria-api/src/app.rs`, `http/mod.rs`
-- Create: Admin pages `admin/src/pages/orgs/index.astro`, `admin/src/pages/invites/accept.astro`
-- Modify: `admin/src/layouts/AdminLayout.astro` (nav Orgs for super-admin)
-- Modify: `admin/src/lib/api.ts`
-
-**Interfaces:**
-- `POST /api/v1/orgs` body `{ slug, name, first_admin_email }` → org + invite created; email via mailer
-- `GET /api/v1/orgs` super-admin list
-- `POST /api/v1/orgs/{slug}/invites` `{ email, role }`
-- `POST /api/v1/invites/accept` `{ token, password, display_name? }` public
-- `GET /api/v1/orgs/current/members` org_admin
-
-- [ ] **Step 1: Invite token issuance**
-
-Reuse agent-token style hashing (sha256 + prefix), 32 random bytes, store hash only.
-
-- [ ] **Step 2: Wire mailer**
-
-```rust
-pub trait InviteMailer: Send + Sync {
-    fn send_invite(&self, to: &str, accept_url: &str) -> Result<(), QueriaError>;
-}
-
-pub struct LogInviteMailer;
-impl InviteMailer for LogInviteMailer {
-    fn send_invite(&self, to: &str, accept_url: &str) -> Result<(), QueriaError> {
-        tracing::info!(%to, %accept_url, "org invite (log sink)");
-        Ok(())
-    }
-}
-```
-
-Env later: `QUERIA_SMTP_*` optional; MVP log sink is enough if documented.
-
-- [ ] **Step 3: API tests (oneshot)**
-
-```rust
-#[tokio::test]
-async fn create_org_requires_super_admin() {
-    // session without is_platform_super_admin -> 403
-}
-
-#[tokio::test]
-async fn accept_invite_creates_membership() {
-    // insert invite, POST accept, membership row exists
-}
-```
-
-- [ ] **Step 4: Admin UI**
-
-- `/admin/orgs`: form slug/name/first_admin_email → POST
-- `/admin/invites/accept`: password form + token query param
-- `/admin/members`: list + invite form (org_admin)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git commit -m "feat(api): create org and email invite accept flow"
-```
-
----
-
-### Task 4: Enforce org scope on all existing Admin/API surfaces
-
-**Files:**
-- Modify every handler under `crates/queria-api/src/http/` that loads projects/sources/jobs/tokens/knowledge/approvals/dashboard/retrieval
-- Modify `PgProjectRepository` methods to take `organization_id` explicitly where currently inferred only via `user.organization_id`
-
-**Interfaces:**
-- Consumes: `AuthenticatedSession.active_organization_id`
-- Rule: if `active_organization_id` is None → 403 on tenant routes (super-admin uses org routes only)
-
-- [ ] **Step 1: Inventory — grep handlers using `session.user_id` for list/create**
-
-Ensure each path filters `organization_id = active_org`.
-
-- [ ] **Step 2: Tokens — bind agent_token.permissions / record to organization_id**
-
-Add `organization_id` column on agent_token if missing (or store in permissions JSON). Mint only projects in active org. Reject foreign slugs.
-
-- [ ] **Step 3: Member vs admin**
-
-- `org_member`: read projects/sources/knowledge/playground; deny POST tokens, deny invite, deny share, deny ingest trigger if design says admin-only (lock: org_admin for ingest/tokens/shares).
-- `org_admin`: full current powers within org.
-
-- [ ] **Step 4: Leakage test (API)**
-
-```rust
-// Create org A+B fixtures; session A must 404/403 on B project slug
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git commit -m "feat(api): enforce active organization on tenant endpoints"
-```
-
----
-
-### Task 5: Qdrant organization payload + retrieval grant merge
-
-**Files:**
-- Modify: `crates/queria-search/src/qdrant.rs`, `retrieval.rs`
-- Modify: embedding write path (`queria-worker` / search upsert) to always set `organization_id` in payload
-- Create: backfill job or CLI `queria-cli qdrant backfill-org-payload --organization <slug>`
-- Test: unit tests for filter builder; integration if available
-
-**Interfaces:**
-- Produces: `ReadableScope { home_org, grant_org_ids, foreign_project_ids }`
-- `fn resolve_readable_scope(pool, home_org) -> ReadableScope` from non-revoked grants
-- Qdrant filter: must_match organization_id in allowed set; project filter intersection
-
-- [ ] **Step 1: Ensure upsert payload includes organization_id (UUID string)**
-
-- [ ] **Step 2: Search filter always includes org constraint**
-
-- [ ] **Step 3: Grant-aware retrieve**
+- [ ] **Step 1: Resolve active org on login/session load**
 
 ```text
-home = token.organization_id | session.active_org
-grants = active grants where target = home
-foreign projects = grants.scope_type=project
-foreign globals = grants.scope_type=organization_global -> include those orgs' global trusted only
-never return foreign scratch
+active_organization_id =
+  membership.organization_id if exactly one membership
+  else user.organization_id if membership/legacy aligned
+  else None  -- super-admin with no membership: org routes only
 ```
 
-- [ ] **Step 4: Backfill existing points to org `fjulian`**
+Persist on `user_session` when issuing session.
 
-- [ ] **Step 5: Leakage tests**
+- [ ] **Step 2: Helpers**
 
-1. Token A cannot retrieve B project without grant  
-2. Grant A→B project: B can retrieve A's **trusted** only  
-3. B cannot index_memory into A's project  
-
-- [ ] **Step 6: Commit**
-
-```bash
-git commit -m "feat(search): org filter on vectors and grant-aware retrieve"
+```rust
+fn require_active_org(session) -> Result<Uuid, 403>
+fn require_platform_super_admin(session) -> Result<(), 403>
 ```
 
----
-
-### Task 6: Per-org git allowlist + worker validation
-
-**Files:**
-- Modify: `crates/queria-ingestion/src/git.rs` (`GitSecurityPolicy` takes org allowlist rows)
-- Modify: worker `jobs.rs` load allowlist for job.organization_id
-- Create: API `git_allowlist.rs` + Admin section under org settings or sources
-- Migrate: copy instance env allowlists into `org_git_allowlist` for existing org
-
-**Interfaces:**
-- `GitSecurityPolicy::from_org_rows(instance_defaults, org_rows)`
-- Validate path roots + ssh host/repo as today, union instance + org
-
-- [ ] **Step 1: Policy loads per-org rows**
-
-- [ ] **Step 2: Worker fails closed if org has empty allowlist and instance empty**
-
-- [ ] **Step 3: Seed prod `fjulian` allowlist** for `github.com`, `nandocoeg2/fjulian.me.git`, path_root `/tmp/seed10001` as needed
+- [ ] **Step 3: Smoke test** — login returns session that scopes list_projects to user’s org (or unit on resolver)
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git commit -m "feat(ingestion): per-organization git allowlists"
+git commit -m "feat(auth): bind session to active organization"
 ```
 
 ---
 
-### Task 7: Share grants API + Admin UI + MCP list_projects shared markers
+### Task 3: Orgs + invites API and Admin UI
 
 **Files:**
-- Create: `crates/queria-api/src/http/share_grants.rs`
-- Create: `admin/src/pages/shares/index.astro`
-- Modify: MCP `list_projects` / tools descriptions
-- Docs: PRODUCT, onboarding, HANDOFF, agent-setup markdown section
+- Create: `crates/queria-api/src/http/orgs.rs` (**includes** invites + members handlers)
+- Modify: `app.rs`, `http/mod.rs`
+- Create: `admin/src/pages/orgs/index.astro`, `admin/src/pages/invites/accept.astro`
+- Modify: `AdminLayout.astro`, `lib/api.ts`
 
-**Interfaces:**
-- `POST /api/v1/share-grants` `{ target_organization_slug, scope_type, scope_project_slug? }`
-- `GET /api/v1/share-grants?direction=outbound|inbound`
-- `DELETE /api/v1/share-grants/{id}`
-- MCP project list items include `"shared": true` when grant-visible foreign
+**API:**
 
-- [ ] **Step 1: API + tests**
+| Method | Path | Role |
+|---|---|---|
+| POST/GET | `/api/v1/orgs` | super_admin |
+| POST | `/api/v1/orgs/{slug}/invites` | org_admin or super_admin |
+| GET | `/api/v1/orgs/current/members` | org_admin |
+| POST | `/api/v1/invites/accept` | public |
 
-- [ ] **Step 2: Admin shares page**
+Invite token: sha256 hash + prefix (same pattern as agent tokens).  
+On create org / invite: `tracing::info!(email, accept_url, "org invite")` and return `token` once in JSON to caller. **No** `InviteMailer` trait.
 
-- [ ] **Step 3: MCP retrieve already grant-aware from Task 5; list_projects marks shared**
+- [ ] **Step 1: Implement create org + invite + accept**
 
-- [ ] **Step 4: Update docs**
+Accept: create user if needed; insert membership; set `user_account.organization_id`; reject if user already has another org membership.
 
-- PRODUCT: multi-org section CURRENT when shipped  
-- onboarding: super-admin create org → invite → project  
-- HANDOFF: capability matrix  
-- agent-setup: tokens are org-scoped  
+- [ ] **Step 2: API tests**
 
-- [ ] **Step 5: Ops bootstrap super-admin**
+```rust
+#[tokio::test]
+async fn create_org_requires_super_admin() { /* 403 without flag */ }
+
+#[tokio::test]
+async fn accept_invite_isolates_orgs() {
+  // user in A cannot accept invite to B (v1 single membership)
+}
+```
+
+- [ ] **Step 3: Admin orgs + accept pages**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "feat(api): create organization and email invite accept"
+```
+
+---
+
+### Task 4: Enforce org on tenant APIs + agent tokens + Qdrant home filter
+
+**Files:**
+- Modify handlers under `crates/queria-api/src/http/` (projects, sources, tokens, jobs, knowledge, approvals, dashboard, retrieval, …)
+- Modify repositories to take/filter `organization_id`
+- Modify token mint to bind org
+- Modify `queria-search` / upsert path: payload + filter `organization_id = home` if not already
+- No grant merge; no new CLI verb — backfill via one-off if needed during ops
+
+- [ ] **Step 1: Inventory handlers; add active_org filter**
+
+If `active_organization_id` is None → 403 on tenant routes.
+
+- [ ] **Step 2: Agent token mint/list** only projects in active org; store organization_id on token permissions/record
+
+- [ ] **Step 3: Qdrant** ensure write/search use home org id
+
+- [ ] **Step 4: Leakage smoke**
+
+```rust
+// Session/token org A cannot list or retrieve org B project
+// Super-admin without membership cannot GET tenant project detail
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "feat(api): enforce organization isolation on tenant surfaces"
+```
+
+---
+
+### Task 5: Docs + prod bootstrap checklist
+
+**Files:**
+- `docs/PRODUCT.md`, `docs/HANDOFF.md`, `docs/runbooks/onboarding.md`
+- agent-setup markdown if it claims single-global-tenant assumptions
+
+- [ ] **Step 1: Document v1 multi-org**
+
+```text
+Super-admin: POST /orgs → invite token
+Accept invite → org admin
+All data filtered by organization
+No cross-org share in v1
+```
+
+- [ ] **Step 2: Ops checklist**
 
 ```sql
 update user_account set is_platform_super_admin = true
-where lower(email) = lower('nando@fjulian.id'); -- use real super-admin email
+where lower(email) = lower('<super-admin-email>');
 ```
 
-- [ ] **Step 6: End-to-end manual checklist**
+E2E: create `team-b` → accept invite → create project → prove token B ≠ data A.
 
-1. Super-admin creates `team-b`, invite first admin  
-2. Accept invite, login as Team B  
-3. Create project, (optional) allowlist git, ingest  
-4. Token B cannot see `fjulian-me`  
-5. Org A grants project to Team B → B retrieve works read-only  
-6. B cannot propose_memory into A  
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git commit -m "feat: share grants UI MCP and multi-org docs"
+git commit -m "docs: multi-org isolation MVP product and onboarding"
 ```
 
 ---
 
-## Verification matrix (before claiming done)
+## Verification matrix
 
-| Check | Command / action |
+| Check | Action |
 |---|---|
 | Migrate | `queria-cli database migrate` |
-| Unit | `cargo test -p queria-core -p queria-db -p queria-api -p queria-search -p queria-ingestion` |
-| Leakage | dedicated tests Task 4–5 |
-| Admin | login, orgs, members, shares, projects |
-| MCP | token org A vs B |
-| Prod | migrate; flag super-admin; backfill Qdrant payload; seed git allowlist for `fjulian` |
+| Unit/API | `cargo test -p queria-api -p queria-db -p queria-core` (+ search if touched) |
+| Leakage | Task 4 smoke: A cannot read B |
+| Admin | `/admin/orgs`, invite accept, projects stay org-local |
+| MCP | token org A only sees A projects |
+| Prod | migrate; flag super-admin; create Team B; isolation check |
 
 ## Risk notes
 
-- **Large change surface:** enforce Task 4 thoroughly; missing one handler = leak.
-- **user_account.organization_id** remains as legacy primary org for NOT NULL FK; membership is source of truth for access. Do not delete column in this plan (follow-up).
-- **Email:** log sink means first-admin invite URL must be copied from logs in dev; document `accept_url` in API response for super-admin create (include invite accept path + raw token once in API response to super-admin only).
+- Missing one handler org filter = leak — Task 4 inventory is the critical path.
+- Keep `user_account.organization_id` NOT NULL FK; sync on invite accept; drop column later (out of plan).
+- Invite token in API response is sensitive; only return to super-admin/org_admin who created it; never log raw token at info if avoidable (prefer log accept_path only + return token in body).
 
-```json
-// POST /api/v1/orgs response (super-admin only)
-{
-  "organization": { "slug": "team-b", "name": "Team B" },
-  "invite": {
-    "email": "admin@teamb.example",
-    "accept_path": "/admin/invites/accept",
-    "token": "<once>",
-    "expires_at": "..."
-  }
-}
-```
+## Out of this plan (spec appendices)
 
-## Out of this plan
-
-- SSO, billing, break-glass super-admin knowledge browse  
-- Per-org Voyage keys  
-- Dropping `user_account.organization_id`  
+- Share grants API/UI/MCP `shared` markers  
+- Per-org git allowlist  
+- org_member vs org_admin power split  
+- SMTP mailer  
+- Multi-org membership + switcher  
+- Dedicated Qdrant backfill CLI  
 
 ---
 
-## Spec coverage self-check
+## Spec coverage
 
-| Spec section | Task |
+| Spec v1 | Task |
 |---|---|
-| Create org + first admin email invite | 3 |
-| Member email invites | 3 |
-| Membership + active org session | 2 |
-| Hard org filter APIs | 4 |
-| Agent token org bind | 4 |
-| Soft share grants | 5 + 7 |
-| Qdrant organization_id | 5 |
-| Per-org git allowlist | 6 |
-| Admin UI orgs/members/shares | 3 + 7 |
-| Leakage tests | 4, 5 |
-| Migration from fjulian | 1 backfill + 5 backfill + 7 ops |
-| No foreign write | 5 MCP + 4 API |
-
-Placeholder scan: no TBD. Types: `OrgRole`, `AuthenticatedSession.active_organization_id`, grant `scope_type` consistent across tasks.
+| Membership + session | 1–2 |
+| Create org + invite accept | 3 |
+| Enforce isolation + tokens | 4 |
+| Qdrant home filter | 4 |
+| Docs + bootstrap | 5 |
+| Share grants / per-org git | **out** (appendices) |
