@@ -183,23 +183,12 @@ const getNextPageUrl = () => {
   }
 
   .form-group-inline label {
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
-  }
-
-  .form-control {
-    width: 100%;
-    padding: 0.5rem var(--spacing-md);
-    border: 1px solid var(--color-outline-variant);
-    border-radius: var(--radius-default);
-    background-color: var(--color-surface-container-lowest);
-    color: var(--color-on-surface);
-    font-family: var(--font-family-body);
-    font-size: 13px;
-    outline: none;
   }
 
   .filter-submit-btn {
@@ -219,6 +208,8 @@ const getNextPageUrl = () => {
 
   .panel-header h2 {
     font-size: 16px;
+    font-family: var(--font-family-headline);
+    color: var(--color-on-surface);
   }
 
   .table-container {
@@ -234,8 +225,9 @@ const getNextPageUrl = () => {
   }
 
   .audit-table th {
-    background-color: var(--color-surface-container);
+    background-color: var(--color-surface-container-high);
     color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -252,7 +244,7 @@ const getNextPageUrl = () => {
   }
 
   .audit-table tbody tr:hover {
-    background-color: var(--color-surface-container-lowest);
+    background-color: var(--color-surface-container-high);
   }
 
   .time-cell {

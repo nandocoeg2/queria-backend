@@ -234,3 +234,66 @@ code, pre {
   color: #a1a1a1;
   border-color: #222233;
 }
+
+.badge-draft {
+  background-color: #1c1c24;
+  color: #a1a1a1;
+  border-color: #3a3a4a;
+}
+
+.badge-proposed {
+  background-color: #0a1e3d;
+  color: #60a5fa;
+  border-color: #1e3a5f;
+}
+
+.badge-deprecated {
+  background-color: #1c1c24;
+  color: #9ca3af;
+  border-color: #3a3a4a;
+}
+
+.badge-superseded {
+  background-color: #3d2e0a;
+  color: #fbbf24;
+  border-color: #5c4510;
+}
+
+/* Form controls — dark inputs/selects shared across tenant pages */
+.form-control {
+  width: 100%;
+  padding: 0.5rem var(--spacing-md);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-default);
+  background-color: var(--color-surface-container-lowest);
+  color: var(--color-on-surface);
+  font-family: var(--font-family-body);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.form-control::placeholder {
+  color: var(--color-on-surface-variant);
+  opacity: 0.8;
+}
+
+select.form-control {
+  cursor: pointer;
+  appearance: auto;
+  color-scheme: dark;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 11px;
+}
+
+.btn-block {
+  width: 100%;
+}

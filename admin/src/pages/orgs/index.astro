@@ -280,7 +280,7 @@ const acceptBase = '/admin/invites/accept';
   .panel-header h2 {
     font-family: var(--font-family-headline);
     font-size: 18px;
-    color: var(--color-primary);
+    color: var(--color-on-surface);
   }
 
   .table-container {
@@ -290,15 +290,18 @@ const acceptBase = '/admin/invites/accept';
   .orgs-table {
     width: 100%;
     border-collapse: collapse;
+    font-family: var(--font-family-body);
     font-size: 13px;
   }
 
   .orgs-table th {
     text-align: left;
+    font-family: var(--font-family-caption);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
+    background-color: var(--color-surface-container-high);
     padding: var(--spacing-sm) var(--spacing-md);
     border-bottom: 1px solid var(--color-outline-variant);
   }
@@ -309,12 +312,18 @@ const acceptBase = '/admin/invites/accept';
     color: var(--color-on-surface);
   }
 
+  .orgs-table tbody tr:hover {
+    background-color: var(--color-surface-container-high);
+  }
+
   .org-slug {
     font-family: var(--font-family-mono);
     font-size: 12px;
-    background: var(--color-surface-container);
+    background: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
   }
 
   .empty-state {
@@ -331,6 +340,7 @@ const acceptBase = '/admin/invites/accept';
   }
 
   .form-group label {
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -338,29 +348,14 @@ const acceptBase = '/admin/invites/accept';
     color: var(--color-on-surface-variant);
   }
 
-  .form-control {
-    width: 100%;
+  .orgs-create-panel .form-control {
     padding: 0.75rem var(--spacing-md);
-    border: 1px solid var(--color-outline-variant);
-    border-radius: var(--radius-default);
-    background-color: var(--color-surface-container-lowest);
-    color: var(--color-on-surface);
-    font-family: var(--font-family-body);
     font-size: 14px;
-    outline: none;
-  }
-
-  .form-control:focus {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-outline-variant);
-  }
-
-  .btn-block {
-    width: 100%;
   }
 
   .hint {
     margin-top: var(--spacing-lg);
+    font-family: var(--font-family-caption);
     font-size: 12px;
     color: var(--color-on-surface-variant);
     line-height: 1.4;

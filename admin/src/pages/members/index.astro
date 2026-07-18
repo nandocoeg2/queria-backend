@@ -315,21 +315,24 @@ const formatDate = (dateStr?: string) => {
   .panel-header h2 {
     font-family: var(--font-family-headline);
     font-size: 18px;
-    color: var(--color-primary);
+    color: var(--color-on-surface);
   }
 
   .members-table {
     width: 100%;
     border-collapse: collapse;
+    font-family: var(--font-family-body);
     font-size: 13px;
   }
 
   .members-table th {
     text-align: left;
+    font-family: var(--font-family-caption);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-on-surface-variant);
+    background-color: var(--color-surface-container-high);
     padding: var(--spacing-sm) var(--spacing-md);
     border-bottom: 1px solid var(--color-outline-variant);
   }
@@ -337,14 +340,21 @@ const formatDate = (dateStr?: string) => {
   .members-table td {
     padding: var(--spacing-sm) var(--spacing-md);
     border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .members-table tbody tr:hover {
+    background-color: var(--color-surface-container-high);
   }
 
   .role-code {
     font-family: var(--font-family-mono);
     font-size: 12px;
-    background: var(--color-surface-container);
+    background: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
   }
 
   .empty-state {
@@ -361,6 +371,7 @@ const formatDate = (dateStr?: string) => {
   }
 
   .form-group label {
+    font-family: var(--font-family-caption);
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -368,24 +379,14 @@ const formatDate = (dateStr?: string) => {
     color: var(--color-on-surface-variant);
   }
 
-  .form-control {
-    width: 100%;
+  .invite-panel .form-control {
     padding: 0.75rem var(--spacing-md);
-    border: 1px solid var(--color-outline-variant);
-    border-radius: var(--radius-default);
-    background-color: var(--color-surface-container-lowest);
-    color: var(--color-on-surface);
-    font-family: var(--font-family-body);
     font-size: 14px;
-    outline: none;
-  }
-
-  .form-control:focus {
-    border-color: var(--color-primary);
   }
 
   .field-hint,
   .hint {
+    font-family: var(--font-family-caption);
     font-size: 12px;
     color: var(--color-on-surface-variant);
     line-height: 1.4;
@@ -393,10 +394,6 @@ const formatDate = (dateStr?: string) => {
 
   .hint {
     margin-top: var(--spacing-lg);
-  }
-
-  .btn-block {
-    width: 100%;
   }
 
   @media (max-width: 900px) {
