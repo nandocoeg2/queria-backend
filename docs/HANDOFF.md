@@ -1,8 +1,8 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-18 (local main: retrieval quality + Admin Playground; prod image still dual-lane Slice A — see stack identity)
+> Last verified: 2026-07-18 (prod redeploy: agent-driven onboarding + current main image; stack identity below)
 > Branch: `main`
-> Deployed image commit: `c1cdfd70caf65a4bf020fbb921c60f515c277788` (dual-lane Slice A). Image bake-in for TruffleHog config is on `main` at `37e7b7c` — **not yet redeployed** to the live host image. Rerank/compress/Playground are on local `main` and **not** claimed as live on the production host until redeploy.
+> Deployed image commit: `3bab3b4ebc9551929bef09a7d70c07a25e68298c` (agent-driven onboarding API; includes prior dual-lane + Playground/rerank/compress). Compose worker DB URL fix landed as `097192f` on host via rsync (host may lack GitHub fetch keys).
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
@@ -115,7 +115,7 @@ not a Rust proxy crate.
 | Evaluation baseline | `COMPLETED` (CLI) | Shared executor via `queria-cli eval run`; Admin evaluation HTTP routes removed. |
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`, `index_memory` (scratch). Optional `rerank`/`compress` on retrieve/search. Maintainer actions stay on session Admin HTTP, not MCP. |
-| Agent-driven onboarding docs | `COMPLETED` (local main 2026-07-18) | Public `GET /api/v1/docs/agent-setup` (alias `/docs/setup`), `GET /api/v1/setup/mcp-snippet`, `GET /api/v1/setup/agents-block`. LLM applies MCP + AGENTS.md on the agent machine; no server-side write to remote homes. Runbook Part C: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Prod image may lag until redeploy. |
+| Agent-driven onboarding docs | `COMPLETED` (prod 2026-07-18) | Public `GET /api/v1/docs/agent-setup` (alias `/docs/setup`), `GET /api/v1/setup/mcp-snippet`, `GET /api/v1/setup/agents-block`. Live on edge `:17674`. LLM applies MCP + AGENTS.md on the agent machine. Runbook Part C: [`runbooks/onboarding.md`](./runbooks/onboarding.md). |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Sahara SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
@@ -160,23 +160,24 @@ Connect:
 ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key ubuntu@168.110.214.130
 ```
 
-### Stack identity (redeployed 2026-07-17, dual-lane + Caddy)
+### Stack identity (redeployed 2026-07-18, agent-setup + current main)
 
 | Field | Value |
 |---|---|
 | Host deploy path | `/home/ubuntu/queria-backend` |
-| Host git checkout | still older tree files may lag; **runtime image** is authoritative |
-| Runtime `QUERIA_SOURCE_COMMIT` | `c1cdfd70caf65a4bf020fbb921c60f515c277788` |
-| Image | `queria-backend:latest` / tag `queria-backend:c1cdfd70caf65a4bf020fbb921c60f515c277788` (`sha256:dcad68efb5d9…`, created 2026-07-17T10:14Z) |
-| Edge service (live) | `queria-backend-queria-edge-1` image `caddy:2.10-alpine` (Caddy **v2.10.2**), host `17674` |
-| Legacy proxy | **removed** (no `queria-proxy` container after redeploy) |
-| API / MCP / worker / admin | Up on dual-lane image (recreated on redeploy) |
-| Postgres / Qdrant | **healthy**; volumes **not wiped** (`queria-backend_postgres_data` / `queria-backend_qdrant_data` created 2026-07-08) |
+| Host source sync | **rsync from workstation** (host GitHub SSH cannot `git fetch`; stash created pre-deploy) |
+| Runtime `QUERIA_SOURCE_COMMIT` | `3bab3b4ebc9551929bef09a7d70c07a25e68298c` |
+| Image | `queria-backend:latest` / tag `queria-backend:3bab3b4ebc9551929bef09a7d70c07a25e68298c` (built on host aarch64) |
+| Edge service (live) | `queria-backend-queria-edge-1` image `caddy:2.10-alpine`, host `17674` |
+| Legacy proxy | **removed** |
+| API / MCP / worker | Recreated on new image 2026-07-18; admin image not rebuilt this pass |
+| Postgres / Qdrant | **healthy**; volumes **not wiped** |
 | MinIO | `Up` (volume preserved) |
-| Schema | `_queria_migration` through `20260717000200` (10 rows). Includes dual-lane: `knowledge_status` enum has **`scratch`**. |
-| Env alignment | compose `env_file: .env` + overrides; `QDRANT_API_KEY` length matches host and qdrant service key; `VOYAGE_API_KEY` and `QUERIA_FIRST_ADMIN_EMAIL` present in API container |
-| Org | `fjulian` (1 user/admin; setup already consumed 2026-07-08) |
-| Projects | **1** — slug `fjulian-me` (seeded 2026-07-17; see seed pack below) |
+| Schema | migrate idempotent `{"status":"migrated"}` on redeploy |
+| Env notes | Host `.env` had empty `QDRANT_API_KEY` / missing DB password for compose interpolation; repaired from running API container env (chmod 600). Worker compose `QUERIA_DATABASE_URL` had been star-corrupted; restored to `postgresql://queria:${DATABASE_PASSWORD}@postgres:5432/queria`. |
+| Org | `fjulian` (1 user/admin; setup already consumed) |
+| Projects | **1** — slug `fjulian-me` |
+| Public smoke | `http://168.110.214.130:17674/healthz` 200; `/api/v1/docs/agent-setup` 200; `/api/v1/setup/mcp-snippet?client=droid` 200 |
 
 Verified live stack after redeploy (2026-07-17):
 
