@@ -13,6 +13,7 @@ See the full matrix in [`docs/HANDOFF.md`](docs/HANDOFF.md). Short version:
 | Area | Status |
 |---|---|
 | Auth, setup, projects, sources, approvals, tokens, jobs | `COMPLETED` |
+| Multi-org isolation MVP | `COMPLETED` (local `main`; prod image may lag until redeploy) |
 | Git ingestion and trusted auto-approval | `COMPLETED` |
 | Hybrid retrieval (Voyage + Qdrant + FTS/RRF + rerank/compress) | `COMPLETED` (local `main`; prod image may lag until redeploy) |
 | MCP agent tools | `COMPLETED` (includes dual-lane `index_memory` + `include_scratch`) |
@@ -34,6 +35,27 @@ Agents retrieve and write in two lanes. Contract: [`docs/PRODUCT.md`](docs/PRODU
 - Scratch is project-scoped only (never global). Prefer trusted over scratch when ranking near-duplicates.
 - Admin UI does **not** manage scratch yet (operator surfaces stay token/approvals/sources as today).
 
+## Multi-org isolation MVP (local main)
+
+Single-stack multi-tenant isolation by `organization_id` (session home, agent token home, Postgres, Qdrant). Dual-lane knowledge stays **inside** each org. Contract: [`docs/PRODUCT.md`](docs/PRODUCT.md) § Multi-organization tenancy. Runtime/ops: [`docs/HANDOFF.md`](docs/HANDOFF.md).
+
+| Piece | v1 behavior |
+|---|---|
+| Create org | Platform **super-admin** only — `POST/GET /api/v1/orgs`; Admin `/admin/orgs` |
+| Join | **Email invite only** — one-time `invite_token` in API response (no SMTP); accept at `/admin/invites/accept` |
+| Membership | **One org per user**; session `active_organization_id` from sole membership |
+| Isolation | Tenant routes need an active org (**403** without); agent tokens mint in home org only |
+| Super-admin without membership | Can manage orgs; **cannot** browse tenant projects/knowledge |
+
+**Bootstrap super-admin** (either path; case-insensitive email):
+
+1. Env: `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS=you@example.com` (comma-separated).
+2. SQL: `update user_account set is_platform_super_admin = true where lower(email) = lower('you@example.com');`
+
+**Happy path:** super-admin creates org with `first_admin_email` → capture one-time invite token → invitee accepts → login binds Team B active org → projects/tokens/retrieve scoped to Team B.
+
+**Not in v1:** cross-org share grants, org switcher / multi-membership, SMTP mailer, per-org git allowlist or Voyage keys, super-admin default browse of all tenants’ knowledge.
+
 ## Retrieval quality + Admin Playground (local main)
 
 Shared pipeline (MCP, API, CLI, Admin):
@@ -53,7 +75,7 @@ hybrid pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compr
 | Doc | Role |
 |---|---|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Canonical current state |
-| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract (dual-lane trust model) |
+| [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract (dual-lane trust model + multi-org isolation) |
 | [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md) | Post-MVP backlog (REFERENCE) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | As-is vs post-cut |
 | [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md) | Hard cut plan |
