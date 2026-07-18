@@ -31,6 +31,111 @@ export async function fetchFromBackend(
   }
 }
 
+export type AuthMe = {
+  authenticated: boolean;
+  user_id?: string | null;
+  email?: string | null;
+  active_organization_id?: string | null;
+  is_platform_super_admin?: boolean | null;
+  error?: string | null;
+};
+
+export type Organization = {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+};
+
+export type InviteMeta = {
+  id: string;
+  email: string;
+  role: string;
+  token_prefix: string;
+  expires_at: string;
+};
+
+export type OrgMember = {
+  user_id: string;
+  email: string;
+  role: string;
+  created_at: string;
+};
+
+/** Current session principal fields (active org + platform super-admin). */
+export async function getAuthMe(astroRequest: Request): Promise<AuthMe | null> {
+  const res = await fetchFromBackend('/api/v1/auth/me', astroRequest);
+  if (res.status === 401) return null;
+  if (!res.ok) {
+    throw new Error(`Failed to fetch auth/me: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function listOrganizations(astroRequest: Request) {
+  const res = await fetchFromBackend('/api/v1/orgs', astroRequest);
+  if (res.status === 401) return { status: 401 as const, data: null };
+  if (res.status === 403) return { status: 403 as const, data: null };
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { status: res.status, data: null, error: err.error || res.statusText };
+  }
+  const data: Organization[] = await res.json();
+  return { status: 200 as const, data };
+}
+
+export async function createOrganization(
+  astroRequest: Request,
+  payload: { slug: string; name: string; first_admin_email: string }
+) {
+  return fetchFromBackend('/api/v1/orgs', astroRequest, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createOrgInvite(
+  astroRequest: Request,
+  orgSlug: string,
+  payload: { email: string; role?: string }
+) {
+  return fetchFromBackend(
+    `/api/v1/orgs/${encodeURIComponent(orgSlug)}/invites`,
+    astroRequest,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function listCurrentOrgMembers(astroRequest: Request) {
+  const res = await fetchFromBackend('/api/v1/orgs/current/members', astroRequest);
+  if (res.status === 401) return { status: 401 as const, data: null };
+  if (res.status === 403) return { status: 403 as const, data: null };
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { status: res.status, data: null, error: err.error || res.statusText };
+  }
+  const data: OrgMember[] = await res.json();
+  return { status: 200 as const, data };
+}
+
+/** Public invite accept — no session cookie required. */
+export async function acceptInvite(payload: {
+  token: string;
+  password: string;
+  name?: string;
+}) {
+  const backendUrl =
+    import.meta.env.QUERIA_API_URL || process.env.QUERIA_API_URL || 'http://localhost:17671';
+  return fetch(`${backendUrl}/api/v1/invites/accept`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getDashboardSummary(astroRequest: Request) {
   const res = await fetchFromBackend('/api/v1/dashboard/summary', astroRequest);
   if (!res.ok) {

@@ -1,0 +1,374 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import {
+  createOrganization,
+  getAuthMe,
+  listOrganizations,
+  type Organization,
+} from '../../lib/api';
+
+let error = '';
+let inviteToken = '';
+let createdOrg: Organization | null = null;
+let createdInviteEmail = '';
+
+const me = await getAuthMe(Astro.request);
+if (!me || !me.authenticated) {
+  return Astro.redirect('/admin/login');
+}
+if (!me.is_platform_super_admin) {
+  return Astro.redirect('/admin/dashboard');
+}
+
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const slug = data.get('slug')?.toString()?.trim() || '';
+    const name = data.get('name')?.toString()?.trim() || '';
+    const first_admin_email = data.get('first_admin_email')?.toString()?.trim() || '';
+
+    const res = await createOrganization(Astro.request, {
+      slug,
+      name,
+      first_admin_email,
+    });
+
+    if (res.ok) {
+      const body = await res.json();
+      inviteToken = body.invite_token || '';
+      createdOrg = body.organization || null;
+      createdInviteEmail = body.invite?.email || first_admin_email;
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      error = errData.error || `Failed to create organization (${res.status})`;
+    }
+  } catch (err) {
+    console.error('Create org error:', err);
+    error = 'Failed to connect to backend server';
+  }
+}
+
+const listResult = await listOrganizations(Astro.request);
+if (listResult.status === 401) {
+  return Astro.redirect('/admin/login');
+}
+if (listResult.status === 403) {
+  return Astro.redirect('/admin/dashboard');
+}
+
+const organizations = listResult.data || [];
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+  });
+};
+
+const acceptBase = '/admin/invites/accept';
+---
+
+<AdminLayout title="Organizations" activeTab="orgs" isPlatformSuperAdmin={true} userEmail={me.email || undefined}>
+  {error && (
+    <div class="alert-message error">
+      <strong>Error:</strong> {error}
+    </div>
+  )}
+
+  {inviteToken && (
+    <div class="card token-reveal-box">
+      <div class="reveal-header">
+        <h3>One-time invite token</h3>
+        <p class="warning-text">
+          Copy this token now. It is only shown once after create and cannot be reloaded from the server.
+          {createdOrg && (
+            <> Share accept link for <strong>{createdOrg.name}</strong> ({createdOrg.slug}) with <code>{createdInviteEmail}</code>.</>
+          )}
+        </p>
+      </div>
+      <div class="reveal-body">
+        <code class="raw-token" id="invite-token-value">{inviteToken}</code>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          id="copy-invite-token"
+        >
+          Copy Token
+        </button>
+        <a
+          class="btn btn-secondary btn-sm"
+          href={`${acceptBase}?token=${encodeURIComponent(inviteToken)}`}
+        >
+          Open accept page
+        </a>
+      </div>
+    </div>
+  )}
+
+  <div class="orgs-layout">
+    <div class="card orgs-list-panel">
+      <div class="panel-header">
+        <h2>All Organizations</h2>
+      </div>
+
+      {organizations.length > 0 ? (
+        <div class="table-container">
+          <table class="orgs-table">
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>Name</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organizations.map((org: Organization) => (
+                <tr>
+                  <td><code class="org-slug">{org.slug}</code></td>
+                  <td class="org-name">{org.name}</td>
+                  <td>{formatDate(org.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>No organizations yet. Create the first tenant org below.</p>
+        </div>
+      )}
+    </div>
+
+    <div class="card orgs-create-panel">
+      <div class="panel-header">
+        <h2>Create Organization</h2>
+      </div>
+      <form method="POST">
+        <div class="form-group">
+          <label for="slug">Slug</label>
+          <input
+            type="text"
+            id="slug"
+            name="slug"
+            required
+            placeholder="e.g. team-b"
+            pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]"
+            title="Lowercase alphanumeric and dashes, 3–64 chars, start/end alphanumeric."
+            class="form-control"
+          />
+        </div>
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input
+            type="text"
+            id="name"
+            name="name"
+            required
+            maxlength="128"
+            placeholder="e.g. Team B"
+            class="form-control"
+          />
+        </div>
+        <div class="form-group">
+          <label for="first_admin_email">First admin email</label>
+          <input
+            type="email"
+            id="first_admin_email"
+            name="first_admin_email"
+            required
+            placeholder="admin@team-b.example"
+            class="form-control"
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Create organization</button>
+      </form>
+      <p class="hint">
+        Creates the org and a one-time org_admin invite. No email is sent; copy the token from the success banner.
+      </p>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  const btn = document.getElementById('copy-invite-token');
+  const tokenEl = document.getElementById('invite-token-value');
+  if (btn && tokenEl) {
+    btn.addEventListener('click', async () => {
+      const text = tokenEl.textContent || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = 'Copy Token'; }, 1500);
+      } catch {
+        alert('Copy failed — select the token manually.');
+      }
+    });
+  }
+</script>
+
+<style>
+  .alert-message {
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    font-size: 13px;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .token-reveal-box {
+    padding: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--color-primary);
+    background-color: var(--color-surface-container-low);
+  }
+
+  .reveal-header h3 {
+    font-family: var(--font-family-headline);
+    color: var(--color-primary);
+    font-size: 18px;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .warning-text {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .reveal-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .raw-token {
+    flex: 1;
+    min-width: 200px;
+    display: block;
+    padding: var(--spacing-md);
+    background: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    word-break: break-all;
+  }
+
+  .orgs-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-lg);
+  }
+
+  .orgs-list-panel,
+  .orgs-create-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-family: var(--font-family-headline);
+    font-size: 18px;
+    color: var(--color-primary);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .orgs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .orgs-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .orgs-table td {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+  }
+
+  .org-slug {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    background: var(--color-surface-container);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+  }
+
+  .empty-state {
+    color: var(--color-on-surface-variant);
+    font-size: 13px;
+    padding: var(--spacing-lg) 0;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.75rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 14px;
+    outline: none;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-outline-variant);
+  }
+
+  .btn-block {
+    width: 100%;
+  }
+
+  .hint {
+    margin-top: var(--spacing-lg);
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    line-height: 1.4;
+  }
+
+  @media (max-width: 900px) {
+    .orgs-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

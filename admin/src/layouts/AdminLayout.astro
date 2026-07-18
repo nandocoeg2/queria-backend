@@ -1,12 +1,36 @@
 ---
 import '../styles/tokens.css';
+import { getAuthMe } from '../lib/api';
 
 interface Props {
   title: string;
   activeTab: string;
+  /** When known by the page, skip a second auth/me call for nav gate. */
+  isPlatformSuperAdmin?: boolean;
+  userEmail?: string;
 }
 
-const { title, activeTab } = Astro.props;
+const { title, activeTab, isPlatformSuperAdmin: propIsSuper, userEmail: propEmail } = Astro.props;
+
+let isPlatformSuperAdmin = propIsSuper === true;
+let userEmail = propEmail || '';
+
+// Resolve super-admin for Orgs nav when page did not pass it (most tenant pages).
+if (propIsSuper === undefined || !propEmail) {
+  try {
+    const me = await getAuthMe(Astro.request);
+    if (me?.authenticated) {
+      if (propIsSuper === undefined) {
+        isPlatformSuperAdmin = !!me.is_platform_super_admin;
+      }
+      if (!propEmail) {
+        userEmail = me.email || '';
+      }
+    }
+  } catch {
+    // Layout still renders; individual pages gate with redirects.
+  }
+}
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', href: '/admin/dashboard' },
@@ -17,7 +41,11 @@ const navItems = [
   { id: 'playground', label: 'Playground', href: '/admin/playground' },
   { id: 'approvals', label: 'Approvals', href: '/admin/approvals' },
   { id: 'tokens', label: 'Agent Tokens', href: '/admin/tokens' },
+  { id: 'members', label: 'Members', href: '/admin/members' },
   { id: 'audit', label: 'Audit Logs', href: '/admin/audit' },
+  ...(isPlatformSuperAdmin
+    ? [{ id: 'orgs', label: 'Orgs', href: '/admin/orgs' }]
+    : []),
 ];
 ---
 
@@ -63,7 +91,7 @@ const navItems = [
         </nav>
         
         <div class="sidebar-footer">
-          <span class="user-email">Admin Console</span>
+          <span class="user-email">{userEmail || 'Admin Console'}</span>
           <a href="/admin/logout" class="logout-btn">Sign Out</a>
         </div>
       </aside>

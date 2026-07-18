@@ -1,0 +1,407 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import {
+  createOrgInvite,
+  getAuthMe,
+  listCurrentOrgMembers,
+  listOrganizations,
+  type OrgMember,
+} from '../../lib/api';
+
+let error = '';
+let inviteToken = '';
+let invitedEmail = '';
+let homeOrgSlug = '';
+
+const me = await getAuthMe(Astro.request);
+if (!me || !me.authenticated) {
+  return Astro.redirect('/admin/login');
+}
+if (!me.active_organization_id) {
+  // Super-admin with no membership: no home org invites.
+  error = 'No active organization on this session. Join or accept an invite to manage members.';
+}
+
+// Resolve home org slug for further invites (list orgs if SA; else from members only use active).
+if (me.is_platform_super_admin && me.active_organization_id) {
+  const orgs = await listOrganizations(Astro.request);
+  if (orgs.status === 200 && orgs.data) {
+    const home = orgs.data.find((o) => o.id === me.active_organization_id);
+    homeOrgSlug = home?.slug || '';
+  }
+} else if (me.active_organization_id) {
+  // Non-SA: we need slug for invite API. Prefer embedding via members API context.
+  // Fallback: use a query/input free path — store from first member org is unknown.
+  // Use projects index pattern: call list and also allow client to pass slug from env-less map.
+  // Backend invite is by slug; for home-only operators we fetch org via list which fails for non-SA.
+  // Solution: accept invite against home by reading cookie session only — create-invite needs slug.
+  // Non-super-admins create invites via POST /orgs/{slug}/invites; they know their org via me if we had slug.
+  // Extend: when active_organization_id set, members page can take ?slug= or resolve once via
+  // creating invite against a slug field hidden after first successful members load isn't possible.
+  // Workaround: expose slug by calling a tenant-safe endpoint. Dashboard summary may not have it.
+  // For v1 use form field "Organization slug" only when unknown; try common resolve via list when SA.
+}
+
+// Non-SA: allow operator to supply home org slug in form (prefill empty); also try cookie-less path.
+// Better: store slug from POST response or from create form. We'll load from listCurrentOrgMembers
+// and require org_slug form field prefilled if we have it in sessionStorage-like query.
+
+const requestedSlug = Astro.url.searchParams.get('org') || '';
+
+if (Astro.request.method === 'POST' && me.active_organization_id) {
+  try {
+    const data = await Astro.request.formData();
+    const email = data.get('email')?.toString()?.trim() || '';
+    const role = data.get('role')?.toString()?.trim() || 'org_member';
+    const orgSlug =
+      data.get('org_slug')?.toString()?.trim() ||
+      homeOrgSlug ||
+      requestedSlug;
+
+    if (!orgSlug) {
+      error = 'Organization slug is required to create an invite.';
+    } else {
+      homeOrgSlug = orgSlug;
+      const res = await createOrgInvite(Astro.request, orgSlug, { email, role });
+      if (res.ok) {
+        const body = await res.json();
+        inviteToken = body.invite_token || '';
+        invitedEmail = body.invite?.email || email;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        error = errData.error || `Failed to create invite (${res.status})`;
+      }
+    }
+  } catch (err) {
+    console.error('Create invite error:', err);
+    error = 'Failed to connect to backend server';
+  }
+}
+
+const membersResult = me.active_organization_id
+  ? await listCurrentOrgMembers(Astro.request)
+  : { status: 403 as const, data: null as OrgMember[] | null };
+
+if (membersResult.status === 401) {
+  return Astro.redirect('/admin/login');
+}
+
+const members = membersResult.data || [];
+const membersError =
+  membersResult.status === 403
+    ? 'Active organization required to list members.'
+    : (membersResult as { error?: string }).error || '';
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+  });
+};
+---
+
+<AdminLayout
+  title="Members"
+  activeTab="members"
+  isPlatformSuperAdmin={!!me.is_platform_super_admin}
+  userEmail={me.email || undefined}
+>
+  {(error || membersError) && (
+    <div class="alert-message error">
+      <strong>Error:</strong> {error || membersError}
+    </div>
+  )}
+
+  {inviteToken && (
+    <div class="card token-reveal-box">
+      <div class="reveal-header">
+        <h3>One-time invite token</h3>
+        <p class="warning-text">
+          Shown once for <code>{invitedEmail}</code>. Copy now — it is not re-listed after refresh.
+        </p>
+      </div>
+      <div class="reveal-body">
+        <code class="raw-token" id="member-invite-token">{inviteToken}</code>
+        <button type="button" class="btn btn-primary btn-sm" id="copy-member-invite">Copy Token</button>
+        <a
+          class="btn btn-secondary btn-sm"
+          href={`/admin/invites/accept?token=${encodeURIComponent(inviteToken)}`}
+        >
+          Open accept page
+        </a>
+      </div>
+    </div>
+  )}
+
+  <div class="members-layout">
+    <div class="card members-list-panel">
+      <div class="panel-header">
+        <h2>Home organization members</h2>
+      </div>
+
+      {members.length > 0 ? (
+        <div class="table-container">
+          <table class="members-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((m: OrgMember) => (
+                <tr>
+                  <td>{m.email}</td>
+                  <td><code class="role-code">{m.role}</code></td>
+                  <td>{formatDate(m.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          <p>{me.active_organization_id ? 'No members returned for this organization.' : 'No active organization on session.'}</p>
+        </div>
+      )}
+    </div>
+
+    <div class="card invite-panel">
+      <div class="panel-header">
+        <h2>Invite member</h2>
+      </div>
+      {me.active_organization_id ? (
+        <form method="POST">
+          {!homeOrgSlug && (
+            <div class="form-group">
+              <label for="org_slug">Organization slug</label>
+              <input
+                type="text"
+                id="org_slug"
+                name="org_slug"
+                required
+                value={requestedSlug}
+                placeholder="your-org-slug"
+                pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]"
+                class="form-control"
+              />
+              <span class="field-hint">Home org slug (required for invite API path).</span>
+            </div>
+          )}
+          {homeOrgSlug && (
+            <input type="hidden" name="org_slug" value={homeOrgSlug} />
+          )}
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              required
+              placeholder="colleague@example.com"
+              class="form-control"
+            />
+          </div>
+          <div class="form-group">
+            <label for="role">Role</label>
+            <select id="role" name="role" class="form-control">
+              <option value="org_member">org_member</option>
+              <option value="org_admin">org_admin</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" disabled={!me.active_organization_id}>
+            Create invite
+          </button>
+        </form>
+      ) : (
+        <p class="empty-state">Cannot invite without an active organization membership.</p>
+      )}
+      <p class="hint">
+        Invitees open <code>/admin/invites/accept</code> with the one-time token. No SMTP in v1.
+      </p>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  const btn = document.getElementById('copy-member-invite');
+  const tokenEl = document.getElementById('member-invite-token');
+  if (btn && tokenEl) {
+    btn.addEventListener('click', async () => {
+      const text = tokenEl.textContent || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = 'Copy Token'; }, 1500);
+      } catch {
+        alert('Copy failed — select the token manually.');
+      }
+    });
+  }
+</script>
+
+<style>
+  .alert-message {
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    font-size: 13px;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .token-reveal-box {
+    padding: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--color-primary);
+    background-color: var(--color-surface-container-low);
+  }
+
+  .reveal-header h3 {
+    font-family: var(--font-family-headline);
+    color: var(--color-primary);
+    font-size: 18px;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .warning-text {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .reveal-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .raw-token {
+    flex: 1;
+    min-width: 200px;
+    display: block;
+    padding: var(--spacing-md);
+    background: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    word-break: break-all;
+  }
+
+  .members-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-lg);
+  }
+
+  .members-list-panel,
+  .invite-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-family: var(--font-family-headline);
+    font-size: 18px;
+    color: var(--color-primary);
+  }
+
+  .members-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .members-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .members-table td {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .role-code {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    background: var(--color-surface-container);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+  }
+
+  .empty-state {
+    color: var(--color-on-surface-variant);
+    font-size: 13px;
+    padding: var(--spacing-lg) 0;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.75rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 14px;
+    outline: none;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+  }
+
+  .field-hint,
+  .hint {
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    line-height: 1.4;
+  }
+
+  .hint {
+    margin-top: var(--spacing-lg);
+  }
+
+  .btn-block {
+    width: 100%;
+  }
+
+  @media (max-width: 900px) {
+    .members-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

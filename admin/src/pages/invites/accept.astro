@@ -1,0 +1,275 @@
+---
+import '../../styles/tokens.css';
+import { acceptInvite } from '../../lib/api';
+
+let error = '';
+let success = false;
+let acceptedEmail = '';
+let acceptedOrg = '';
+
+const url = new URL(Astro.request.url);
+const tokenPrefill = url.searchParams.get('token') || '';
+
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const token = data.get('token')?.toString()?.trim() || '';
+    const password = data.get('password')?.toString() || '';
+    const name = data.get('name')?.toString()?.trim() || undefined;
+
+    const response = await acceptInvite({ token, password, name: name || undefined });
+    const body = await response.json().catch(() => ({}));
+
+    if (response.ok && body.accepted) {
+      success = true;
+      acceptedEmail = body.email || '';
+      acceptedOrg = body.organization_slug || '';
+      // Soft success then client can navigate; also allow server redirect for non-JS.
+      return Astro.redirect(
+        `/admin/login?accepted=1${acceptedEmail ? `&email=${encodeURIComponent(acceptedEmail)}` : ''}`
+      );
+    }
+
+    const code = body.error || 'accept_failed';
+    const messages: Record<string, string> = {
+      invalid_invite_token: 'Invite token is missing or invalid.',
+      invite_invalid: 'This invite token is not valid.',
+      invite_revoked: 'This invite has been revoked.',
+      invite_already_used: 'This invite was already used.',
+      invite_expired: 'This invite has expired. Ask your admin for a new invite.',
+      already_member_of_other_org: 'This email already belongs to another organization.',
+      empty_password: 'Password is required.',
+      weak_password: 'Password must be at least 12 characters.',
+    };
+    error = messages[code] || code;
+  } catch (err) {
+    console.error('Accept invite error:', err);
+    error = 'Failed to communicate with authorization server';
+  }
+}
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Accept Invite | Queria Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400..800&family=Manrope:wght@400..800&family=JetBrains+Mono:wght@400..800&display=swap" rel="stylesheet">
+  </head>
+  <body class="accept-body">
+    <div class="accept-container">
+      <div class="accept-header">
+        <div class="logo">Q</div>
+        <h1>Accept invite</h1>
+        <p>Join your organization on Queria. No prior sign-in required.</p>
+      </div>
+
+      <div class="card accept-card">
+        {error && <div class="error-alert" role="alert">{error}</div>}
+
+        {success ? (
+          <div class="success-alert">
+            Invite accepted{acceptedOrg ? ` for ${acceptedOrg}` : ''}.
+            {acceptedEmail && <> Sign in as <strong>{acceptedEmail}</strong>.</>}
+            <div class="mt">
+              <a href="/admin/login" class="btn btn-primary btn-block">Go to sign in</a>
+            </div>
+          </div>
+        ) : (
+          <form method="POST">
+            <div class="form-group">
+              <label for="token">Invite token</label>
+              <input
+                type="text"
+                id="token"
+                name="token"
+                required
+                value={tokenPrefill}
+                placeholder="qinv_…"
+                autocomplete="off"
+                spellcheck="false"
+                class="form-control mono"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="name">Display name (optional)</label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                placeholder="Your name"
+                maxlength="128"
+                class="form-control"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                required
+                minlength="12"
+                placeholder="At least 12 characters"
+                class="form-control"
+              />
+              <span class="field-hint">Minimum 12 characters. You will use this to sign in after accepting.</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">Accept invite</button>
+          </form>
+        )}
+
+        <p class="footer-link">
+          Already have an account? <a href="/admin/login">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+
+<style>
+  .accept-body {
+    background-color: var(--color-background);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: var(--font-family-body);
+    padding: var(--spacing-xl);
+  }
+
+  .accept-container {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xxl);
+  }
+
+  .accept-header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-default);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 24px;
+    font-family: var(--font-family-headline);
+  }
+
+  .accept-header h1 {
+    font-size: 28px;
+    color: var(--color-on-surface);
+    font-family: var(--font-family-headline);
+  }
+
+  .accept-header p {
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .accept-card {
+    padding: var(--spacing-xxl);
+  }
+
+  .error-alert {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    font-size: 13px;
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .success-alert {
+    background-color: var(--color-surface-container);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    font-size: 13px;
+    color: var(--color-on-surface);
+  }
+
+  .mt {
+    margin-top: var(--spacing-lg);
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-on-surface-variant);
+  }
+
+  .form-control {
+    width: 100%;
+    padding: 0.75rem var(--spacing-md);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-default);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-body);
+    font-size: 14px;
+    outline: none;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .form-control.mono {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+  }
+
+  .form-control:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-outline-variant);
+  }
+
+  .field-hint {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .btn-block {
+    width: 100%;
+    padding: 0.75rem var(--spacing-xl);
+    font-size: 14px;
+  }
+
+  .footer-link {
+    margin-top: var(--spacing-xl);
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .footer-link a {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+</style>
