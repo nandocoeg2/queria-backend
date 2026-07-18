@@ -1,12 +1,12 @@
 use crate::http::{
     agent_setup, approvals, audit_logs, auth, dashboard, embedding_jobs, health, ingestion_jobs,
-    knowledge_items, projects, retrieval, setup, sources, tokens,
+    knowledge_items, orgs, projects, retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
 use queria_db::admin_queries::PgAdminQueriesRepository;
 use queria_db::ingestion::PgIngestionRepository;
-use queria_db::repositories::{PgAuthRepository, PgProjectRepository};
+use queria_db::repositories::{PgAuthRepository, PgOrgRepository, PgProjectRepository};
 use queria_search::retrieval::{PgRetrievalService, build_pg_retrieval_service};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -26,6 +26,11 @@ impl ApiState {
     #[must_use]
     pub fn auth_repository(&self) -> Option<PgAuthRepository> {
         self.pool.clone().map(PgAuthRepository::new)
+    }
+
+    #[must_use]
+    pub fn org_repository(&self) -> Option<PgOrgRepository> {
+        self.pool.clone().map(PgOrgRepository::new)
     }
 
     #[must_use]
@@ -77,6 +82,8 @@ fn build_app_with_state(state: ApiState) -> Router {
         // Public agent-driven onboarding: /api/v1/docs/* and /api/v1/setup/* GET helpers.
         .nest("/api/v1", agent_setup::router())
         .nest("/api/v1/auth", auth::router())
+        // Platform orgs + invites + members + public accept (single module).
+        .merge(orgs::router())
         .nest(
             "/api/v1/projects",
             projects::router()

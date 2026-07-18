@@ -7,6 +7,7 @@ pub mod embedding_jobs;
 pub mod health;
 pub mod ingestion_jobs;
 pub mod knowledge_items;
+pub mod orgs;
 pub mod projects;
 pub mod retrieval;
 pub mod setup;
