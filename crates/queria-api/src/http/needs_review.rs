@@ -38,6 +38,9 @@ struct BulkNeedsReviewRequest {
     commit_sha: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+    /// Allow bulk when both origin_url and commit_sha are empty (project-wide). Default false.
+    #[serde(default)]
+    force_project_all: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,8 +147,9 @@ async fn promote_one(
     Path(knowledge_item_id): Path<KnowledgeItemId>,
 ) -> ApiResult<NeedsReviewActionResponse> {
     let session = require_session(&state, &headers).await?;
-    let _home_org = auth::require_active_org(&session)
+    let home_org = auth::require_active_org(&session)
         .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
+    require_org_admin_or_super(&state, &session, home_org).await?;
     let repository = project_repository(&state)?;
 
     let Some(record) = repository
@@ -166,8 +170,9 @@ async fn reject_one(
     body: Bytes,
 ) -> ApiResult<NeedsReviewActionResponse> {
     let session = require_session(&state, &headers).await?;
-    let _home_org = auth::require_active_org(&session)
+    let home_org = auth::require_active_org(&session)
         .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
+    require_org_admin_or_super(&state, &session, home_org).await?;
 
     let reason = if body.is_empty() {
         None
@@ -195,8 +200,9 @@ async fn promote_bulk(
     body: Bytes,
 ) -> ApiResult<BulkNeedsReviewResponse> {
     let session = require_session(&state, &headers).await?;
-    let _home_org = auth::require_active_org(&session)
+    let home_org = auth::require_active_org(&session)
         .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
+    require_org_admin_or_super(&state, &session, home_org).await?;
     let payload: BulkNeedsReviewRequest = serde_json::from_slice(&body)
         .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_bulk_payload"))?;
 
@@ -212,6 +218,7 @@ async fn promote_bulk(
             project_slug,
             payload.origin_url.as_deref(),
             payload.commit_sha.as_deref(),
+            payload.force_project_all,
         )
         .await
         .map_err(map_error)?;
@@ -232,8 +239,9 @@ async fn reject_bulk(
     body: Bytes,
 ) -> ApiResult<BulkNeedsReviewResponse> {
     let session = require_session(&state, &headers).await?;
-    let _home_org = auth::require_active_org(&session)
+    let home_org = auth::require_active_org(&session)
         .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
+    require_org_admin_or_super(&state, &session, home_org).await?;
     let payload: BulkNeedsReviewRequest = serde_json::from_slice(&body)
         .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_bulk_payload"))?;
 
@@ -250,6 +258,7 @@ async fn reject_bulk(
             payload.origin_url.as_deref(),
             payload.commit_sha.as_deref(),
             payload.reason,
+            payload.force_project_all,
         )
         .await
         .map_err(map_error)?;
@@ -318,6 +327,37 @@ async fn require_session(
     auth::require_session(state, headers)
         .await
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))
+}
+
+/// Pure gate: session promote/reject requires org_admin role OR platform super-admin.
+#[cfg_attr(test, allow(dead_code))]
+fn session_may_manage_needs_review(is_platform_super_admin: bool, membership_role: Option<&str>) -> bool {
+    is_platform_super_admin || membership_role == Some("org_admin")
+}
+
+/// Session promote/reject (not agent MCP): org_admin of home org OR platform super-admin.
+async fn require_org_admin_or_super(
+    state: &ApiState,
+    session: &queria_db::repositories::AuthenticatedSession,
+    organization_id: uuid::Uuid,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if session.is_platform_super_admin {
+        return Ok(());
+    }
+    let Some(org_repo) = state.org_repository() else {
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "needs_review_store_not_configured",
+        ));
+    };
+    let role = org_repo
+        .membership_role(session.user_id, organization_id)
+        .await
+        .map_err(map_error)?;
+    if !session_may_manage_needs_review(false, role.as_deref()) {
+        return Err(error(StatusCode::FORBIDDEN, "org_admin_required"));
+    }
+    Ok(())
 }
 
 fn project_repository(
@@ -450,6 +490,35 @@ mod tests {
         assert_eq!(payload.project_slug, "api");
         assert_eq!(payload.origin_url.as_deref(), Some("git@h:a.git"));
         assert_eq!(payload.commit_sha.as_deref(), Some("abc"));
+        assert!(!payload.force_project_all);
+    }
+
+    #[test]
+    fn bulk_request_force_project_all_defaults_false() {
+        let payload: BulkNeedsReviewRequest =
+            serde_json::from_str(r#"{"project_slug":"api"}"#).expect("deserialize");
+        assert!(!payload.force_project_all);
+        assert!(payload.origin_url.is_none());
+        assert!(payload.commit_sha.is_none());
+    }
+
+    #[test]
+    fn bulk_request_force_project_all_true() {
+        let payload: BulkNeedsReviewRequest = serde_json::from_str(
+            r#"{"project_slug":"api","force_project_all":true}"#,
+        )
+        .expect("deserialize");
+        assert!(payload.force_project_all);
+    }
+
+    /// Promote/reject session gate: org_admin or platform super-admin only (not org_member).
+    #[test]
+    fn promote_requires_org_admin_or_super() {
+        assert!(!session_may_manage_needs_review(false, None));
+        assert!(!session_may_manage_needs_review(false, Some("org_member")));
+        assert!(session_may_manage_needs_review(false, Some("org_admin")));
+        assert!(session_may_manage_needs_review(true, None));
+        assert!(session_may_manage_needs_review(true, Some("org_member")));
     }
 
     #[test]

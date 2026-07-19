@@ -52,29 +52,41 @@ if (Astro.request.method === 'POST') {
         action === 'promote_bulk'
           ? '/api/v1/needs-review/promote-bulk'
           : '/api/v1/needs-review/reject-bulk';
-      const payload: Record<string, string | undefined> = {
-        project_slug: String(projectSlug),
-      };
-      if (originUrl) payload.origin_url = String(originUrl);
-      if (commitSha) payload.commit_sha = String(commitSha);
-      if (action === 'reject_bulk' && reason) {
-        payload.reason = String(reason);
-      }
-      const res = await fetchFromBackend(endpoint, Astro.request, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const body = await res.json().catch(() => ({ count: 0 }));
-        const count = body.count ?? 0;
+      const origin =
+        originUrl && String(originUrl) !== '—' ? String(originUrl) : '';
+      const commit =
+        commitSha && String(commitSha) !== '—' ? String(commitSha) : '';
+      const forceProjectAll = data.get('force_project_all') === 'true';
+      if (!origin && !commit && !forceProjectAll) {
         message =
-          action === 'promote_bulk'
-            ? `Promoted ${count} item(s) to approved.`
-            : `Rejected ${count} item(s).`;
-      } else {
-        const errorRes = await res.json().catch(() => ({}));
-        message = errorRes.error || `Failed bulk ${action}.`;
+          'Bulk action requires origin_url or commit_sha (or force_project_all for empty-origin groups).';
         isError = true;
+      } else {
+        const payload: Record<string, string | boolean | undefined> = {
+          project_slug: String(projectSlug),
+        };
+        if (origin) payload.origin_url = origin;
+        if (commit) payload.commit_sha = commit;
+        if (forceProjectAll) payload.force_project_all = true;
+        if (action === 'reject_bulk' && reason) {
+          payload.reason = String(reason);
+        }
+        const res = await fetchFromBackend(endpoint, Astro.request, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const body = await res.json().catch(() => ({ count: 0 }));
+          const count = body.count ?? 0;
+          message =
+            action === 'promote_bulk'
+              ? `Promoted ${count} item(s) to approved.`
+              : `Rejected ${count} item(s).`;
+        } else {
+          const errorRes = await res.json().catch(() => ({}));
+          message = errorRes.error || `Failed bulk ${action}.`;
+          isError = true;
+        }
       }
     }
   } catch (err) {
@@ -191,28 +203,62 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
                 <span class="meta-count">{group.items.length} file(s)</span>
               </div>
               <div class="group-actions">
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  data-open-confirm="promote_bulk"
-                  data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
-                  data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
-                  data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
-                  data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
-                >
-                  Promote all
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-sm btn-danger-hover"
-                  data-open-confirm="reject_bulk"
-                  data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
-                  data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
-                  data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
-                  data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
-                >
-                  Reject all
-                </button>
+                {/* Hide bulk when both origin and commit empty unless user uses force path */}
+                {(group.originUrl !== '—' || group.commitSha !== '—') ? (
+                  <>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      data-open-confirm="promote_bulk"
+                      data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                      data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
+                      data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
+                      data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
+                    >
+                      Promote all
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm btn-danger-hover"
+                      data-open-confirm="reject_bulk"
+                      data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                      data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
+                      data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
+                      data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
+                    >
+                      Reject all
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      data-open-confirm="promote_bulk"
+                      data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                      data-origin-url=""
+                      data-commit-sha=""
+                      data-force-project-all="true"
+                      data-label={`${group.projectSlug} (entire project, no origin) (${group.items.length})`}
+                      title="Empty origin+commit: requires force_project_all confirm"
+                    >
+                      Promote all (force)
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm btn-danger-hover"
+                      data-open-confirm="reject_bulk"
+                      data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                      data-origin-url=""
+                      data-commit-sha=""
+                      data-force-project-all="true"
+                      data-label={`${group.projectSlug} (entire project, no origin) (${group.items.length})`}
+                      title="Empty origin+commit: requires force_project_all confirm"
+                    >
+                      Reject all (force)
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -335,11 +381,15 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
       <input type="hidden" name="project_slug" id="promote-bulk-project" value="" />
       <input type="hidden" name="origin_url" id="promote-bulk-origin" value="" />
       <input type="hidden" name="commit_sha" id="promote-bulk-commit" value="" />
+      <input type="hidden" name="force_project_all" id="promote-bulk-force" value="" />
+      <p class="dialog-warn" id="promote-bulk-force-warn" hidden>
+        Warning: empty origin and commit — this promotes all matching project needs_review items (force_project_all).
+      </p>
       <div class="dialog-actions">
         <button type="button" class="btn btn-secondary" data-close-dialog="promote-bulk-confirm-dialog">
           Cancel
         </button>
-        <button type="submit" class="btn btn-primary">
+        <button type="submit" class="btn btn-primary" id="promote-bulk-submit">
           Confirm Promote All
         </button>
       </div>
@@ -360,11 +410,15 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
       <input type="hidden" name="project_slug" id="reject-bulk-project" value="" />
       <input type="hidden" name="origin_url" id="reject-bulk-origin" value="" />
       <input type="hidden" name="commit_sha" id="reject-bulk-commit" value="" />
+      <input type="hidden" name="force_project_all" id="reject-bulk-force" value="" />
+      <p class="dialog-warn" id="reject-bulk-force-warn" hidden>
+        Warning: empty origin and commit — this rejects all matching project needs_review items (force_project_all).
+      </p>
       <div class="dialog-actions">
         <button type="button" class="btn btn-secondary" data-close-dialog="reject-bulk-confirm-dialog">
           Cancel
         </button>
-        <button type="submit" class="btn btn-secondary btn-danger-confirm">
+        <button type="submit" class="btn btn-secondary btn-danger-confirm" id="reject-bulk-submit">
           Confirm Reject All
         </button>
       </div>
@@ -406,7 +460,7 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
         if (typeof dialog.showModal === 'function') dialog.showModal();
       }
 
-      function openBulk(kind, projectSlug, originUrl, commitSha, label) {
+      function openBulk(kind, projectSlug, originUrl, commitSha, label, forceProjectAll) {
         const isPromote = kind === 'promote_bulk';
         const dialog = document.getElementById(
           isPromote ? 'promote-bulk-confirm-dialog' : 'reject-bulk-confirm-dialog'
@@ -420,6 +474,15 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
         const commitInput = document.getElementById(
           isPromote ? 'promote-bulk-commit' : 'reject-bulk-commit'
         );
+        const forceInput = document.getElementById(
+          isPromote ? 'promote-bulk-force' : 'reject-bulk-force'
+        );
+        const forceWarn = document.getElementById(
+          isPromote ? 'promote-bulk-force-warn' : 'reject-bulk-force-warn'
+        );
+        const submitBtn = document.getElementById(
+          isPromote ? 'promote-bulk-submit' : 'reject-bulk-submit'
+        );
         const labelEl = document.getElementById(
           isPromote ? 'promote-bulk-confirm-label' : 'reject-bulk-confirm-label'
         );
@@ -427,6 +490,17 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
         projectInput.value = projectSlug || '';
         originInput.value = originUrl || '';
         commitInput.value = commitSha || '';
+        if (forceInput) forceInput.value = forceProjectAll ? 'true' : '';
+        if (forceWarn) forceWarn.hidden = !forceProjectAll;
+        if (submitBtn) {
+          submitBtn.textContent = forceProjectAll
+            ? isPromote
+              ? 'Confirm Force Promote All'
+              : 'Confirm Force Reject All'
+            : isPromote
+              ? 'Confirm Promote All'
+              : 'Confirm Reject All';
+        }
         labelEl.textContent = label || 'this group';
         if (typeof dialog.showModal === 'function') dialog.showModal();
       }
@@ -446,7 +520,8 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
               btn.getAttribute('data-project-slug'),
               btn.getAttribute('data-origin-url'),
               btn.getAttribute('data-commit-sha'),
-              btn.getAttribute('data-label')
+              btn.getAttribute('data-label'),
+              btn.getAttribute('data-force-project-all') === 'true'
             );
           }
         });
@@ -742,6 +817,18 @@ queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
   .dialog-body strong {
     color: var(--color-on-surface);
     font-weight: 600;
+  }
+
+  .dialog-warn {
+    font-family: var(--font-family-body);
+    font-size: 12px;
+    color: #fbbf24;
+    background-color: color-mix(in srgb, #fbbf24 12%, transparent);
+    border: 1px solid color-mix(in srgb, #fbbf24 35%, transparent);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin: 0 0 var(--spacing-md);
+    line-height: 1.45;
   }
 
   .dialog-form {

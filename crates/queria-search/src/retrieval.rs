@@ -158,6 +158,8 @@ where
             )
             .await?;
         // Oversampled candidate pool: larger than final limit so rerank has headroom.
+        // Dense Qdrant filter does not store knowledge status; when include_needs_review is
+        // false, oversampling may include NR/inactive status ids that PG hydrate drops.
         let candidate_count = request
             .limit
             .saturating_mul(self.config.candidate_multiplier)

@@ -1097,6 +1097,16 @@ impl PgProjectRepository {
             });
         }
 
+        // New content_hash for same logical_path: supersede prior needs_review so
+        // stale NR rows do not accumulate. Approved (promoted) items are left alone.
+        sqlx::query(Self::supersede_prior_needs_review_sql())
+            .bind(params.project_id)
+            .bind(&params.path)
+            .bind(&params.content_hash)
+            .execute(&mut *transaction)
+            .await
+            .map_err(to_infrastructure_error)?;
+
         let title = params.path.clone();
         let source_uri = format!(
             "queria://local-git/{}?path={}",
@@ -2268,12 +2278,16 @@ impl PgProjectRepository {
     }
 
     /// Bulk promote needs_review items matching project + origin + commit (IMP-L4).
+    ///
+    /// When both `origin_url` and `commit_sha` are empty/None, requires
+    /// `force_project_all = true` (default false) to avoid project-wide wildmatch.
     pub async fn promote_needs_review_by_origin_commit(
         &self,
         user_id: Uuid,
         project_slug: &str,
         origin_url: Option<&str>,
         commit_sha: Option<&str>,
+        force_project_all: bool,
     ) -> QueriaResult<Vec<NeedsReviewActionRecord>> {
         let ids = self
             .list_needs_review_ids_for_origin_commit(
@@ -2281,6 +2295,7 @@ impl PgProjectRepository {
                 project_slug,
                 origin_url,
                 commit_sha,
+                force_project_all,
             )
             .await?;
         let mut results = Vec::with_capacity(ids.len());
@@ -2296,6 +2311,9 @@ impl PgProjectRepository {
     }
 
     /// Bulk reject needs_review items matching project + origin + commit.
+    ///
+    /// When both `origin_url` and `commit_sha` are empty/None, requires
+    /// `force_project_all = true` (default false) to avoid project-wide wildmatch.
     pub async fn reject_needs_review_by_origin_commit(
         &self,
         user_id: Uuid,
@@ -2303,6 +2321,7 @@ impl PgProjectRepository {
         origin_url: Option<&str>,
         commit_sha: Option<&str>,
         reason: Option<String>,
+        force_project_all: bool,
     ) -> QueriaResult<Vec<NeedsReviewActionRecord>> {
         let ids = self
             .list_needs_review_ids_for_origin_commit(
@@ -2310,6 +2329,7 @@ impl PgProjectRepository {
                 project_slug,
                 origin_url,
                 commit_sha,
+                force_project_all,
             )
             .await?;
         let mut results = Vec::with_capacity(ids.len());
@@ -2324,13 +2344,32 @@ impl PgProjectRepository {
         Ok(results)
     }
 
+    /// Pure guard: bulk by origin/commit must not wildmatch a whole project unless forced.
+    pub fn bulk_origin_commit_allowed(
+        origin_url: Option<&str>,
+        commit_sha: Option<&str>,
+        force_project_all: bool,
+    ) -> Result<(), &'static str> {
+        let origin = origin_url.map(str::trim).filter(|s| !s.is_empty());
+        let commit = commit_sha.map(str::trim).filter(|s| !s.is_empty());
+        if origin.is_none() && commit.is_none() && !force_project_all {
+            Err("origin_url or commit_sha required for bulk")
+        } else {
+            Ok(())
+        }
+    }
+
     async fn list_needs_review_ids_for_origin_commit(
         &self,
         user_id: Uuid,
         project_slug: &str,
         origin_url: Option<&str>,
         commit_sha: Option<&str>,
+        force_project_all: bool,
     ) -> QueriaResult<Vec<Uuid>> {
+        Self::bulk_origin_commit_allowed(origin_url, commit_sha, force_project_all)
+            .map_err(|m| QueriaError::Validation(m.to_owned()))?;
+
         let origin = origin_url.map(str::trim).filter(|s| !s.is_empty());
         let commit = commit_sha.map(str::trim).filter(|s| !s.is_empty());
 
@@ -2405,6 +2444,21 @@ impl PgProjectRepository {
     #[cfg(test)]
     pub(crate) fn reject_needs_review_status_sql() -> &'static str {
         "set status = 'rejected'"
+    }
+
+    /// SQL: supersede prior needs_review for same project + logical_path when re-indexing a new hash.
+    /// Bind order: $1 project_id, $2 logical_path, $3 new content_hash (excluded).
+    pub(crate) fn supersede_prior_needs_review_sql() -> &'static str {
+        "update knowledge_item ki
+         set status = 'superseded',
+             updated_at = now()
+         from chunk c
+         where c.knowledge_item_id = ki.id
+           and c.chunk_index = 0
+           and ki.project_id = $1
+           and ki.status = 'needs_review'
+           and c.metadata->>'logical_path' = $2
+           and c.content_hash is distinct from $3"
     }
 
     pub async fn seed_fjulian_me_registry(&self) -> QueriaResult<()> {
@@ -2507,6 +2561,44 @@ mod needs_review_tests {
     fn reject_sets_rejected() {
         assert!(
             PgProjectRepository::reject_needs_review_status_sql().contains("status = 'rejected'")
+        );
+    }
+
+    /// Re-index with new hash supersedes prior needs_review for same logical_path.
+    #[test]
+    fn supersede_prior_needs_review_sql_contract() {
+        let sql = PgProjectRepository::supersede_prior_needs_review_sql();
+        assert!(sql.contains("status = 'superseded'"));
+        assert!(sql.contains("ki.status = 'needs_review'"));
+        assert!(sql.contains("ki.project_id = $1"));
+        assert!(sql.contains("c.metadata->>'logical_path' = $2"));
+        assert!(sql.contains("c.content_hash is distinct from $3"));
+        // Must not touch approved / promoted items.
+        assert!(!sql.contains("status = 'approved'"));
+        assert!(!sql.contains("status != 'needs_review'"));
+    }
+
+    /// Bulk without origin+commit rejects unless force_project_all.
+    #[test]
+    fn bulk_rejects_without_origin_and_commit() {
+        let err = PgProjectRepository::bulk_origin_commit_allowed(None, None, false)
+            .expect_err("empty origin+commit without force");
+        assert_eq!(err, "origin_url or commit_sha required for bulk");
+
+        assert!(
+            PgProjectRepository::bulk_origin_commit_allowed(None, None, true).is_ok(),
+            "force_project_all allows empty origin+commit"
+        );
+        assert!(
+            PgProjectRepository::bulk_origin_commit_allowed(Some("git@h:a.git"), None, false)
+                .is_ok()
+        );
+        assert!(
+            PgProjectRepository::bulk_origin_commit_allowed(None, Some("abc123"), false).is_ok()
+        );
+        assert!(
+            PgProjectRepository::bulk_origin_commit_allowed(Some("  "), Some(""), false).is_err(),
+            "whitespace-only origin/commit still empty"
         );
     }
 }

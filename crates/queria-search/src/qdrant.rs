@@ -296,6 +296,9 @@ fn search_filter(
     include_global: bool,
     embedding_profile_version: &str,
 ) -> Value {
+    // Status is NOT on Qdrant payload (no migration). inactive/needs_review/scratch may
+    // appear among dense candidates; PG HYDRATE_SQL enforces status/lane gates afterward.
+    // When include_needs_review is false, oversampling may still return NR ids that hydrate drops.
     let mut should = vec![json!({
         "key": "project_id",
         "match": { "value": project_id }
