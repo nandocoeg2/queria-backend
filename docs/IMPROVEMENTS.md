@@ -1,7 +1,7 @@
 # Queria Improvement Backlog (enowx-informed)
 
 > Status: REFERENCE — approved direction and ranked backlog, not an implementation ledger.
-> Last verified: 2026-07-18.
+> Last verified: 2026-07-19.
 > Runtime truth: [`HANDOFF.md`](./HANDOFF.md).
 > Product contract: [`PRODUCT.md`](./PRODUCT.md) (includes dual-lane trust model).
 > What not to re-add: [`SIMPLIFICATION.md`](./SIMPLIFICATION.md).
@@ -518,12 +518,87 @@ Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 | Priority | P2 |
 | Status | `deferred` |
 | yagni | Dual embed/display strings + prefix versioning + re-embed-on-change couples to IMP-10. No proof short chunks need NL prefixes more than filters/rerank. |
-| Problem | (Speculative) short snippets lack context for embed. |
+| Problem | (Speculative) short chunks lack context for embed. |
 | enowx reference | Metadata-rich index (not this exact feature). |
 | Proposed approach | If un-deferred after eval plateau: one short prefix format, worker only, no Admin UI. |
 | Surfaces | worker embed only |
 | Acceptance | n/a while deferred |
 | Dependencies | IMP-01/02/14 first; eval proof. |
+
+### Local multi-git `index-here` (hybrid; self-hosted friendly)
+
+Design (REFERENCE): [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md).
+
+Not cloud clone of unreachable remotes. CLI on the machine that has the git checkouts; multi-root discover; quality gates; **quarantine** then **promote** (Admin UI + privileged MCP). Does **not** default-agent-write into trusted.
+
+#### IMP-L1 — CLI `index-here` multi-git discover + client gates
+
+| Field | Value |
+|---|---|
+| Priority | P1 |
+| Status | `proposed` |
+| Problem | Users must not fill Git allowlist/source forms; workspaces have many nested git roots; self-hosted remotes unreachable from OCI worker. |
+| Proposed approach | `queria index-here --token-env QUERIA_AGENT_TOKEN`: depth-limited discover of git roots under cwd; `git ls-files`; extension/path/size/secret gates; dry-run. |
+| Surfaces | `queria-cli` |
+| Acceptance | Nested multi-repo workspace lists N roots; non-git dirs skipped; dry-run no upload. |
+| Dependencies | Design spec above. |
+
+#### IMP-L2 — API + storage quarantine + embed
+
+| Field | Value |
+|---|---|
+| Priority | P1 |
+| Status | `proposed` |
+| Problem | Need central place for bulk local index that is not auto-trusted. |
+| Proposed approach | Agent-auth batch ingest; re-validate gates server-side; chunk+embed; lane/status **quarantine**; idempotent content_hash. |
+| Surfaces | `queria-api`, `queria-db`, `queria-search` / embed path |
+| Acceptance | Upload creates quarantine only; default retrieve does not hit it. |
+| Dependencies | IMP-L1 client shape. |
+
+#### IMP-L3 — Retrieve `include_quarantine` authz
+
+| Field | Value |
+|---|---|
+| Priority | P1 |
+| Status | `proposed` |
+| Problem | Owners/Admin may need to review quarantine in probe; default agents must not drown in unreviewed dumps. |
+| Proposed approach | Flag default false; allow owner token subject and Admin session. |
+| Surfaces | retrieval MCP/API/CLI |
+| Acceptance | Default retrieve = trusted (+ scratch rules unchanged); quarantine only when allowed. |
+| Dependencies | IMP-L2. |
+
+#### IMP-L4 — Admin promote / reject UI
+
+| Field | Value |
+|---|---|
+| Priority | P1 |
+| Status | `proposed` |
+| Problem | Shared trusted must not absorb garbage; human promote one-click. |
+| Proposed approach | Admin list quarantine by origin/commit/path; Promote → trusted; Reject; audit. |
+| Surfaces | Admin SSR |
+| Acceptance | Promote makes probe trusted-hit; reject removes from quarantine queue. |
+| Dependencies | IMP-L2. |
+
+#### IMP-L5 — MCP promote tools (privileged)
+
+| Field | Value |
+|---|---|
+| Priority | P1 |
+| Status | `proposed` |
+| Problem | Privileged operators want promote without browser. |
+| Proposed approach | Tools `list_quarantine` / `promote_*` / `reject_*`; **not** default agent mint; grant explicit. |
+| Surfaces | `queria-mcp` |
+| Acceptance | Token without grant 403; with grant can promote to trusted. |
+| Dependencies | IMP-L2, IMP-L4 semantics. |
+
+#### IMP-L6 — Optional auto-promote scores (default off)
+
+| Field | Value |
+|---|---|
+| Priority | P2 |
+| Status | `proposed` |
+| yagni until P1 quarantine UX ships | Hard-score auto trusted (e.g. docs-only paths) only after promote UX proven. |
+| Dependencies | IMP-L2–L4. |
 
 ---
 
@@ -535,8 +610,8 @@ This backlog **must not** reverse completed cuts:
 - Three.js / shadcn Admin graph kit
 - Evaluation as first-class Admin product (CLI remains eval path)
 - Multi-store backends for enowx or Queria beyond Qdrant (+ Postgres SoT)
-- Maintainer tools on agent MCP by default
-- Agent writes into **trusted/global** (dual-lane scratch only)
+- Maintainer tools on agent MCP by default (privileged promote for IMP-L5 is explicit grant only)
+- Agent writes into **trusted/global** by default (dual-lane scratch; bulk local git → **quarantine** then promote, not silent trusted)
 - Tokenizer/budget product, multi-section docs HTTP API, taxonomy engine, QueryEmbedder abstraction, embedding_context dual-store (YAGNI 2026-07-17 on IMP-17–27)
 
 If a future item conflicts, update PRODUCT boundaries first, then this file.
