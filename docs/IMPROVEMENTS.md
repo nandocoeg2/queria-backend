@@ -527,9 +527,10 @@ Contract: [`PRODUCT.md`](./PRODUCT.md) knowledge lanes.
 
 ### Local multi-git `index-here` (hybrid; self-hosted friendly)
 
-Design (REFERENCE): [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md).
+Design (REFERENCE): [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md).  
+Plan: [`archive/superpowers/plans/2026-07-19-local-git-index-here.md`](./archive/superpowers/plans/2026-07-19-local-git-index-here.md).
 
-Not cloud clone of unreachable remotes. CLI on the machine that has the git checkouts; multi-root discover; quality gates; **quarantine** then **promote** (Admin UI + privileged MCP). Does **not** default-agent-write into trusted.
+Not cloud clone of unreachable remotes. CLI on the machine that has the git checkouts; multi-root discover; quality gates; status **`needs_review`** (“Needs review”) then **promote** (Admin UI + privileged MCP). Does **not** default-agent-write into trusted. Embed via **async jobs**. Auto-create project (last-segment slug). Org members may read needs_review when flagged; promote privileged only.
 
 #### IMP-L1 — CLI `index-here` multi-git discover + client gates
 
@@ -541,42 +542,42 @@ Not cloud clone of unreachable remotes. CLI on the machine that has the git chec
 | Proposed approach | `queria index-here --token-env QUERIA_AGENT_TOKEN`: depth-limited discover of git roots under cwd; `git ls-files`; extension/path/size/secret gates; dry-run. |
 | Surfaces | `queria-cli` |
 | Acceptance | Nested multi-repo workspace lists N roots; non-git dirs skipped; dry-run no upload. |
-| Dependencies | Design spec above. |
+| Dependencies | Design + plan above. |
 
-#### IMP-L2 — API + storage quarantine + embed
+#### IMP-L2 — API + storage `needs_review` + async embed
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
 | Status | `proposed` |
 | Problem | Need central place for bulk local index that is not auto-trusted. |
-| Proposed approach | Agent-auth batch ingest; re-validate gates server-side; chunk+embed; lane/status **quarantine**; idempotent content_hash. |
-| Surfaces | `queria-api`, `queria-db`, `queria-search` / embed path |
-| Acceptance | Upload creates quarantine only; default retrieve does not hit it. |
+| Proposed approach | Agent-auth batch ingest (`IndexLocal`); re-validate gates server-side; auto-create project; chunk status **`needs_review`**; enqueue embed jobs; return `job_ids`. |
+| Surfaces | `queria-api`, `queria-db`, `queria-worker`, embed path |
+| Acceptance | Upload creates needs_review only; 202 + jobs; default retrieve does not hit it. |
 | Dependencies | IMP-L1 client shape. |
 
-#### IMP-L3 — Retrieve `include_quarantine` authz
+#### IMP-L3 — Retrieve `include_needs_review` (org members)
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
 | Status | `proposed` |
-| Problem | Owners/Admin may need to review quarantine in probe; default agents must not drown in unreviewed dumps. |
-| Proposed approach | Flag default false; allow owner token subject and Admin session. |
+| Problem | Org may inspect unreviewed index; default agents must not drown in dumps. |
+| Proposed approach | Flag default false; when true, any home-org member with project access (not owner-only). |
 | Surfaces | retrieval MCP/API/CLI |
-| Acceptance | Default retrieve = trusted (+ scratch rules unchanged); quarantine only when allowed. |
+| Acceptance | Default retrieve = trusted (+ scratch rules); needs_review only when flagged. |
 | Dependencies | IMP-L2. |
 
-#### IMP-L4 — Admin promote / reject UI
+#### IMP-L4 — Admin promote / reject UI (“Needs review”)
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
 | Status | `proposed` |
 | Problem | Shared trusted must not absorb garbage; human promote one-click. |
-| Proposed approach | Admin list quarantine by origin/commit/path; Promote → trusted; Reject; audit. |
+| Proposed approach | Admin list needs_review by origin/commit/path; Promote → trusted; Reject; audit. |
 | Surfaces | Admin SSR |
-| Acceptance | Promote makes probe trusted-hit; reject removes from quarantine queue. |
+| Acceptance | Promote makes probe trusted-hit; reject clears queue row. |
 | Dependencies | IMP-L2. |
 
 #### IMP-L5 — MCP promote tools (privileged)
@@ -586,7 +587,7 @@ Not cloud clone of unreachable remotes. CLI on the machine that has the git chec
 | Priority | P1 |
 | Status | `proposed` |
 | Problem | Privileged operators want promote without browser. |
-| Proposed approach | Tools `list_quarantine` / `promote_*` / `reject_*`; **not** default agent mint; grant explicit. |
+| Proposed approach | Tools `list_needs_review` / `promote_knowledge` / `reject_needs_review`; **not** default agent mint; grant explicit. |
 | Surfaces | `queria-mcp` |
 | Acceptance | Token without grant 403; with grant can promote to trusted. |
 | Dependencies | IMP-L2, IMP-L4 semantics. |
@@ -597,7 +598,7 @@ Not cloud clone of unreachable remotes. CLI on the machine that has the git chec
 |---|---|
 | Priority | P2 |
 | Status | `proposed` |
-| yagni until P1 quarantine UX ships | Hard-score auto trusted (e.g. docs-only paths) only after promote UX proven. |
+| yagni until Needs review UX ships | Hard-score auto trusted only after promote UX proven. |
 | Dependencies | IMP-L2–L4. |
 
 ---
@@ -611,7 +612,7 @@ This backlog **must not** reverse completed cuts:
 - Evaluation as first-class Admin product (CLI remains eval path)
 - Multi-store backends for enowx or Queria beyond Qdrant (+ Postgres SoT)
 - Maintainer tools on agent MCP by default (privileged promote for IMP-L5 is explicit grant only)
-- Agent writes into **trusted/global** by default (dual-lane scratch; bulk local git → **quarantine** then promote, not silent trusted)
+- Agent writes into **trusted/global** by default (dual-lane scratch; bulk local git → **`needs_review`** then promote, not silent trusted)
 - Tokenizer/budget product, multi-section docs HTTP API, taxonomy engine, QueryEmbedder abstraction, embedding_context dual-store (YAGNI 2026-07-17 on IMP-17–27)
 
 If a future item conflicts, update PRODUCT boundaries first, then this file.
