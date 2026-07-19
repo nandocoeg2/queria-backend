@@ -80,6 +80,13 @@ hybrid pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compr
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | As-is vs post-cut |
 | [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md) | Hard cut plan |
 | [`docs/runbooks/`](docs/runbooks/) | Ops |
+| [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md) | **Production deploy:** GHCR CI (primary), rsync+host build (fallback), `queria.fjulian.id` Nginx+LE |
+
+## Production deploy (short)
+
+- **Primary:** push `main` → GitHub Actions builds `linux/arm64` images → GHCR (`backend`, `admin`) → SSH `docker compose -f docker-compose.production.yml pull && up -d`.
+- **Public:** Caddy on host `:17674`; Nginx + Certbot for `https://queria.fjulian.id` → `127.0.0.1:17674`.
+- **Fallback / secrets / smoke:** [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md). Runtime residual: [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 ## Local services
 

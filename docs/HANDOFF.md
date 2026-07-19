@@ -1,8 +1,11 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-19 (local main: agent auto-retrieve hooks hybrid + multi-org isolation MVP + Admin polish; prod image may lag local `main` until post-mission redeploy)
+> Last verified: 2026-07-19 (CI/CD GHCR path + docs; first GHCR redeploy in progress or residual until green Actions)
 > Branch: `main`
-> Production image: may lag local `main` (multi-org, retrieval quality, Admin sources/tokens UX). Host sync via **rsync** when GitHub SSH unavailable; edge on host port **`:17674`**.
+> **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH `docker compose -f docker-compose.production.yml pull && up -d`. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
+> **Fallback:** rsync from workstation + host `compose build` (host GitHub SSH often broken).
+> **Public access:** Caddy edge host **`:17674`**; subdomain **`https://queria.fjulian.id`** via host Nginx → `127.0.0.1:17674` + Certbot LE. Prod image may still lag local `main` until first green GHCR deploy.
+
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
@@ -167,22 +170,25 @@ Connect:
 ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key ubuntu@168.110.214.130
 ```
 
-### Stack identity (redeployed 2026-07-18; rsync + edge `:17674`)
+### Stack identity (GHCR CI path added 2026-07-19; edge `:17674` + subdomain)
 
 | Field | Value |
 |---|---|
 | Host deploy path | `/home/ubuntu/queria-backend` |
-| Host source sync | **rsync from workstation** (host GitHub SSH cannot `git fetch`) |
-| Image / commit | **prod image may lag local `main`** — verify on host with running containers / tags; do not assume multi-org or latest Admin UX without redeploy |
+| Primary image path | **GHCR** `ghcr.io/nandocoeg2/queria-backend/backend` + `.../admin` (`linux/arm64`); workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) |
+| Fallback source sync | **rsync from workstation** + host `compose build` (host GitHub SSH cannot `git fetch`) |
+| Image / commit | After first green Actions deploy, track `IMAGE_TAG` / `QUERIA_SOURCE_COMMIT` on host; until then prod may lag local `main` |
 | Edge service (live) | `queria-backend-queria-edge-1` image `caddy:2.10-alpine`, host port **`17674`** |
+| Public hostname | **`queria.fjulian.id`** → Nginx → `127.0.0.1:17674` (TLS via Certbot/Let’s Encrypt); Nginx still owns host 80/443 |
 | Legacy proxy | **removed** |
-| API / MCP / worker | Dual-lane image present on last known redeploy; Admin SSR may lag separately |
+| API / MCP / worker | Multi-binary image package **`backend`**; Admin package **`admin`** |
 | Postgres / Qdrant | **healthy**; volumes **not wiped** |
 | MinIO | `Up` (volume preserved) |
 | Schema | migrate idempotent `{"status":"migrated"}` on redeploy (multi-org migration only after image that includes it) |
 | Org | `fjulian` (1 user/admin; setup already consumed) |
 | Projects | **1** — slug `fjulian-me` |
-| Public smoke | `http://168.110.214.130:17674/healthz` 200; agent-setup docs routes live on last redeploy |
+| Public smoke | `http://168.110.214.130:17674/healthz` 200; `https://queria.fjulian.id/healthz` after Nginx+LE |
+
 
 Verified live stack after redeploy (2026-07-17):
 
