@@ -100,9 +100,10 @@ pub async fn run(
         bail!("no git roots found under {} (depth={depth})", cwd.display());
     }
 
+    let all_paths: Vec<PathBuf> = roots.iter().map(|r| r.path.clone()).collect();
     let plans: Vec<RootFilePlan> = roots
         .into_iter()
-        .map(|root| plan_root_files(root))
+        .map(|root| plan_root_files(root, &all_paths))
         .collect::<Result<Vec<_>>>()?;
 
     print_discovery_summary(&plans);
@@ -322,13 +323,49 @@ fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+/// Relative path prefixes of other discovered roots that are strict children of `root`.
+/// Used to drop parent `ls-files` entries that belong to a nested git root.
+pub fn nested_path_prefixes(root: &Path, all_roots: &[PathBuf]) -> Vec<String> {
+    let root_c = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut prefixes = Vec::new();
+    for other in all_roots {
+        let other_c = other.canonicalize().unwrap_or_else(|_| other.to_path_buf());
+        if other_c == root_c {
+            continue;
+        }
+        if let Ok(rel) = other_c.strip_prefix(&root_c) {
+            let s = rel.to_string_lossy().replace('\\', "/");
+            if !s.is_empty() {
+                prefixes.push(s);
+            }
+        }
+    }
+    prefixes.sort();
+    prefixes.dedup();
+    prefixes
+}
+
+/// True if `rel` is the nested root path itself or any file under it.
+pub fn path_under_nested_prefixes(rel: &str, prefixes: &[String]) -> bool {
+    let rel = rel.replace('\\', "/");
+    prefixes.iter().any(|p| rel == *p || rel.starts_with(&format!("{p}/")))
+}
+
 /// List tracked files under root and apply client quality gates.
-pub fn plan_root_files(root: DiscoveredRoot) -> Result<RootFilePlan> {
+///
+/// `all_roots` is the full discover set for this run: paths under nested git
+/// roots are skipped for the parent so they are only planned for the nested root.
+pub fn plan_root_files(root: DiscoveredRoot, all_roots: &[PathBuf]) -> Result<RootFilePlan> {
+    let nested = nested_path_prefixes(&root.path, all_roots);
     let tracked = git_ls_files(&root.path)?;
     let mut accepted = Vec::new();
     let mut skipped = 0_u32;
 
     for rel in tracked {
+        if path_under_nested_prefixes(&rel, &nested) {
+            skipped += 1;
+            continue;
+        }
         match process_tracked_file(&root.path, &rel) {
             Some(file) => accepted.push(file),
             None => skipped += 1,
@@ -678,8 +715,9 @@ mod tests {
         write_and_add(&repo, "node_modules/pkg/readme.md", "nope");
         write_and_add(&repo, "logo.png", "not-text-but-binaryish");
 
-        let root = inspect_root(repo.canonicalize().unwrap()).expect("inspect");
-        let plan = plan_root_files(root).expect("plan");
+        let root_path = repo.canonicalize().unwrap();
+        let root = inspect_root(root_path.clone()).expect("inspect");
+        let plan = plan_root_files(root, &[root_path]).expect("plan");
         assert_eq!(plan.accepted.len(), 1);
         assert_eq!(plan.accepted[0].path, "docs/ok.md");
         assert!(plan.skipped >= 2);
@@ -687,6 +725,81 @@ mod tests {
             plan.accepted[0].content_hash,
             content_hash("hello")
         );
+    }
+
+    #[test]
+    fn parent_plan_skips_paths_under_nested_git_root() {
+        if !git_available() {
+            eprintln!("skip: git not available");
+            return;
+        }
+        let tmp = tempfile_dir("nested-filter");
+        let parent = tmp.join("workspace");
+        let nested = parent.join("services").join("api");
+        init_repo(&parent);
+        init_repo(&nested);
+        write_and_add(&parent, "docs/parent.md", "# parent only");
+        // Parent monorepo wrongly tracks nested paths (submodule-like).
+        write_and_add(&parent, "services/api/src/main.ts", "export const bad = 1;");
+        write_and_add(&nested, "src/main.ts", "export const good = 1;");
+        write_and_add(&nested, "README.md", "nested");
+
+        let parent_c = parent.canonicalize().unwrap();
+        let nested_c = nested.canonicalize().unwrap();
+        let all = vec![parent_c.clone(), nested_c.clone()];
+
+        let prefixes = nested_path_prefixes(&parent_c, &all);
+        assert!(
+            prefixes.iter().any(|p| p == "services/api" || p.ends_with("services/api")),
+            "expected nested prefix, got {prefixes:?}"
+        );
+        assert!(path_under_nested_prefixes("services/api/src/main.ts", &prefixes));
+        assert!(!path_under_nested_prefixes("docs/parent.md", &prefixes));
+
+        let parent_root = inspect_root(parent_c.clone()).expect("inspect parent");
+        let parent_plan = plan_root_files(parent_root, &all).expect("plan parent");
+        assert!(
+            parent_plan
+                .accepted
+                .iter()
+                .all(|f| !f.path.starts_with("services/api")),
+            "parent must not accept nested paths: {:?}",
+            parent_plan.accepted.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+        assert!(
+            parent_plan.accepted.iter().any(|f| f.path == "docs/parent.md"),
+            "parent should still accept own files"
+        );
+
+        let nested_root = inspect_root(nested_c.clone()).expect("inspect nested");
+        let nested_plan = plan_root_files(nested_root, &all).expect("plan nested");
+        assert!(
+            nested_plan.accepted.iter().any(|f| f.path == "src/main.ts" || f.path == "README.md"),
+            "nested root should accept own tracked files: {:?}",
+            nested_plan.accepted.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn sibling_roots_do_not_filter_each_other() {
+        if !git_available() {
+            eprintln!("skip: git not available");
+            return;
+        }
+        let tmp = tempfile_dir("sibling-filter");
+        let a = tmp.join("a");
+        let b = tmp.join("b");
+        init_repo(&a);
+        init_repo(&b);
+        write_and_add(&a, "a.md", "aaa");
+        write_and_add(&b, "b.md", "bbb");
+        let ac = a.canonicalize().unwrap();
+        let bc = b.canonicalize().unwrap();
+        let all = vec![ac.clone(), bc.clone()];
+        assert!(nested_path_prefixes(&ac, &all).is_empty());
+        let plan_a = plan_root_files(inspect_root(ac).unwrap(), &all).unwrap();
+        assert_eq!(plan_a.accepted.len(), 1);
+        assert_eq!(plan_a.accepted[0].path, "a.md");
     }
 
     #[test]

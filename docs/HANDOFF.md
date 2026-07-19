@@ -1,7 +1,7 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-19 (index-here IMP-L1…L5 on branch; subdomain HTTPS live; host Path-B image rebuild; GHCR Actions pull still residual)
-> Branch: `main` (feature work: `feat/local-git-index-here`)
+> Last verified: 2026-07-20 (index-here on main: nested ls-files filter + e2e smoke script; host redeploy/migrate residual; subdomain HTTPS live; GHCR Path A residual)
+> Branch: `main`
 > **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
 > **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
 > **Public access live:** `http://168.110.214.130:17674/healthz` **200**; **`https://queria.fjulian.id/healthz` 200** (Nginx + Certbot LE); `/admin/login` **200**.
@@ -40,14 +40,17 @@ content_hash idempotency, shared max body with `propose_memory`, and
 still deferred (`IMP-15`/`IMP-16`). See PRODUCT lanes and
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md).
 
-**Local multi-git index-here (local branch 2026-07-19):** CLI `queria-cli index-here`
-discovers nested git roots, gates files, uploads via `POST /api/v1/agent/index-local`
+**Local multi-git index-here (on `main` 2026-07-19/20):** CLI `queria-cli index-here`
+discovers nested git roots (parent `ls-files` **skips paths under nested roots**
+in the same run), gates files, uploads via `POST /api/v1/agent/index-local`
 (permission `IndexLocal`) → status **`needs_review`** (“Needs review”) + async
 embed jobs; default retrieve excludes unless `include_needs_review=true`; Admin
 `/admin/needs-review` promote/reject; privileged MCP `list_needs_review` /
 `promote_knowledge` / `reject_needs_review` (`ManageNeedsReview`, not default mint).
 Auto-create project from origin last path segment. **Does not** auto-promote to
-trusted (`IMP-L6` deferred). **Prod image may lag** until merge + redeploy.
+trusted (`IMP-L6` deferred). Smoke script: `scripts/e2e_index_here_edge.py`
+(needs token with `index_local`; optional `QUERIA_PROMOTE_TOKEN`). **Prod host may
+lag** until redeploy + `queria-cli database migrate` (enum `needs_review`).
 Backlog: IMP-L1…L5 `done`; IMP-L6 stays proposed.
 
 **Retrieval quality + Playground (local main 2026-07-18):** shared pipeline
@@ -135,7 +138,7 @@ not a Rust proxy crate.
 | Agent auto-retrieve hooks (hybrid) | `COMPLETED` (local main 2026-07-19) | T4+R6+H1: `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` (Bearer agent token, same authz as MCP). Setup: `/api/v1/setup/hooks-snippet?client=droid\|claude`, `/setup/hook-script`, script `agent-tools/hooks/queria-retrieve-hook.sh`. Stronger AGENTS block. SessionStart + throttled UserPromptSubmit inject, fail-open. **Prod image may lag.** Design: [`archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md`](./archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md). |
 | Agent path edge E2E script | `COMPLETED` (local main; run on demand) | `scripts/e2e_agent_path_edge.py` E0–E12 against edge `:17674` with pre-minted smoke token. Spec: [`archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md`](./archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md). Operator green run pending (script shipped; mark green only after one successful operator run). |
 | Multi-org isolation MVP | `COMPLETED` (local main 2026-07-18) | Migration `20260718000100_multi_org_tenancy` (`org_membership`, `org_invite`, `is_platform_super_admin`, `user_session.active_organization_id`, one-org unique, backfill). Session binds active org + super-admin (DB flag and/or `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS`). API: `POST/GET /api/v1/orgs`, invites, accept, current members. Admin: `/admin/orgs`, `/admin/invites/accept`, `/admin/members`. Tenant handlers + MCP/agent tokens filter home org only; SA without membership 403s tenant routes. **Prod image not redeployed** for multi-org yet. Product note: [`PRODUCT.md`](./PRODUCT.md). Ops: section **Multi-org isolation MVP** below. |
-| Local multi-git `index-here` (IMP-L1…L5) | `COMPLETED` (branch 2026-07-19) | Schema `needs_review`; shared gates/slug; agent `POST /api/v1/agent/index-local` + `IndexLocal`; CLI `index-here`; retrieve `include_needs_review` default false; Admin `/admin/needs-review` promote/reject; privileged MCP tools (`ManageNeedsReview`). Design/plan: [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md). **Residual:** full live multi-root edge smoke + prod redeploy not claimed here; unit/integration tests green on branch. IMP-L6 auto-promote **not** shipped. |
+| Local multi-git `index-here` (IMP-L1…L5) | `COMPLETED` (main 2026-07-19/20) | Schema `needs_review`; gates/slug; agent `POST /api/v1/agent/index-local` + `IndexLocal`; CLI `index-here` (nested path filter); retrieve `include_needs_review` default false; Admin `/admin/needs-review`; MCP `ManageNeedsReview`. Smoke: [`scripts/e2e_index_here_edge.py`](../scripts/e2e_index_here_edge.py). Design: [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md). **Residual:** operator green run of smoke script + host migrate/redeploy for `needs_review`. IMP-L6 **not** shipped. |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens, needs-review promote (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Violet Void dark SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
@@ -589,7 +592,7 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 | Production redeploy for retrieval quality / multi-org / Admin polish | Medium | Local `main` ahead of live host image. Redeploy only when operator requests (out of this docs feature). |
 | Future product improvements | REFERENCE backlog | IMP-01/02/03 done on local main; IMP-L1…L5 done on feature branch. Still open: IMP-04 metrics, IMP-15/16 Admin scratch/promote, agent DX, IMP-L6 auto-promote (deferred). [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
 | Multi-org on production | Medium | Code + docs on local `main`; host image still pre-multi-org. After local validators green: redeploy, migrate, flag super-admin, smoke Team B path. **Not** share grants / switcher / SMTP. |
-| index-here on production | Medium | IMP-L1…L5 on `feat/local-git-index-here`; not live edge until merge + migrate + redeploy. Residual: operator multi-root smoke on real edge. |
+| index-here on production | Medium | Code on local `main`. Needs Path A/B redeploy + `queria-cli database migrate` for enum `needs_review`. Smoke: `python3 scripts/e2e_index_here_edge.py` with `QUERIA_AGENT_TOKEN` (`index_local`). |
 
 ## Post-audit simplification
 
@@ -630,7 +633,7 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 
 8. Retrieval quality IMP-01/02 + Admin Playground IMP-03 shipped on **local main** (2026-07-18); docs/runbook aligned. Next backlog: durable metrics (`IMP-04`), Admin scratch/promote (`IMP-15`/`16`), agent DX. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
 
-9. Local multi-git **index-here** IMP-L1…L5 shipped on feature branch (2026-07-19): CLI + API + Needs review Admin + privileged MCP. Onboarding Part E; PRODUCT lanes updated. **Not** IMP-L6 auto-promote. Residual live multi-root smoke / prod redeploy open.
+9. Local multi-git **index-here** IMP-L1…L5 on `main` (2026-07-19/20): nested ls-files filter + `scripts/e2e_index_here_edge.py`. Next: host migrate/redeploy, mint token with `index_local`, run smoke; **not** IMP-L6.
 
 **Multi-org (local complete; prod follow-up)**
 

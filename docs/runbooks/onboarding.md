@@ -512,7 +512,18 @@ export QUERIA_EDGE_URL=https://queria.fjulian.id   # or http://127.0.0.1:17674
 queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes
 ```
 
-Dry-run without upload: omit `--yes` (or use the CLI’s dry-run path if printed). Expect `job_ids` + per-root accepted/skipped counts. Worker must be up so embed jobs leave `queued`.
+Dry-run: `queria-cli index-here --token-env QUERIA_AGENT_TOKEN --dry-run --yes`. Expect `job_ids` + per-root accepted/skipped counts on real upload. Worker must be up so embed jobs leave `queued`. Nested git roots: parent does **not** upload paths that live under another discovered nested root (same run).
+
+Edge smoke (optional): mint token with `index_local` (+ retrieve), then:
+
+```bash
+export QUERIA_EDGE_URL=http://127.0.0.1:17674   # or https://queria.fjulian.id
+export QUERIA_AGENT_TOKEN=qria_…
+# optional promote: export QUERIA_PROMOTE_TOKEN=…  # manage_needs_review
+cargo build -p queria-cli
+python3 scripts/e2e_index_here_edge.py
+# RESULT: PASS (or PASS with promote skipped)
+```
 
 ### E3. Review and promote
 

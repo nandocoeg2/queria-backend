@@ -113,6 +113,8 @@ docker compose -f docker-compose.production.yml run --rm --no-deps queria-api qu
 # expect {"status":"migrated"}
 ```
 
+**index-here / Needs review:** after deploy, migrate must apply `knowledge_status` value `needs_review` (`20260719000100_knowledge_status_needs_review`). Smoke checklist: `/healthz` 200, Admin `/admin/needs-review` loads, optional `python3 scripts/e2e_index_here_edge.py` against the edge with a smoke token that has `index_local`.
+
 ---
 
 ## Path B — rsync + host build (fallback)
