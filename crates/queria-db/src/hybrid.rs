@@ -300,6 +300,7 @@ fn parse_status(status: &str) -> QueriaResult<KnowledgeStatus> {
         "rejected" => Ok(KnowledgeStatus::Rejected),
         "deprecated" => Ok(KnowledgeStatus::Deprecated),
         "superseded" => Ok(KnowledgeStatus::Superseded),
+        "needs_review" => Ok(KnowledgeStatus::NeedsReview),
         value => Err(QueriaError::Infrastructure(format!(
             "database returned invalid knowledge status {value}"
         ))),
@@ -360,7 +361,14 @@ mod tests {
     #[test]
     fn lexical_search_excludes_pipeline_statuses() {
         let sql = LEXICAL_SEARCH_SQL.to_ascii_lowercase();
-        for status in ["draft", "proposed", "rejected", "deprecated", "superseded"] {
+        for status in [
+            "draft",
+            "proposed",
+            "rejected",
+            "deprecated",
+            "superseded",
+            "needs_review",
+        ] {
             assert!(
                 !sql.contains(&format!("k.status = '{status}'")),
                 "pipeline status {status} must not be selectable"

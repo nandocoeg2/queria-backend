@@ -142,6 +142,13 @@ pub fn bundled_migrations() -> Vec<Migration> {
             name: "multi_org_tenancy",
             sql: include_str!("../../../migrations/20260718000100_multi_org_tenancy.sql"),
         },
+        Migration {
+            version: "20260719000100",
+            name: "knowledge_status_needs_review",
+            sql: include_str!(
+                "../../../migrations/20260719000100_knowledge_status_needs_review.sql"
+            ),
+        },
     ]
 }
 
@@ -328,6 +335,29 @@ mod tests {
         assert!(
             migration.sql.contains("where status = 'scratch'"),
             "unique index must be partial on scratch status only"
+        );
+    }
+
+    #[test]
+    fn bundled_migrations_include_knowledge_status_needs_review() {
+        let migrations = bundled_migrations();
+        let migration = migrations
+            .iter()
+            .find(|migration| migration.version == "20260719000100")
+            .expect("missing knowledge_status needs_review migration");
+
+        assert_eq!(migration.name, "knowledge_status_needs_review");
+        assert!(
+            migration
+                .sql
+                .contains("ALTER TYPE knowledge_status ADD VALUE")
+                && migration.sql.contains("'needs_review'"),
+            "needs_review migration must ADD VALUE 'needs_review' to knowledge_status"
+        );
+        // YAGNI: lane/review is derived from status; no dedicated column.
+        assert!(
+            !migration.sql.to_lowercase().contains("add column"),
+            "needs_review migration must not add columns; extend enum only"
         );
     }
 

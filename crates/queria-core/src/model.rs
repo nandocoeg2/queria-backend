@@ -18,6 +18,8 @@ pub enum KnowledgeStatus {
     Superseded,
     /// Project-scoped agent memory lane (dual-lane Slice A). Not trusted/global.
     Scratch,
+    /// Local index-here / hybrid multi-git items pending human review. Not trusted.
+    NeedsReview,
 }
 
 impl KnowledgeStatus {
@@ -30,6 +32,21 @@ impl KnowledgeStatus {
             Self::Deprecated => "deprecated",
             Self::Superseded => "superseded",
             Self::Scratch => "scratch",
+            Self::NeedsReview => "needs_review",
+        }
+    }
+
+    /// User-facing label (Admin/UI). Wire/DB form remains [`Self::as_str`].
+    pub const fn display_label(self) -> &'static str {
+        match self {
+            Self::Draft => "Draft",
+            Self::Proposed => "Proposed",
+            Self::Approved => "Approved",
+            Self::Rejected => "Rejected",
+            Self::Deprecated => "Deprecated",
+            Self::Superseded => "Superseded",
+            Self::Scratch => "Scratch",
+            Self::NeedsReview => "Needs review",
         }
     }
 
@@ -70,11 +87,31 @@ mod tests {
     }
 
     #[test]
+    fn knowledge_status_includes_needs_review_variant() {
+        assert_eq!(KnowledgeStatus::NeedsReview.as_str(), "needs_review");
+        assert_eq!(
+            KnowledgeStatus::NeedsReview.display_label(),
+            "Needs review"
+        );
+        assert!(!KnowledgeStatus::NeedsReview.is_scratch_lane());
+        assert!(!KnowledgeStatus::NeedsReview.is_trusted_lane());
+    }
+
+    #[test]
     fn knowledge_status_scratch_serializes_snake_case() {
         let json = serde_json::to_string(&KnowledgeStatus::Scratch).expect("serialize");
         assert_eq!(json, "\"scratch\"");
         let parsed: KnowledgeStatus = serde_json::from_str("\"scratch\"").expect("deserialize");
         assert_eq!(parsed, KnowledgeStatus::Scratch);
+    }
+
+    #[test]
+    fn knowledge_status_needs_review_serializes_snake_case() {
+        let json = serde_json::to_string(&KnowledgeStatus::NeedsReview).expect("serialize");
+        assert_eq!(json, "\"needs_review\"");
+        let parsed: KnowledgeStatus =
+            serde_json::from_str("\"needs_review\"").expect("deserialize");
+        assert_eq!(parsed, KnowledgeStatus::NeedsReview);
     }
 
     #[test]
@@ -87,6 +124,7 @@ mod tests {
             (KnowledgeStatus::Deprecated, "deprecated"),
             (KnowledgeStatus::Superseded, "superseded"),
             (KnowledgeStatus::Scratch, "scratch"),
+            (KnowledgeStatus::NeedsReview, "needs_review"),
         ] {
             assert_eq!(status.as_str(), expected);
             let json = serde_json::to_string(&status).expect("serialize");
