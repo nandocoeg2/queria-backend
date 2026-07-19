@@ -13,3 +13,4 @@
 *.py[cod]
 .superpowers/
 
+.worktrees/
