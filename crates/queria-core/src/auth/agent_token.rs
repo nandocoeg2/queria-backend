@@ -102,11 +102,40 @@ mod tests {
             !tools.contains(&AgentToolPermission::IndexLocal),
             "legacy default tokens must not gain index_local"
         );
+        assert!(
+            !tools.contains(&AgentToolPermission::ManageNeedsReview),
+            "legacy default tokens must not gain manage_needs_review"
+        );
         assert!(tools.contains(&AgentToolPermission::ProposeMemory));
         assert!(tools.contains(&AgentToolPermission::RetrieveContext));
         assert!(tools.contains(&AgentToolPermission::SearchKnowledge));
         assert!(tools.contains(&AgentToolPermission::ListProjects));
         assert!(tools.contains(&AgentToolPermission::GetSource));
+    }
+
+    #[test]
+    fn issuer_accepts_manage_needs_review_tool() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::ManageNeedsReview,
+            ],
+        };
+        let issued = AgentTokenIssuer
+            .issue(permissions, None)
+            .expect("ManageNeedsReview token should issue");
+        assert!(
+            issued
+                .permissions
+                .can_call(&AgentToolPermission::ManageNeedsReview)
+        );
+        assert!(
+            !issued
+                .permissions
+                .can_call(&AgentToolPermission::IndexMemory)
+        );
     }
 
     #[test]

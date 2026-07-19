@@ -15,6 +15,9 @@ pub fn permission_for_tool(name: &str) -> Option<AgentToolPermission> {
         "search_knowledge" => Some(AgentToolPermission::SearchKnowledge),
         "propose_memory" => Some(AgentToolPermission::ProposeMemory),
         "index_memory" => Some(AgentToolPermission::IndexMemory),
+        "list_needs_review" => Some(AgentToolPermission::ManageNeedsReview),
+        "promote_knowledge" => Some(AgentToolPermission::ManageNeedsReview),
+        "reject_needs_review" => Some(AgentToolPermission::ManageNeedsReview),
         "list_projects" => Some(AgentToolPermission::ListProjects),
         "get_source" => Some(AgentToolPermission::GetSource),
         _ => None,
@@ -141,6 +144,55 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
                         "source_document_id": { "type": "string" }
                     },
                     "required": ["source_document_id"],
+                    "additionalProperties": false
+                }
+            }),
+        ),
+        (
+            AgentToolPermission::ManageNeedsReview,
+            json!({
+                "name": "list_needs_review",
+                "title": "List Needs Review",
+                "description": "List project needs_review knowledge items in token scope. Privileged; not default agent mint.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_slug": { "type": "string", "description": "Optional project slug filter within token scope." },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Max items (default 100)." }
+                    },
+                    "additionalProperties": false
+                }
+            }),
+        ),
+        (
+            AgentToolPermission::ManageNeedsReview,
+            json!({
+                "name": "promote_knowledge",
+                "title": "Promote Knowledge",
+                "description": "Promote one needs_review knowledge item to approved/trusted. Privileged; not default agent mint.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "knowledge_item_id": { "type": "string", "description": "Knowledge item UUID." }
+                    },
+                    "required": ["knowledge_item_id"],
+                    "additionalProperties": false
+                }
+            }),
+        ),
+        (
+            AgentToolPermission::ManageNeedsReview,
+            json!({
+                "name": "reject_needs_review",
+                "title": "Reject Needs Review",
+                "description": "Reject one needs_review knowledge item. Privileged; not default agent mint.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "knowledge_item_id": { "type": "string", "description": "Knowledge item UUID." },
+                        "reason": { "type": "string", "description": "Optional rejection reason." }
+                    },
+                    "required": ["knowledge_item_id"],
                     "additionalProperties": false
                 }
             }),
@@ -371,5 +423,73 @@ mod tests {
         };
         let names = tool_names(&permissions);
         assert_eq!(names, vec!["index_memory".to_owned()]);
+    }
+
+    /// IMP-L5: all three privileged tools map to ManageNeedsReview.
+    #[test]
+    fn manage_needs_review_permission_maps_all_three_tools() {
+        assert_eq!(
+            permission_for_tool("list_needs_review"),
+            Some(AgentToolPermission::ManageNeedsReview)
+        );
+        assert_eq!(
+            permission_for_tool("promote_knowledge"),
+            Some(AgentToolPermission::ManageNeedsReview)
+        );
+        assert_eq!(
+            permission_for_tool("reject_needs_review"),
+            Some(AgentToolPermission::ManageNeedsReview)
+        );
+    }
+
+    /// IMP-L5: tools/list hides privileged promote tools without grant.
+    #[test]
+    fn needs_review_tools_hidden_without_manage_needs_review() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: default_agent_tools(),
+        };
+        let names = tool_names(&permissions);
+        assert!(!names.iter().any(|n| n == "list_needs_review"));
+        assert!(!names.iter().any(|n| n == "promote_knowledge"));
+        assert!(!names.iter().any(|n| n == "reject_needs_review"));
+    }
+
+    /// IMP-L5: tools/list shows all three when ManageNeedsReview granted.
+    #[test]
+    fn needs_review_tools_listed_when_manage_needs_review_granted() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::ManageNeedsReview],
+        };
+        let names = tool_names(&permissions);
+        assert!(names.iter().any(|n| n == "list_needs_review"));
+        assert!(names.iter().any(|n| n == "promote_knowledge"));
+        assert!(names.iter().any(|n| n == "reject_needs_review"));
+        assert_eq!(names.len(), 3);
+
+        let tools = tool_definitions(&permissions);
+        let promote = tools
+            .iter()
+            .find(|t| t["name"] == "promote_knowledge")
+            .expect("promote_knowledge");
+        assert!(
+            promote["description"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not default agent mint")
+        );
+        assert!(promote["inputSchema"]["properties"]["knowledge_item_id"].is_object());
+    }
+
+    /// IMP-L5: default mint never includes ManageNeedsReview.
+    #[test]
+    fn default_agent_tools_exclude_manage_needs_review() {
+        assert!(
+            !default_agent_tools().contains(&AgentToolPermission::ManageNeedsReview),
+            "default mint must not include ManageNeedsReview"
+        );
     }
 }

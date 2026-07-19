@@ -1948,6 +1948,325 @@ impl PgProjectRepository {
         }))
     }
 
+    /// List needs_review items for an agent token (home org + project_slugs scope).
+    pub async fn list_needs_review_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        project_slug: Option<&str>,
+        limit: u32,
+    ) -> QueriaResult<Vec<NeedsReviewItemRecord>> {
+        let page_limit = limit.min(200) as i64;
+        let slug = project_slug.map(|s| s.trim()).filter(|s| !s.is_empty());
+        if let Some(s) = slug
+            && !agent.permissions.project_slugs.iter().any(|p| p == s)
+        {
+            return Err(QueriaError::PermissionDenied);
+        }
+
+        sqlx::query(
+            "select ki.id as knowledge_item_id,
+                    ki.project_id,
+                    p.slug as project_slug,
+                    ki.source_document_id,
+                    ki.title,
+                    coalesce(sd.source_path, c.metadata->>'logical_path') as path,
+                    coalesce(
+                      nullif(sd.metadata->>'origin_url', ''),
+                      nullif(c.metadata->>'origin_url', '')
+                    ) as origin_url,
+                    coalesce(sd.commit_sha, nullif(c.metadata->>'commit_sha', '')) as commit_sha,
+                    coalesce(sd.branch, nullif(c.metadata->>'branch', '')) as branch,
+                    ki.category,
+                    ki.created_at,
+                    ki.updated_at
+             from knowledge_item ki
+             join project p on p.id = ki.project_id
+             left join source_document sd on sd.id = ki.source_document_id
+             left join lateral (
+               select metadata
+               from chunk
+               where knowledge_item_id = ki.id
+               order by chunk_index asc
+               limit 1
+             ) c on true
+             where ki.organization_id = $1
+               and ki.status = 'needs_review'
+               and p.slug = any($2)
+               and ($3::text is null or p.slug = $3)
+             order by p.slug nulls last,
+                      coalesce(
+                        nullif(sd.metadata->>'origin_url', ''),
+                        nullif(c.metadata->>'origin_url', ''),
+                        ''
+                      ),
+                      coalesce(sd.commit_sha, nullif(c.metadata->>'commit_sha', ''), ''),
+                      ki.created_at desc
+             limit $4",
+        )
+        .bind(agent.organization_id)
+        .bind(&agent.permissions.project_slugs)
+        .bind(slug)
+        .bind(page_limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?
+        .into_iter()
+        .map(needs_review_item_from_row)
+        .collect()
+    }
+
+    /// Promote one needs_review item for an agent (org + project_slugs scope).
+    pub async fn promote_needs_review_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        knowledge_item_id: KnowledgeItemId,
+    ) -> QueriaResult<Option<NeedsReviewActionRecord>> {
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+
+        let locked = sqlx::query(
+            "select ki.id, ki.project_id, ki.source_document_id, ki.scope::text as scope,
+                    ki.status::text as status, ki.title, ki.body, ki.category,
+                    ki.tags, ki.approved_at, ki.created_at, ki.updated_at,
+                    ki.organization_id
+             from knowledge_item ki
+             join project p on p.id = ki.project_id
+             where ki.organization_id = $1
+               and ki.id = $2
+               and p.slug = any($3)
+             for update of ki",
+        )
+        .bind(agent.organization_id)
+        .bind(knowledge_item_id.as_uuid())
+        .bind(&agent.permissions.project_slugs)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let Some(row) = locked else {
+            return Ok(None);
+        };
+
+        let status: String = row.try_get("status").map_err(to_infrastructure_error)?;
+        if status != "needs_review" {
+            return Err(QueriaError::Validation(
+                "knowledge item is not in needs_review".to_owned(),
+            ));
+        }
+
+        sqlx::query(
+            "update knowledge_item
+             set status = 'approved',
+                 approved_at = now(),
+                 updated_at = now()
+             where id = $1
+               and status = 'needs_review'",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "update chunk
+             set metadata = jsonb_set(
+               coalesce(metadata, '{}'::jsonb),
+               '{lane}',
+               '\"trusted\"'::jsonb,
+               true
+             )
+             where knowledge_item_id = $1",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let chunk_ids: Vec<Uuid> = sqlx::query_scalar(
+            "select id from chunk where knowledge_item_id = $1 order by chunk_index",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "insert into audit_log(
+               organization_id, actor_type, actor_id, action,
+               resource_type, resource_id, metadata
+             )
+             values ($1, 'agent', $2, 'needs_review.promoted', 'knowledge_item', $3, $4)",
+        )
+        .bind(agent.organization_id)
+        .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
+        .bind(knowledge_item_id.as_uuid().to_string())
+        .bind(json!({
+            "from_status": "needs_review",
+            "to_status": "approved",
+            "chunk_ids": chunk_ids,
+            "agent_token_id": agent.id,
+            "agent_token_prefix": agent.token_prefix
+        }))
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let knowledge_item = knowledge_item_from_row(
+            sqlx::query(
+                "select ki.id, ki.project_id, ki.source_document_id, ki.scope::text as scope,
+                        ki.status::text as status, ki.title, ki.body, ki.category,
+                        ki.tags, ki.approved_at, ki.created_at, ki.updated_at
+                 from knowledge_item ki
+                 where ki.id = $1",
+            )
+            .bind(knowledge_item_id.as_uuid())
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(to_infrastructure_error)?,
+        )?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        Ok(Some(NeedsReviewActionRecord {
+            knowledge_item,
+            chunk_ids,
+        }))
+    }
+
+    /// Reject one needs_review item for an agent (org + project_slugs scope).
+    pub async fn reject_needs_review_for_agent(
+        &self,
+        agent: &AuthenticatedAgentToken,
+        knowledge_item_id: KnowledgeItemId,
+        reason: Option<String>,
+    ) -> QueriaResult<Option<NeedsReviewActionRecord>> {
+        let reason = reason
+            .map(|r| r.trim().to_owned())
+            .filter(|r| !r.is_empty());
+        if let Some(ref r) = reason
+            && r.len() > 2_000
+        {
+            return Err(QueriaError::Validation(
+                "rejection reason must be at most 2000 bytes".to_owned(),
+            ));
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
+
+        let locked = sqlx::query(
+            "select ki.id, ki.project_id, ki.source_document_id, ki.scope::text as scope,
+                    ki.status::text as status, ki.title, ki.body, ki.category,
+                    ki.tags, ki.approved_at, ki.created_at, ki.updated_at,
+                    ki.organization_id
+             from knowledge_item ki
+             join project p on p.id = ki.project_id
+             where ki.organization_id = $1
+               and ki.id = $2
+               and p.slug = any($3)
+             for update of ki",
+        )
+        .bind(agent.organization_id)
+        .bind(knowledge_item_id.as_uuid())
+        .bind(&agent.permissions.project_slugs)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let Some(row) = locked else {
+            return Ok(None);
+        };
+
+        let status: String = row.try_get("status").map_err(to_infrastructure_error)?;
+        if status != "needs_review" {
+            return Err(QueriaError::Validation(
+                "knowledge item is not in needs_review".to_owned(),
+            ));
+        }
+
+        sqlx::query(
+            "update knowledge_item
+             set status = 'rejected',
+                 updated_at = now()
+             where id = $1
+               and status = 'needs_review'",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "update chunk
+             set metadata = jsonb_set(
+               coalesce(metadata, '{}'::jsonb),
+               '{lane}',
+               '\"rejected\"'::jsonb,
+               true
+             )
+             where knowledge_item_id = $1",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let chunk_ids: Vec<Uuid> = sqlx::query_scalar(
+            "select id from chunk where knowledge_item_id = $1 order by chunk_index",
+        )
+        .bind(knowledge_item_id.as_uuid())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        sqlx::query(
+            "insert into audit_log(
+               organization_id, actor_type, actor_id, action,
+               resource_type, resource_id, metadata
+             )
+             values ($1, 'agent', $2, 'needs_review.rejected', 'knowledge_item', $3, $4)",
+        )
+        .bind(agent.organization_id)
+        .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
+        .bind(knowledge_item_id.as_uuid().to_string())
+        .bind(json!({
+            "from_status": "needs_review",
+            "to_status": "rejected",
+            "reason": reason,
+            "chunk_ids": chunk_ids,
+            "agent_token_id": agent.id,
+            "agent_token_prefix": agent.token_prefix
+        }))
+        .execute(&mut *transaction)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        let knowledge_item = knowledge_item_from_row(
+            sqlx::query(
+                "select ki.id, ki.project_id, ki.source_document_id, ki.scope::text as scope,
+                        ki.status::text as status, ki.title, ki.body, ki.category,
+                        ki.tags, ki.approved_at, ki.created_at, ki.updated_at
+                 from knowledge_item ki
+                 where ki.id = $1",
+            )
+            .bind(knowledge_item_id.as_uuid())
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(to_infrastructure_error)?,
+        )?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(to_infrastructure_error)?;
+
+        Ok(Some(NeedsReviewActionRecord {
+            knowledge_item,
+            chunk_ids,
+        }))
+    }
+
     /// Bulk promote needs_review items matching project + origin + commit (IMP-L4).
     pub async fn promote_needs_review_by_origin_commit(
         &self,

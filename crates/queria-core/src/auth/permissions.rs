@@ -10,6 +10,8 @@ pub enum AgentToolPermission {
     IndexMemory,
     /// Local multi-git index-here upload (not in default_agent_tools).
     IndexLocal,
+    /// Privileged needs_review list/promote/reject (not in default_agent_tools).
+    ManageNeedsReview,
     ListProjects,
     GetSource,
 }
@@ -124,5 +126,38 @@ mod tests {
             AgentToolPermission::IndexLocal,
             AgentToolPermission::IndexMemory
         );
+    }
+
+    #[test]
+    fn manage_needs_review_serializes_as_snake_case() {
+        let json = serde_json::to_string(&AgentToolPermission::ManageNeedsReview)
+            .expect("serialize ManageNeedsReview");
+        assert_eq!(json, "\"manage_needs_review\"");
+        let back: AgentToolPermission =
+            serde_json::from_str("\"manage_needs_review\"").expect("deserialize manage_needs_review");
+        assert_eq!(back, AgentToolPermission::ManageNeedsReview);
+    }
+
+    #[test]
+    fn can_call_manage_needs_review_only_when_granted() {
+        let without = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::IndexLocal,
+            ],
+        };
+        assert!(!without.can_call(&AgentToolPermission::ManageNeedsReview));
+
+        let with = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::ManageNeedsReview,
+            ],
+        };
+        assert!(with.can_call(&AgentToolPermission::ManageNeedsReview));
     }
 }

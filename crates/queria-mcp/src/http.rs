@@ -11,10 +11,11 @@ use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::contracts::{
     RetrieveContextRequest, RetrieveContextResponse, scratch_content_hash, validate_memory_body,
 };
-use queria_core::ids::{ProjectId, SourceDocumentId};
+use queria_core::ids::{KnowledgeItemId, ProjectId, SourceDocumentId};
 use queria_db::repositories::{
-    AuthenticatedAgentToken, IndexMemoryParams, PgProjectRepository, ProjectRecord,
-    ProposeMemoryParams, SourceDocumentRecord,
+    AuthenticatedAgentToken, IndexMemoryParams, KnowledgeItemRecord, NeedsReviewActionRecord,
+    NeedsReviewItemRecord, PgProjectRepository, ProjectRecord, ProposeMemoryParams,
+    SourceDocumentRecord,
 };
 use queria_search::retrieval::RetrievalPrincipal;
 use queria_search::scratch_embed::{build_embed_clients, index_memory_with_sync_embed};
@@ -80,6 +81,23 @@ struct IndexMemoryArgs {
     category: Option<String>,
     #[serde(default)]
     tags: Vec<String>,
+}
+
+/// Args for `list_needs_review` (IMP-L5 privileged).
+#[derive(Debug, Deserialize)]
+struct ListNeedsReviewArgs {
+    #[serde(default)]
+    project_slug: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+/// Args for `promote_knowledge` / `reject_needs_review` (IMP-L5 privileged).
+#[derive(Debug, Deserialize)]
+struct NeedsReviewItemArgs {
+    knowledge_item_id: KnowledgeItemId,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -260,6 +278,50 @@ async fn call_tool(
                 "created": indexed.created,
                 "idempotent": indexed.idempotent
             })))
+        }
+        "list_needs_review" => {
+            let args_value = if params.arguments.is_null() {
+                json!({})
+            } else {
+                params.arguments
+            };
+            let args: ListNeedsReviewArgs =
+                serde_json::from_value(args_value).map_err(invalid_params)?;
+            let items = repository
+                .list_needs_review_for_agent(
+                    agent,
+                    args.project_slug.as_deref(),
+                    args.limit.unwrap_or(100),
+                )
+                .await
+                .map_err(needs_review_error)?;
+            Ok(tool_success(json!({
+                "items": items.into_iter().map(needs_review_item_json).collect::<Vec<_>>()
+            })))
+        }
+        "promote_knowledge" => {
+            let args: NeedsReviewItemArgs =
+                serde_json::from_value(params.arguments).map_err(invalid_params)?;
+            let Some(record) = repository
+                .promote_needs_review_for_agent(agent, args.knowledge_item_id)
+                .await
+                .map_err(needs_review_error)?
+            else {
+                return Ok(tool_error("knowledge_item_not_found"));
+            };
+            Ok(tool_success(needs_review_action_json(record)))
+        }
+        "reject_needs_review" => {
+            let args: NeedsReviewItemArgs =
+                serde_json::from_value(params.arguments).map_err(invalid_params)?;
+            let Some(record) = repository
+                .reject_needs_review_for_agent(agent, args.knowledge_item_id, args.reason)
+                .await
+                .map_err(needs_review_error)?
+            else {
+                return Ok(tool_error("knowledge_item_not_found"));
+            };
+            Ok(tool_success(needs_review_action_json(record)))
         }
         _ => Err("unknown_tool".to_owned()),
     }
@@ -495,6 +557,47 @@ fn source_json(source: SourceDocumentRecord) -> Value {
     })
 }
 
+fn needs_review_item_json(item: NeedsReviewItemRecord) -> Value {
+    json!({
+        "knowledge_item_id": item.knowledge_item_id,
+        "project_id": item.project_id,
+        "project_slug": item.project_slug,
+        "source_document_id": item.source_document_id,
+        "title": item.title,
+        "path": item.path,
+        "origin_url": item.origin_url,
+        "commit_sha": item.commit_sha,
+        "branch": item.branch,
+        "category": item.category,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at
+    })
+}
+
+fn knowledge_item_json(item: KnowledgeItemRecord) -> Value {
+    json!({
+        "id": item.id,
+        "project_id": item.project_id,
+        "source_document_id": item.source_document_id,
+        "scope": item.scope,
+        "status": item.status,
+        "title": item.title,
+        "body": item.body,
+        "category": item.category,
+        "tags": item.tags,
+        "approved_at": item.approved_at,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at
+    })
+}
+
+fn needs_review_action_json(record: NeedsReviewActionRecord) -> Value {
+    json!({
+        "knowledge_item": knowledge_item_json(record.knowledge_item),
+        "chunk_ids": record.chunk_ids
+    })
+}
+
 fn invalid_params(error: serde_json::Error) -> String {
     format!("invalid_params: {error}")
 }
@@ -520,6 +623,18 @@ fn index_memory_error(error: queria_core::QueriaError) -> String {
             tracing::error!(error = %other, "index_memory failed");
             // Surface embed/Qdrant failures without claiming success (VAL-DL-032).
             "index_memory_embed_failed".to_owned()
+        }
+    }
+}
+
+fn needs_review_error(error: queria_core::QueriaError) -> String {
+    match error {
+        queria_core::QueriaError::Validation(message) => message,
+        queria_core::QueriaError::PermissionDenied => "permission_denied".to_owned(),
+        queria_core::QueriaError::NotFound(message) => message,
+        other => {
+            tracing::error!(error = %other, "needs_review tool failed");
+            "tool_failed".to_owned()
         }
     }
 }
