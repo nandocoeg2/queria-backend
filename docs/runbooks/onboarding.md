@@ -1,7 +1,7 @@
 # Onboarding Runbook (Admin → Agent)
 
 > Status: CURRENT  
-> Last verified: 2026-07-18  
+> Last verified: 2026-07-19  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)  
 > Local infra detail: [`local-development.md`](./local-development.md)  
 > Retrieval ops: [`hybrid-retrieval.md`](./hybrid-retrieval.md)
@@ -479,37 +479,11 @@ Isolation checks:
 
 ## Part C — Agent-driven setup (LLM paste prompt)
 
-Once the stack is up and an operator can issue tokens, an AI coding agent can finish **client-side** onboarding by following the live setup document.
+Client-side onboard (MCP, env, AGENTS.md, hooks, smoke) with **one paste** and **question dialogs** for missing token/slug/client:
 
-### Operator: copy-paste this to the agent
+→ **[`agent-onboard-prompt.md`](./agent-onboard-prompt.md)** (canonical prompt + short variant + setup endpoint list)
 
-```text
-You are onboarding this workspace to QuerIa (central knowledge MCP).
-
-1. GET http://127.0.0.1:17674/api/v1/docs/agent-setup (or production edge …:17674/api/v1/docs/setup) and follow it.
-2. If I do not already have QUERIA_AGENT_TOKEN, ask me for it (only an admin can mint tokens).
-3. GET …/api/v1/setup/mcp-snippet?client=<claude|codex|cursor|droid> and install the MCP config on THIS machine (do not expect the QuerIa server to write my ~/.config).
-4. GET …/api/v1/setup/agents-block?project_slug=<slug> and merge into AGENTS.md using the <!-- queria:start --> markers idempotently.
-5. GET …/api/v1/setup/hooks-snippet?client=<droid|claude> and install SessionStart + UserPromptSubmit auto-retrieve hooks (write script, merge hooks JSON). Codex: skip hooks, AGENTS only.
-6. Smoke: MCP list_projects + retrieve_context; optional new session shows QuerIa auto context inject.
-
-Use edge port 17674. Never 67671 / queria-proxy.
-```
-
-### Public endpoints (no auth)
-
-| Method | Path |
-|---|---|
-| GET | `/api/v1/docs/agent-setup` |
-| GET | `/api/v1/docs/setup` (alias) |
-| GET | `/api/v1/setup/mcp-snippet?client=` |
-| GET | `/api/v1/setup/agents-block?project_slug=` |
-| GET | `/api/v1/setup/hooks-snippet?client=` |
-| GET | `/api/v1/setup/hook-script` |
-
-These ship in `queria-api`. Through Caddy they are available under the public edge base. Full operator path remains Part A–B above.
-
-**Difference from enowx-rag:** QuerIa does **not** expose `install-mcp` that mutates config on the API host for remote agents. The LLM applies files locally after fetching snippets.
+Operator still does Part A (project, Git ingest, mint token) before the agent can finish Part C. Live doc on edge: `GET {BASE}/api/v1/docs/agent-setup`. QuerIa does not write the agent machine’s MCP config from the API host.
 
 ---
 
@@ -519,6 +493,7 @@ These ship in `queria-api`. Through Caddy they are available under the public ed
 |---|---|
 | [`../HANDOFF.md`](../HANDOFF.md) | What is actually deployed; multi-org bootstrap + isolation smoke |
 | [`../PRODUCT.md`](../PRODUCT.md) | Lanes, tool contract, multi-org v1 non-goals |
+| [`agent-onboard-prompt.md`](./agent-onboard-prompt.md) | One-paste client onboard + dialog questions |
 | [`local-development.md`](./local-development.md) | Compose, migrate, backfill |
 | [`hybrid-retrieval.md`](./hybrid-retrieval.md) | Rerank/compress/probe |
 | [`deployment.md`](./deployment.md) | Production host |

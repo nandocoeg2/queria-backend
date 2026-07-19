@@ -1,7 +1,7 @@
 # Queria Backend Documentation
 
 > Status: CURRENT
-> Last verified: 2026-07-17
+> Last verified: 2026-07-19
 > Canonical repository: `https://github.com/nandocoeg2/queria-backend`
 
 **Start here:** [`HANDOFF.md`](./HANDOFF.md) is the only source of truth for what is implemented.
@@ -28,6 +28,7 @@
 | [`DOCS_POLICY.md`](./DOCS_POLICY.md) | `CURRENT` | Doc ownership and archive rules |
 | [`runbooks/local-development.md`](./runbooks/local-development.md) | `CURRENT` | Local infrastructure and commands |
 | [`runbooks/onboarding.md`](./runbooks/onboarding.md) | `CURRENT` | Admin → agent onboard (project, source, token, MCP) + LLM paste-prompt (Part C) |
+| [`runbooks/agent-onboard-prompt.md`](./runbooks/agent-onboard-prompt.md) | `CURRENT` | One-paste agent client onboard; question dialogs for missing token/slug/client |
 | [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) | `PARTIAL` | Hybrid retrieval ops |
 | [`runbooks/deployment.md`](./runbooks/deployment.md) | `CURRENT` | Production deploy |
 | [`runbooks/rollback.md`](./runbooks/rollback.md) | `CURRENT` | Rollback |
