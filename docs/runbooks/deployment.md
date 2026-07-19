@@ -82,7 +82,11 @@ docker compose -f docker-compose.production.yml up -d --remove-orphans
 
 Compose also has a local `build:` fallback if you run `compose build` without pull (Path B).
 
-### GitHub Secrets (repo `queria-backend`)
+### GitHub Secrets (Environment `Oracle Instance`)
+
+Secrets are **environment** secrets (not repository secrets). Deploy job sets `environment: Oracle Instance` in [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml).
+
+UI: repo → **Settings** → **Environments** → **Oracle Instance** → Environment secrets.
 
 | Secret | Purpose |
 |---|---|
