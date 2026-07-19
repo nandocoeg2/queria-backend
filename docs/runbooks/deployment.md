@@ -126,7 +126,6 @@ rsync -az --delete \
   --exclude 'target' \
   --exclude 'node_modules' \
   --exclude '.env*' \
-  --exclude '_cicd' \
   /Users/fernandojulian/project/knowledge-based-rag/queria/backend/ \
   ubuntu@168.110.214.130:/home/ubuntu/queria-backend/
 ```
