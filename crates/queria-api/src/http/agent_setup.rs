@@ -18,12 +18,18 @@ use serde_json::{Value, json};
 const AGENTS_MARKER_START: &str = "<!-- queria:start -->";
 const AGENTS_MARKER_END: &str = "<!-- queria:end -->";
 
+/// Shared client-side auto-retrieve hook script (T4+R6+H1 fail-open).
+const HOOK_SCRIPT: &str =
+    include_str!("../../../../agent-tools/hooks/queria-retrieve-hook.sh");
+
 pub fn router() -> Router<ApiState> {
     Router::new()
         .route("/docs/agent-setup", get(agent_setup_docs))
         .route("/docs/setup", get(agent_setup_docs))
         .route("/setup/mcp-snippet", get(mcp_snippet))
         .route("/setup/agents-block", get(agents_block_handler))
+        .route("/setup/hooks-snippet", get(hooks_snippet))
+        .route("/setup/hook-script", get(hook_script_handler))
 }
 
 /// Prefer reverse-proxy headers so markdown links use the public edge base.
@@ -110,6 +116,44 @@ async fn agents_block_handler(
         "marker_end": AGENTS_MARKER_END,
         "markdown": markdown,
     })))
+}
+
+#[derive(Debug, Deserialize)]
+struct HooksSnippetQuery {
+    /// droid | factory | claude
+    client: String,
+}
+
+async fn hooks_snippet(
+    headers: HeaderMap,
+    Query(query): Query<HooksSnippetQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let base = request_base(&headers);
+    let client = normalize_client(&query.client);
+    let snippet = match client.as_str() {
+        "droid" | "factory" => droid_hooks_snippet(&base),
+        "claude" => claude_hooks_snippet(&base),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "unknown_client",
+                    "allowed": ["droid", "factory", "claude"],
+                    "note": "Codex uses AGENTS.md only (no native hooks in v1)"
+                })),
+            ));
+        }
+    };
+    Ok(Json(snippet))
+}
+
+async fn hook_script_handler() -> Response {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
+        HOOK_SCRIPT.to_owned(),
+    )
+        .into_response()
 }
 
 fn normalize_client(raw: &str) -> String {
@@ -222,7 +266,37 @@ Do not delete the rest of the file.
 
 ---
 
-## 4. Smoke tools
+## 4. Install auto-retrieve hooks (Droid / Claude)
+
+Hooks inject condensed QuerIa context on **SessionStart** and throttled **UserPromptSubmit** (hybrid T4+R6+H1). Fail-open: edge down does not block work. Codex: AGENTS.md only (no native hooks in v1).
+
+```bash
+export QUERIA_AGENT_TOKEN='qria_…'
+export QUERIA_EDGE_URL='{base}'
+export QUERIA_MCP_URL='{base}/mcp'
+export QUERIA_PROJECT_SLUG='<slug>'   # or QUERIA_PROJECT_ID=<uuid>
+```
+
+```http
+GET {base}/api/v1/setup/hooks-snippet?client=<droid|claude>
+GET {base}/api/v1/setup/hook-script
+```
+
+1. Write hook script to the path_hint under `scripts` from the snippet (chmod +x).
+2. Merge the returned hooks JSON into `.factory/hooks.json` (Droid) or `.claude/settings.json` hooks key (Claude).
+3. Requires `jq` and `curl` on the agent machine.
+4. Soft inject only — still **MUST** call MCP `retrieve_context` for deep/task-specific context.
+
+Agent HTTP (bearer, same authz as MCP retrieve):
+
+| Method | Path |
+|---|---|
+| POST | `{base}/api/v1/agent/retrieve-context` |
+| GET | `{base}/api/v1/agent/projects` |
+
+---
+
+## 5. Smoke tools
 
 After MCP connects:
 
@@ -231,6 +305,7 @@ After MCP connects:
 3. `retrieve_context` with `project_id` + a real query.
 4. Optional: `index_memory` (scratch) if the token includes that tool.
 5. Optional: `propose_memory` for team truth (needs Admin approval).
+6. Optional: start a new Droid/Claude session and confirm `## QuerIa context (auto)` appears when hooks are installed.
 
 Operator Playground: `{base}/admin/playground`.
 
@@ -239,7 +314,8 @@ Operator Playground: `{base}/admin/playground`.
 ## Workflow contract
 
 ```text
-Before work: retrieve_context(project_id, query)   # include_scratch default true
+SessionStart / UserPromptSubmit hooks: auto HTTP retrieve inject (fail-open, throttled)
+Before deep work: MCP retrieve_context(project_id, query)   # include_scratch default true
 After (fast): index_memory(...)                   # scratch, project only
 After (team): propose_memory(...)                 # proposed → human approve → trusted
 ```
@@ -256,6 +332,10 @@ Trusted code knowledge still enters via Git ingestion + approval, not agent over
 | GET | `{base}/api/v1/docs/setup` | none (alias) |
 | GET | `{base}/api/v1/setup/mcp-snippet?client=` | none |
 | GET | `{base}/api/v1/setup/agents-block?project_slug=` | none |
+| GET | `{base}/api/v1/setup/hooks-snippet?client=` | none |
+| GET | `{base}/api/v1/setup/hook-script` | none |
+| POST | `{base}/api/v1/agent/retrieve-context` | Bearer agent token |
+| GET | `{base}/api/v1/agent/projects` | Bearer agent token |
 
 Creating projects, sources, and agent tokens remains **session Admin HTTP** (see full onboarding runbook).
 
@@ -269,6 +349,7 @@ Creating projects, sources, and agent tokens remains **session Admin HTTP** (see
 | MCP 401 | Token env, `Bearer ` prefix |
 | Empty retrieve | Embeddings not ready; wrong project UUID |
 | Missing `index_memory` | Token tools list |
+| Hook silent | `jq`/`curl` present; QUERIA_EDGE_URL + token; `droid --debug` / Claude debug log |
 "#,
         base = base
     )
@@ -277,12 +358,12 @@ Creating projects, sources, and agent tokens remains **session Admin HTTP** (see
 fn agents_block_markdown(project_slug: &str, project_id: Option<&str>) -> String {
     let id_line = match project_id.map(str::trim).filter(|s| !s.is_empty()) {
         Some(id) => format!(
-            "- Project slug: `{slug}`\n- Project UUID (for retrieve/search/index_memory): `{id}`\n",
+            "- Project slug: `{slug}`\n- Project UUID (for retrieve/search/index_memory): `{id}`\n- Env for hooks: `QUERIA_PROJECT_ID={id}` or `QUERIA_PROJECT_SLUG={slug}`\n",
             slug = project_slug,
             id = id
         ),
         None => format!(
-            "- Project slug: `{slug}`\n- Resolve UUID via MCP `list_projects` before retrieve.\n",
+            "- Project slug: `{slug}`\n- Resolve UUID via MCP `list_projects` (or GET `/api/v1/agent/projects`) before retrieve.\n- Env for hooks: `QUERIA_PROJECT_SLUG={slug}`\n",
             slug = project_slug
         ),
     };
@@ -292,13 +373,15 @@ fn agents_block_markdown(project_slug: &str, project_id: Option<&str>) -> String
 ## QuerIa knowledge (project: {slug})
 
 This project uses the central QuerIa MCP gateway for dual-lane knowledge (trusted + scratch).
+Optional client hooks may inject a condensed `## QuerIa context (auto)` block on SessionStart / UserPromptSubmit (fail-open, throttled). That inject is **not** a substitute for deep MCP retrieve.
 
 {id_line}
-- **Before coding:** call `retrieve_context` with the project UUID and the user's query; prefer cited trusted facts; use scratch as ephemeral notes.
-- **After coding (fast):** call `index_memory` for project-scoped scratch (not team truth).
+- **MUST before non-trivial coding:** call MCP `retrieve_context` with the project UUID and the user's task/query (even if a hook already injected context). Prefer cited **trusted** facts over scratch.
+- **After coding (fast):** call `index_memory` for project-scoped scratch (not team truth) when the token grants it.
 - **After coding (team truth):** call `propose_memory` with slug `{slug}`; do not treat it as approved until a human approves.
 - Never write global or cross-project scratch. Never overwrite trusted knowledge via MCP.
 - Git ingestion and Admin approvals remain the path for official codebase memory.
+- Hooks env: `QUERIA_AGENT_TOKEN`, `QUERIA_EDGE_URL`, project id/slug. Install via `/api/v1/setup/hooks-snippet`.
 {end}
 "#,
         start = AGENTS_MARKER_START,
@@ -306,6 +389,108 @@ This project uses the central QuerIa MCP gateway for dual-lane knowledge (truste
         slug = project_slug,
         id_line = id_line,
     )
+}
+
+fn droid_hooks_snippet(base: &str) -> Value {
+    let hooks_json = r#"{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/queria-retrieve-hook.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$FACTORY_PROJECT_DIR\"/.factory/hooks/queria-retrieve-hook.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+"#;
+    json!({
+        "client": "droid",
+        "path_hint": ".factory/hooks.json",
+        "script_path_hint": ".factory/hooks/queria-retrieve-hook.sh",
+        "format": "json",
+        "env": [
+            "QUERIA_AGENT_TOKEN",
+            "QUERIA_EDGE_URL",
+            "QUERIA_PROJECT_ID",
+            "QUERIA_PROJECT_SLUG"
+        ],
+        "edge_url_example": base,
+        "content": hooks_json,
+        "script": HOOK_SCRIPT,
+        "install_notes": [
+            "Write script content to script_path_hint and chmod +x",
+            "Merge content into .factory/hooks.json (project scope)",
+            "export QUERIA_EDGE_URL to the public edge base (port 17674)",
+            "Requires jq and curl; fail-open if edge is down"
+        ]
+    })
+}
+
+fn claude_hooks_snippet(base: &str) -> Value {
+    let hooks_json = r#"{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/queria-retrieve-hook.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/queria-retrieve-hook.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
+"#;
+    json!({
+        "client": "claude",
+        "path_hint": ".claude/settings.json (hooks key) or project settings",
+        "script_path_hint": ".claude/hooks/queria-retrieve-hook.sh",
+        "format": "json",
+        "env": [
+            "QUERIA_AGENT_TOKEN",
+            "QUERIA_EDGE_URL",
+            "QUERIA_PROJECT_ID",
+            "QUERIA_PROJECT_SLUG"
+        ],
+        "edge_url_example": base,
+        "content": hooks_json,
+        "script": HOOK_SCRIPT,
+        "install_notes": [
+            "Write script content to script_path_hint and chmod +x",
+            "Merge hooks object into Claude settings hooks configuration",
+            "export QUERIA_EDGE_URL; never commit the raw agent token",
+            "Requires jq and curl; fail-open if edge is down"
+        ]
+    })
 }
 
 fn claude_snippet(mcp_url: &str) -> Value {
@@ -446,6 +631,8 @@ mod tests {
         assert!(body.contains("QUERIA_AGENT_TOKEN"));
         assert!(body.contains("retrieve_context"));
         assert!(body.contains("Do **not** use stale port"));
+        assert!(body.contains("hooks-snippet"));
+        assert!(body.contains("agent/retrieve-context"));
     }
 
     #[tokio::test]
@@ -518,5 +705,81 @@ mod tests {
         assert!(body.contains("fjulian-me"));
         assert!(body.contains("abc-123"));
         assert!(body.contains("retrieve_context"));
+        assert!(body.contains("MUST before non-trivial coding"));
+        assert!(body.contains("QuerIa context (auto)"));
+    }
+
+    #[tokio::test]
+    async fn hooks_snippet_droid_includes_script_and_events() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/setup/hooks-snippet?client=droid")
+                    .header("host", "127.0.0.1:17674")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("SessionStart"));
+        assert!(body.contains("UserPromptSubmit"));
+        assert!(body.contains("FACTORY_PROJECT_DIR"));
+        assert!(body.contains("queria-retrieve-hook"));
+        assert!(body.contains("fail-open") || body.contains("QUERIA_EDGE_URL"));
+    }
+
+    #[tokio::test]
+    async fn hooks_snippet_claude_ok() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/setup/hooks-snippet?client=claude")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("CLAUDE_PROJECT_DIR"));
+        assert!(body.contains("SessionStart"));
+    }
+
+    #[tokio::test]
+    async fn hooks_snippet_unknown_client_400() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/setup/hooks-snippet?client=codex")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn hook_script_is_public_shell() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/setup/hook-script")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("#!/usr/bin/env bash"));
+        assert!(body.contains("QUERIA_AGENT_TOKEN"));
+        assert!(body.contains("agent/retrieve-context"));
     }
 }

@@ -1,6 +1,6 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-18 (local main: multi-org isolation MVP + Admin product polish + docs; prod image may lag local `main` until post-mission redeploy)
+> Last verified: 2026-07-19 (local main: agent auto-retrieve hooks hybrid + multi-org isolation MVP + Admin polish; prod image may lag local `main` until post-mission redeploy)
 > Branch: `main`
 > Production image: may lag local `main` (multi-org, retrieval quality, Admin sources/tokens UX). Host sync via **rsync** when GitHub SSH unavailable; edge on host port **`:17674`**.
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
@@ -117,6 +117,7 @@ not a Rust proxy crate.
 | MCP HTTP transport | `COMPLETED` | `initialize`, `tools/list`, and `tools/call` work with agent-token authorization. |
 | MCP agent tools | `COMPLETED` | Agent surface: `retrieve_context`, `search_knowledge`, `propose_memory`, `list_projects`, `get_source`, `index_memory` (scratch). Optional `rerank`/`compress` on retrieve/search. Maintainer actions stay on session Admin HTTP, not MCP. |
 | Agent-driven onboarding docs | `COMPLETED` (prod 2026-07-18) | Public `GET /api/v1/docs/agent-setup` (alias `/docs/setup`), `GET /api/v1/setup/mcp-snippet`, `GET /api/v1/setup/agents-block`. Live on edge `:17674`. LLM applies MCP + AGENTS.md on the agent machine. Runbook Part C: [`runbooks/onboarding.md`](./runbooks/onboarding.md). |
+| Agent auto-retrieve hooks (hybrid) | `COMPLETED` (local main 2026-07-19) | T4+R6+H1: `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` (Bearer agent token, same authz as MCP). Setup: `/api/v1/setup/hooks-snippet?client=droid\|claude`, `/setup/hook-script`, script `agent-tools/hooks/queria-retrieve-hook.sh`. Stronger AGENTS block. SessionStart + throttled UserPromptSubmit inject, fail-open. **Prod image may lag.** Design: [`archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md`](./archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md). |
 | Multi-org isolation MVP | `COMPLETED` (local main 2026-07-18) | Migration `20260718000100_multi_org_tenancy` (`org_membership`, `org_invite`, `is_platform_super_admin`, `user_session.active_organization_id`, one-org unique, backfill). Session binds active org + super-admin (DB flag and/or `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS`). API: `POST/GET /api/v1/orgs`, invites, accept, current members. Admin: `/admin/orgs`, `/admin/invites/accept`, `/admin/members`. Tenant handlers + MCP/agent tokens filter home org only; SA without membership 403s tenant routes. **Prod image not redeployed** for multi-org yet. Product note: [`PRODUCT.md`](./PRODUCT.md). Ops: section **Multi-org isolation MVP** below. |
 | Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |

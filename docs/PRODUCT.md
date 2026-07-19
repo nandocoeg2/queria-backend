@@ -66,6 +66,7 @@ Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted 
 | Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs; later scratch list / promote / TTL |
 | Admin Playground | Operators | Lean SSR `/admin/playground`: live retrieval probe with rerank/compress toggles, scores, lane, diagnostics (not eval product) |
 | MCP (`queria-mcp`) | Agents | See tool table below |
+| Agent HTTP retrieve (hooks) | Client-side agent hooks | `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` with Bearer `qria_…` (same authz as MCP retrieve). Powers Droid/Claude SessionStart + throttled UserPromptSubmit inject (fail-open). Setup: `/api/v1/setup/hooks-snippet`, `/setup/hook-script` |
 | CLI | Operators | Migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress`), eval (trusted/golden), backup/restore-drill |
 
 ### MCP tools (contract)

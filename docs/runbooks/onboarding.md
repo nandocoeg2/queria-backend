@@ -279,6 +279,37 @@ Rules (see [`PRODUCT.md`](../PRODUCT.md)):
 `project_id` in `retrieve_context` / `search_knowledge` / `index_memory` is the project **UUID**.  
 `propose_memory` uses `project_slug`.
 
+### B5. Auto-retrieve hooks (Droid / Claude)
+
+Hybrid inject (soft only, no Edit deny): **SessionStart** + throttled **UserPromptSubmit** shell hooks call agent-bearer HTTP retrieve and print condensed `## QuerIa context (auto)` into context. Fail-open if edge/token fails. Codex: AGENTS only.
+
+```bash
+export QUERIA_AGENT_TOKEN='qria_…'
+export QUERIA_EDGE_URL='http://127.0.0.1:17674'   # or prod edge
+export QUERIA_MCP_URL="${QUERIA_EDGE_URL}/mcp"
+export QUERIA_PROJECT_SLUG='fjulian-me'            # or QUERIA_PROJECT_ID=<uuid>
+# optional: QUERIA_HOOK_COOLDOWN_SEC=30 QUERIA_HOOK_MAX_CHARS=3500
+```
+
+```bash
+# Snippet + script (public)
+curl -sS "$QUERIA_EDGE_URL/api/v1/setup/hooks-snippet?client=droid"   # or client=claude
+curl -sS "$QUERIA_EDGE_URL/api/v1/setup/hook-script" -o .factory/hooks/queria-retrieve-hook.sh
+chmod +x .factory/hooks/queria-retrieve-hook.sh
+# Merge returned JSON hooks into .factory/hooks.json (Droid) or Claude settings hooks key
+```
+
+Agent HTTP (same token as MCP):
+
+| Method | Path |
+|---|---|
+| POST | `/api/v1/agent/retrieve-context` |
+| GET | `/api/v1/agent/projects` |
+
+Throttle defaults: 30s cooldown, same-query skip ~5m, skip trivial prompts (`ok`/`thanks`/…), cap ~3500 chars, top-k default 5. Script lives in-repo at `agent-tools/hooks/queria-retrieve-hook.sh`. Design: [`../archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md`](../archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md).
+
+Hooks **do not** replace MCP `retrieve_context` for deep work (AGENTS.md still **MUST** call it).
+
 ### B4. Agent smoke checklist
 
 | Step | Expect |
@@ -443,7 +474,8 @@ You are onboarding this workspace to QuerIa (central knowledge MCP).
 2. If I do not already have QUERIA_AGENT_TOKEN, ask me for it (only an admin can mint tokens).
 3. GET …/api/v1/setup/mcp-snippet?client=<claude|codex|cursor|droid> and install the MCP config on THIS machine (do not expect the QuerIa server to write my ~/.config).
 4. GET …/api/v1/setup/agents-block?project_slug=<slug> and merge into AGENTS.md using the <!-- queria:start --> markers idempotently.
-5. Smoke: MCP list_projects + retrieve_context.
+5. GET …/api/v1/setup/hooks-snippet?client=<droid|claude> and install SessionStart + UserPromptSubmit auto-retrieve hooks (write script, merge hooks JSON). Codex: skip hooks, AGENTS only.
+6. Smoke: MCP list_projects + retrieve_context; optional new session shows QuerIa auto context inject.
 
 Use edge port 17674. Never 67671 / queria-proxy.
 ```
@@ -456,6 +488,8 @@ Use edge port 17674. Never 67671 / queria-proxy.
 | GET | `/api/v1/docs/setup` (alias) |
 | GET | `/api/v1/setup/mcp-snippet?client=` |
 | GET | `/api/v1/setup/agents-block?project_slug=` |
+| GET | `/api/v1/setup/hooks-snippet?client=` |
+| GET | `/api/v1/setup/hook-script` |
 
 These ship in `queria-api`. Through Caddy they are available under the public edge base. Full operator path remains Part A–B above.
 
