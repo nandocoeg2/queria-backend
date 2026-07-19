@@ -1,10 +1,12 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-19 (CI/CD GHCR path + docs; first GHCR redeploy in progress or residual until green Actions)
+> Last verified: 2026-07-19 (subdomain HTTPS live; host Path-B image rebuild; GHCR Actions pull still residual)
 > Branch: `main`
-> **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH `docker compose -f docker-compose.production.yml pull && up -d`. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
-> **Fallback:** rsync from workstation + host `compose build` (host GitHub SSH often broken).
-> **Public access:** Caddy edge host **`:17674`**; subdomain **`https://queria.fjulian.id`** via host Nginx → `127.0.0.1:17674` + Certbot LE. Prod image may still lag local `main` until first green GHCR deploy.
+> **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
+> **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
+> **Public access live:** `http://168.110.214.130:17674/healthz` **200**; **`https://queria.fjulian.id/healthz` 200** (Nginx + Certbot LE); `/admin/login` **200**.
+> **Residual:** GHCR registry pull denied until packages exist + host `GHCR_TOKEN` / green Actions deploy; set repo secrets so next push uses Path A.
+
 
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
@@ -177,9 +179,10 @@ ssh -i /Users/fernandojulian/project/knowledge-based-rag/ssh-key-2026-04-16.key 
 | Host deploy path | `/home/ubuntu/queria-backend` |
 | Primary image path | **GHCR** `ghcr.io/nandocoeg2/queria-backend/backend` + `.../admin` (`linux/arm64`); workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) |
 | Fallback source sync | **rsync from workstation** + host `compose build` (host GitHub SSH cannot `git fetch`) |
-| Image / commit | After first green Actions deploy, track `IMAGE_TAG` / `QUERIA_SOURCE_COMMIT` on host; until then prod may lag local `main` |
+| Image / commit | Host build 2026-07-19 as `ghcr.io/.../backend:latest` + `admin:latest` (`QUERIA_SOURCE_COMMIT=e4f24a6` tree); **not** yet pulled from registry |
 | Edge service (live) | `queria-backend-queria-edge-1` image `caddy:2.10-alpine`, host port **`17674`** |
-| Public hostname | **`queria.fjulian.id`** → Nginx → `127.0.0.1:17674` (TLS via Certbot/Let’s Encrypt); Nginx still owns host 80/443 |
+| Public hostname | **`https://queria.fjulian.id`** live (Nginx → `127.0.0.1:17674`, Certbot LE expires ~2026-10-17); Nginx still owns host 80/443 |
+
 | Legacy proxy | **removed** |
 | API / MCP / worker | Multi-binary image package **`backend`**; Admin package **`admin`** |
 | Postgres / Qdrant | **healthy**; volumes **not wiped** |
