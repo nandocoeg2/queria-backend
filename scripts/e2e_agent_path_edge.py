@@ -375,8 +375,48 @@ def main() -> None:
         fail("E11", f"marker not found after retries: {last_note}")
     ok("E11")
 
-    # Task 3: E12 then RESULT PASS
-    print("RESULT: PARTIAL (E0-E11; Task 3 adds E12)")
+    # --- E12 hook script smoke ---
+    if args.skip_hooks:
+        skip("E12", "--skip-hooks")
+    else:
+        if not hook_script_body:
+            fail("E12", "no hook script from E1")
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "queria-retrieve-hook.sh")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(hook_script_body)
+            os.chmod(path, 0o755)
+            syn = subprocess.run(
+                ["bash", "-n", path], capture_output=True, text=True
+            )
+            if syn.returncode != 0:
+                fail("E12", f"bash -n: {syn.stderr[:300]}")
+            env = os.environ.copy()
+            env["QUERIA_AGENT_TOKEN"] = token
+            env["QUERIA_EDGE_URL"] = edge
+            env["QUERIA_PROJECT_SLUG"] = slug
+            stdin = json.dumps(
+                {
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "ok",
+                }
+            )
+            run = subprocess.run(
+                ["bash", path],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
+            if run.returncode != 0:
+                fail(
+                    "E12",
+                    f"exit={run.returncode} stderr={run.stderr[:300]}",
+                )
+        ok("E12")
+
+    print("RESULT: PASS")
     sys.exit(0)
 
 
