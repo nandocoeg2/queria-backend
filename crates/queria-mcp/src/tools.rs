@@ -28,7 +28,7 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
             json!({
                 "name": "retrieve_context",
                 "title": "Retrieve Context",
-                "description": "Retrieve project trusted (approved) knowledge, optional same-project scratch, and optional global trusted knowledge with lean citations (status/lane).",
+                "description": "Retrieve project trusted (approved) knowledge, optional same-project scratch, optional needs_review (default off), and optional global trusted knowledge with lean citations (status/lane).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -36,6 +36,7 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
                         "query": { "type": "string", "description": "Question or task context to retrieve for." },
                         "include_global": { "type": "boolean", "description": "Include global trusted knowledge when the token allows it." },
                         "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch memory. Default true for agents; set false for trusted-only." },
+                        "include_needs_review": { "type": "boolean", "description": "Include project-scoped needs_review items. Default false. Available to all org members with project access." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
                         "rerank": { "type": "boolean", "description": "Optional. When set, overrides server QUERIA_RERANK_ENABLED default." },
                         "compress": { "type": "boolean", "description": "Optional. When set, overrides server QUERIA_COMPRESS_ENABLED default." }
@@ -50,7 +51,7 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
             json!({
                 "name": "search_knowledge",
                 "title": "Search Knowledge",
-                "description": "Search dual-lane Queria knowledge (approved + optional project scratch) and return matching chunks with status/lane.",
+                "description": "Search Queria knowledge (approved + optional project scratch + optional needs_review) and return matching chunks with status/lane.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -58,6 +59,7 @@ fn tool_specs() -> Vec<(AgentToolPermission, Value)> {
                         "query": { "type": "string" },
                         "include_global": { "type": "boolean" },
                         "include_scratch": { "type": "boolean", "description": "Include project-scoped scratch. Default true." },
+                        "include_needs_review": { "type": "boolean", "description": "Include project-scoped needs_review. Default false." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
                         "rerank": { "type": "boolean", "description": "Optional. Overrides server QUERIA_RERANK_ENABLED when set." },
                         "compress": { "type": "boolean", "description": "Optional. Overrides server QUERIA_COMPRESS_ENABLED when set." }
@@ -186,6 +188,29 @@ mod tests {
                 .get("include_scratch")
                 .is_some()
         );
+    }
+
+    /// IMP-L3: tools/list schema exposes include_needs_review (default false in handlers).
+    #[test]
+    fn retrieve_context_schema_includes_needs_review_flag() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: default_agent_tools(),
+        };
+        let tools = tool_definitions(&permissions);
+        for name in ["retrieve_context", "search_knowledge"] {
+            let tool = tools
+                .iter()
+                .find(|t| t["name"] == name)
+                .unwrap_or_else(|| panic!("{name} listed"));
+            assert!(
+                tool["inputSchema"]["properties"]
+                    .get("include_needs_review")
+                    .is_some(),
+                "{name} needs include_needs_review"
+            );
+        }
     }
 
     /// VAL-CROSS-001: tools/list schema exposes optional rerank and compress.

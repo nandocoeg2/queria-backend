@@ -37,6 +37,8 @@ struct AgentRetrieveRequest {
     include_global: Option<bool>,
     /// Agent/hook default true (dual-lane).
     include_scratch: Option<bool>,
+    /// Default false; when true include project-scoped needs_review.
+    include_needs_review: Option<bool>,
     limit: Option<u32>,
     rerank: Option<bool>,
     compress: Option<bool>,
@@ -104,6 +106,8 @@ async fn agent_retrieve_context(
         query: payload.query,
         include_global: payload.include_global.unwrap_or(true),
         include_scratch: payload.include_scratch.unwrap_or(true),
+        // IMP-L3: agent hook path default false (unlike include_scratch).
+        include_needs_review: payload.include_needs_review.unwrap_or(false),
         limit,
         rerank: payload.rerank,
         compress: payload.compress,
@@ -345,6 +349,7 @@ mod tests {
         )
         .expect("deserialize");
         assert!(payload.include_scratch.unwrap_or(true));
+        assert!(!payload.include_needs_review.unwrap_or(false));
         assert!(payload.include_global.unwrap_or(true));
         assert_eq!(payload.limit.unwrap_or(HOOK_LIMIT_DEFAULT), 5);
         assert!(payload.rerank.is_none());

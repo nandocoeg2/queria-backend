@@ -2,10 +2,10 @@
 //!
 //! Pure, deterministic: no network. Near-dups match on normalized body whitespace
 //! and/or equal non-empty content hash (same normalization as scratch idempotency).
-//! When a trusted and a scratch near-dup collide, the trusted item survives.
+//! Preference when near-dups collide: trusted > scratch > needs_review.
 
 use queria_core::contracts::{
-    KnowledgeLane, RetrievedContextItem, normalize_memory_body_for_hash, scratch_content_hash,
+    RetrievedContextItem, normalize_memory_body_for_hash, scratch_content_hash,
 };
 use std::collections::HashMap;
 
@@ -22,11 +22,14 @@ pub fn resolve_compress_enabled(request_flag: Option<bool>, config_default: bool
     request_flag.unwrap_or(config_default)
 }
 
-/// Drop near-duplicate hydrated items, preferring trusted over scratch.
+/// Drop near-duplicate hydrated items, preferring higher-trust lanes.
+///
+/// Preference: trusted (approved) > scratch > needs_review.
 ///
 /// Input must already be in rank order (RRF or rerank). Survivors keep that order
-/// among distinct keys; when a later trusted item near-dups an earlier scratch
-/// survivor, the trusted item replaces it in place (scratch counts as dropped).
+/// among distinct keys; when a later higher-preference item near-dups an earlier
+/// lower-preference survivor, the higher one replaces it in place (lower counts
+/// as dropped).
 #[must_use]
 pub fn compress_items(items: Vec<RetrievedContextItem>, enabled: bool) -> CompressOutcome {
     if !enabled || items.len() < 2 {
@@ -46,9 +49,10 @@ pub fn compress_items(items: Vec<RetrievedContextItem>, enabled: bool) -> Compre
         }
 
         if let Some(&idx) = seen.get(&key) {
-            let prefer_trusted =
-                out[idx].lane == KnowledgeLane::Scratch && item.lane == KnowledgeLane::Trusted;
-            if prefer_trusted {
+            // Lower preference_rank wins (trusted=0, scratch=1, needs_review=2).
+            let prefer_incoming =
+                item.lane.preference_rank() < out[idx].lane.preference_rank();
+            if prefer_incoming {
                 out[idx] = item;
             }
             dropped = dropped.saturating_add(1);
@@ -86,6 +90,7 @@ mod tests {
         let status = match lane {
             KnowledgeLane::Trusted => KnowledgeStatus::Approved,
             KnowledgeLane::Scratch => KnowledgeStatus::Scratch,
+            KnowledgeLane::NeedsReview => KnowledgeStatus::NeedsReview,
         };
         RetrievedContextItem {
             chunk_id: ChunkId::new(),
@@ -141,6 +146,24 @@ mod tests {
         assert_eq!(outcome.items[0].chunk_id, trusted.chunk_id);
         assert_eq!(outcome.items[0].status, KnowledgeStatus::Approved);
         assert_eq!(outcome.dropped, 1);
+    }
+
+    /// IMP-L3: trusted beats needs_review near-dup; scratch beats needs_review.
+    #[test]
+    fn prefers_trusted_and_scratch_over_needs_review() {
+        let needs = item("shared index-here fact", KnowledgeLane::NeedsReview, 0.99);
+        let trusted = item("shared index-here fact", KnowledgeLane::Trusted, 0.5);
+        let outcome = compress_items(vec![needs.clone(), trusted.clone()], true);
+        assert_eq!(outcome.items.len(), 1);
+        assert_eq!(outcome.items[0].lane, KnowledgeLane::Trusted);
+        assert_eq!(outcome.items[0].chunk_id, trusted.chunk_id);
+
+        let needs = item("shared note", KnowledgeLane::NeedsReview, 0.95);
+        let scratch = item("shared note", KnowledgeLane::Scratch, 0.4);
+        let outcome = compress_items(vec![needs, scratch.clone()], true);
+        assert_eq!(outcome.items.len(), 1);
+        assert_eq!(outcome.items[0].lane, KnowledgeLane::Scratch);
+        assert_eq!(outcome.items[0].chunk_id, scratch.chunk_id);
     }
 
     /// Trusted already first: scratch near-dup is dropped (VAL-RET-010 path).

@@ -7,6 +7,10 @@ fn default_include_scratch() -> bool {
     true
 }
 
+fn default_include_needs_review() -> bool {
+    false
+}
+
 fn default_rerank_applied() -> bool {
     false
 }
@@ -19,12 +23,14 @@ fn default_latency_ms() -> u32 {
     0
 }
 
-/// Derived lane for dual-lane retrieve (no separate DB column).
+/// Derived lane for retrieve (no separate DB column).
+/// Ranking preference: trusted > scratch > needs_review.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KnowledgeLane {
     Trusted,
     Scratch,
+    NeedsReview,
 }
 
 impl KnowledgeLane {
@@ -32,6 +38,8 @@ impl KnowledgeLane {
     pub const fn from_status(status: KnowledgeStatus) -> Self {
         if status.is_scratch_lane() {
             Self::Scratch
+        } else if matches!(status, KnowledgeStatus::NeedsReview) {
+            Self::NeedsReview
         } else {
             Self::Trusted
         }
@@ -42,6 +50,17 @@ impl KnowledgeLane {
         match self {
             Self::Trusted => "trusted",
             Self::Scratch => "scratch",
+            Self::NeedsReview => "needs_review",
+        }
+    }
+
+    /// Lower is preferred (approved/trusted first).
+    #[must_use]
+    pub const fn preference_rank(self) -> u8 {
+        match self {
+            Self::Trusted => 0,
+            Self::Scratch => 1,
+            Self::NeedsReview => 2,
         }
     }
 }
@@ -55,6 +74,11 @@ pub struct RetrieveContextRequest {
     /// Golden/eval and trusted-only probes set false.
     #[serde(default = "default_include_scratch")]
     pub include_scratch: bool,
+    /// When true, include project-scoped `needs_review` items for principals with
+    /// project access (all org members; not owner-only). Default false everywhere
+    /// (agents, operators, CLI, eval).
+    #[serde(default = "default_include_needs_review")]
+    pub include_needs_review: bool,
     pub limit: u32,
     /// `None` uses `QUERIA_RERANK_ENABLED` / RetrievalSettings default.
     #[serde(default)]
@@ -102,9 +126,9 @@ pub struct RetrievedContextItem {
     pub chunk_id: ChunkId,
     pub source_document_id: SourceDocumentId,
     pub scope: KnowledgeScope,
-    /// Lean dual-lane signal: only `approved` or `scratch` appear in agent retrieve.
+    /// Lean status signal: `approved`, optional `scratch`, optional `needs_review`.
     pub status: KnowledgeStatus,
-    /// Lane derived from status (`trusted` for approved, `scratch` for scratch).
+    /// Lane derived from status (`trusted` / `scratch` / `needs_review`).
     pub lane: KnowledgeLane,
     pub title: String,
     pub body: String,
@@ -192,6 +216,7 @@ mod tests {
             query: "  ".to_owned(),
             include_global: true,
             include_scratch: true,
+            include_needs_review: false,
             limit: 5,
             rerank: None,
             compress: None,
@@ -209,6 +234,7 @@ mod tests {
             query: overlong,
             include_global: true,
             include_scratch: true,
+            include_needs_review: false,
             limit: 5,
             rerank: None,
             compress: None,
@@ -225,6 +251,7 @@ mod tests {
                 query: "ok".to_owned(),
                 include_global: true,
                 include_scratch: false,
+                include_needs_review: false,
                 limit,
                 rerank: None,
                 compress: None,
@@ -240,6 +267,7 @@ mod tests {
             query: "how to deploy fjulian-me".to_owned(),
             include_global: true,
             include_scratch: true,
+            include_needs_review: false,
             limit: 8,
             rerank: None,
             compress: None,
@@ -257,6 +285,7 @@ mod tests {
                 query: "ok".to_owned(),
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
                 limit,
                 rerank: Some(true),
                 compress: Some(false),
@@ -281,6 +310,7 @@ mod tests {
         assert_eq!(request.rerank, None);
         assert_eq!(request.compress, None);
         assert!(request.include_scratch);
+        assert!(!request.include_needs_review);
     }
 
     /// Optional flags deserialize when present and override independently.
@@ -291,6 +321,7 @@ mod tests {
             "query": "marker",
             "include_global": true,
             "include_scratch": false,
+            "include_needs_review": true,
             "limit": 3,
             "rerank": false,
             "compress": true
@@ -300,6 +331,7 @@ mod tests {
         assert_eq!(request.rerank, Some(false));
         assert_eq!(request.compress, Some(true));
         assert!(!request.include_scratch);
+        assert!(request.include_needs_review);
     }
 
     /// VAL-RET-011: diagnostics serialize new fields; old payloads still deserialize.
@@ -358,6 +390,20 @@ mod tests {
         assert!(request.include_scratch);
     }
 
+    /// IMP-L3: include_needs_review defaults false (eval/agent/operator).
+    #[test]
+    fn retrieve_context_include_needs_review_defaults_false() {
+        let value = serde_json::json!({
+            "project_id": ProjectId::new(),
+            "query": "marker",
+            "include_global": true,
+            "limit": 5
+        });
+        let request: RetrieveContextRequest =
+            serde_json::from_value(value).expect("deserialize without include_needs_review");
+        assert!(!request.include_needs_review);
+    }
+
     /// VAL-DL-035 / VAL-DL-036: lean lane derivation from status.
     #[test]
     fn knowledge_lane_derives_from_status() {
@@ -369,8 +415,21 @@ mod tests {
             KnowledgeLane::from_status(KnowledgeStatus::Approved),
             KnowledgeLane::Trusted
         );
+        assert_eq!(
+            KnowledgeLane::from_status(KnowledgeStatus::NeedsReview),
+            KnowledgeLane::NeedsReview
+        );
         assert_eq!(KnowledgeLane::Scratch.as_str(), "scratch");
         assert_eq!(KnowledgeLane::Trusted.as_str(), "trusted");
+        assert_eq!(KnowledgeLane::NeedsReview.as_str(), "needs_review");
+        assert!(
+            KnowledgeLane::Trusted.preference_rank()
+                < KnowledgeLane::Scratch.preference_rank()
+        );
+        assert!(
+            KnowledgeLane::Scratch.preference_rank()
+                < KnowledgeLane::NeedsReview.preference_rank()
+        );
     }
 
     #[test]

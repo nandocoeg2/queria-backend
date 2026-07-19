@@ -18,6 +18,8 @@ struct RetrievalProbeRequest {
     include_global: Option<bool>,
     /// Operator probe default false (trusted-only); agents default true on MCP.
     include_scratch: Option<bool>,
+    /// Operator probe default false; when true includes project needs_review.
+    include_needs_review: Option<bool>,
     limit: Option<u32>,
     /// `None` uses server `QUERIA_RERANK_ENABLED` default.
     rerank: Option<bool>,
@@ -106,6 +108,7 @@ async fn retrieve_context_by_slug(
         .map_err(map_error)?
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "project_not_found"))?;
     // Operator slug probe: default trusted-only (VAL-CROSS-005). Agent MCP default remains true.
+    // IMP-L3: include_needs_review default false on probe.
     let request = RetrieveContextRequest {
         project_id: queria_core::ids::ProjectId::from_uuid(project.id),
         query: payload.query,
@@ -113,6 +116,7 @@ async fn retrieve_context_by_slug(
             .include_global
             .unwrap_or(project.include_global_default),
         include_scratch: payload.include_scratch.unwrap_or(false),
+        include_needs_review: payload.include_needs_review.unwrap_or(false),
         limit: payload.limit.unwrap_or(5),
         rerank: payload.rerank,
         compress: payload.compress,
@@ -185,8 +189,17 @@ mod tests {
             serde_json::from_str(r#"{"query":"deployment notes","include_global":true,"limit":5}"#)
                 .expect("probe body deserializes");
         assert!(!payload.include_scratch.unwrap_or(false));
+        assert!(!payload.include_needs_review.unwrap_or(false));
         assert!(payload.rerank.is_none());
         assert!(payload.compress.is_none());
+    }
+
+    /// IMP-L3: include_needs_review omitted → false on operator probe.
+    #[test]
+    fn probe_defaults_include_needs_review_false() {
+        let payload: RetrievalProbeRequest =
+            serde_json::from_str(r#"{"query":"notes","limit":5}"#).expect("probe body");
+        assert!(!payload.include_needs_review.unwrap_or(false));
     }
 
     /// VAL-CROSS-001 / VAL-CROSS-002: probe accepts explicit rerank/compress overrides.
@@ -196,12 +209,14 @@ mod tests {
             r#"{
                 "query": "q",
                 "include_scratch": true,
+                "include_needs_review": true,
                 "rerank": false,
                 "compress": false
             }"#,
         )
         .expect("probe body with flags");
         assert_eq!(payload.include_scratch, Some(true));
+        assert_eq!(payload.include_needs_review, Some(true));
         assert_eq!(payload.rerank, Some(false));
         assert_eq!(payload.compress, Some(false));
     }
@@ -222,6 +237,8 @@ mod tests {
         .expect("session retrieve body");
         // Omitted include_scratch still agent/serde default true on this contract type.
         assert!(req.include_scratch);
+        // IMP-L3: include_needs_review defaults false on shared contract.
+        assert!(!req.include_needs_review);
         assert_eq!(req.rerank, Some(true));
         assert_eq!(req.compress, Some(false));
         assert_eq!(

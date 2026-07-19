@@ -296,6 +296,7 @@ export async function probeRetrieval(
     query: string;
     include_global?: boolean;
     include_scratch?: boolean;
+    include_needs_review?: boolean;
     limit?: number;
     rerank?: boolean;
     compress?: boolean;

@@ -50,6 +50,7 @@ pub trait HybridRetrievalStore: Send + Sync {
         project_id: ProjectId,
         include_global: bool,
         include_scratch: bool,
+        include_needs_review: bool,
     ) -> QueriaResult<RetrievalAccess>;
     async fn lexical_search(
         &self,
@@ -153,6 +154,7 @@ where
                 request.project_id,
                 request.include_global,
                 request.include_scratch,
+                request.include_needs_review,
             )
             .await?;
         // Oversampled candidate pool: larger than final limit so rerank has headroom.
@@ -272,11 +274,18 @@ impl HybridRetrievalStore for PgHybridRetrievalRepository {
         project_id: ProjectId,
         include_global: bool,
         include_scratch: bool,
+        include_needs_review: bool,
     ) -> QueriaResult<RetrievalAccess> {
         match principal {
             RetrievalPrincipal::User { user_id } => {
-                self.authorize_user(*user_id, project_id, include_global, include_scratch)
-                    .await
+                self.authorize_user(
+                    *user_id,
+                    project_id,
+                    include_global,
+                    include_scratch,
+                    include_needs_review,
+                )
+                .await
             }
             RetrievalPrincipal::Agent {
                 organization_id,
@@ -290,6 +299,7 @@ impl HybridRetrievalStore for PgHybridRetrievalRepository {
                     project_id,
                     include_global,
                     include_scratch,
+                    include_needs_review,
                 )
                 .await
             }
@@ -353,7 +363,7 @@ mod tests {
 
     struct FakeHybridStore {
         access: RetrievalAccess,
-        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool, bool)>>,
+        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool, bool, bool)>>,
         lexical: Mutex<Option<Vec<DbRankedChunk>>>,
         /// Hydrateable corpus keyed by chunk id (returned in fused order).
         hydrate_by_id: Mutex<HashMap<ChunkId, RetrievedContextItem>>,
@@ -390,12 +400,14 @@ mod tests {
             project_id: ProjectId,
             include_global: bool,
             include_scratch: bool,
+            include_needs_review: bool,
         ) -> QueriaResult<RetrievalAccess> {
             self.authorize_checks.lock().expect("lock").push((
                 principal.clone(),
                 project_id,
                 include_global,
                 include_scratch,
+                include_needs_review,
             ));
             Ok(self.access.clone())
         }
@@ -533,6 +545,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![DbRankedChunk {
                 chunk_id,
@@ -567,6 +580,7 @@ mod tests {
                     query: "deploy flow".to_owned(),
                     include_global: true,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,
@@ -592,6 +606,7 @@ mod tests {
                 project_id,
                 include_global: false,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![DbRankedChunk {
                 chunk_id: shared,
@@ -630,6 +645,7 @@ mod tests {
                     query: "architecture".to_owned(),
                     include_global: false,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,
@@ -655,6 +671,7 @@ mod tests {
                 project_id,
                 include_global: false,
                 include_scratch: true,
+                include_needs_review: false,
             },
             Vec::new(),
             vec![RetrievedContextItem {
@@ -694,6 +711,7 @@ mod tests {
                     include_global: true,
                     // VAL-DL-026: agent path default is include_scratch true
                     include_scratch: true,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,
@@ -716,6 +734,10 @@ mod tests {
         assert_eq!(checks[0].1, project_id);
         assert!(checks[0].2);
         assert!(checks[0].3, "include_scratch must pass through authorize");
+        assert!(
+            !checks[0].4,
+            "include_needs_review default false must pass through authorize"
+        );
 
         let last_search = service
             .vector_index
@@ -758,6 +780,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![
                 DbRankedChunk {
@@ -819,6 +842,7 @@ mod tests {
                     query: "rrf order".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: Some(false),
@@ -848,6 +872,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![DbRankedChunk {
                 chunk_id,
@@ -884,6 +909,7 @@ mod tests {
                     query: "skip rerank".to_owned(),
                     include_global: true,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: Some(false),
                     compress: Some(false),
@@ -911,11 +937,16 @@ mod tests {
         body: &str,
         lane: KnowledgeLane,
     ) -> RetrievedContextItem {
+        let status = match lane {
+            KnowledgeLane::Trusted => KnowledgeStatus::Approved,
+            KnowledgeLane::Scratch => KnowledgeStatus::Scratch,
+            KnowledgeLane::NeedsReview => KnowledgeStatus::NeedsReview,
+        };
         RetrievedContextItem {
             chunk_id,
             source_document_id: SourceDocumentId::new(),
             scope: KnowledgeScope::Project,
-            status: KnowledgeStatus::Approved,
+            status,
             lane,
             title: title.to_owned(),
             body: body.to_owned(),
@@ -957,6 +988,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             lexical,
             hydrate,
@@ -979,6 +1011,7 @@ mod tests {
                     query: "pool oversample".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit,
                     rerank: Some(false),
                     compress: Some(false),
@@ -1054,6 +1087,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             lexical,
             hydrate,
@@ -1071,6 +1105,7 @@ mod tests {
                     query: "limit clamp".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit,
                     rerank: Some(false),
                     compress: Some(false),
@@ -1096,6 +1131,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![
                 DbRankedChunk {
@@ -1138,6 +1174,7 @@ mod tests {
                     query: "dual lane".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: Some(false),
                     compress: Some(true),
@@ -1156,6 +1193,60 @@ mod tests {
         assert!(response.retrieval.compress_dropped >= 1);
     }
 
+    /// IMP-L3: include_needs_review=true reaches authorize; default false.
+    #[tokio::test]
+    async fn include_needs_review_true_passes_authorize() {
+        let project_id = ProjectId::new();
+        let organization_id = Uuid::now_v7();
+        let chunk_id = ChunkId::new();
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
+                organization_id,
+                project_id,
+                include_global: true,
+                include_scratch: true,
+                include_needs_review: true,
+            },
+            vec![DbRankedChunk {
+                chunk_id,
+                score: 0.9,
+            }],
+            vec![item_with(
+                chunk_id,
+                "NeedsReviewDoc",
+                "needs review body",
+                KnowledgeLane::NeedsReview,
+            )],
+        );
+        let service = RetrievalService::new(store, FailProvider, FakeIndex::empty(), config());
+        let response = service
+            .retrieve_context(
+                &RetrievalPrincipal::User {
+                    user_id: Uuid::now_v7(),
+                },
+                RetrieveContextRequest {
+                    project_id,
+                    query: "needs review".to_owned(),
+                    include_global: true,
+                    include_scratch: true,
+                    include_needs_review: true,
+                    limit: 5,
+                    rerank: Some(false),
+                    compress: Some(false),
+                },
+            )
+            .await
+            .expect("retrieve");
+        let checks = service.store.authorize_checks.lock().expect("lock");
+        assert!(
+            checks[0].4,
+            "include_needs_review=true must reach authorize"
+        );
+        assert_eq!(response.items.len(), 1);
+        assert_eq!(response.items[0].lane, KnowledgeLane::NeedsReview);
+        assert_eq!(response.items[0].status, KnowledgeStatus::NeedsReview);
+    }
+
     /// VAL-RET-013 false path: include_scratch=false still forwarded to authorize.
     #[tokio::test]
     async fn include_scratch_false_still_filters_via_authorize() {
@@ -1168,6 +1259,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: false,
+                include_needs_review: false,
             },
             vec![DbRankedChunk {
                 chunk_id: trusted_id,
@@ -1192,6 +1284,7 @@ mod tests {
                     query: "no scratch".to_owned(),
                     include_global: true,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 3,
                     rerank: Some(false),
                     compress: Some(false),
@@ -1216,6 +1309,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             vec![DbRankedChunk {
                 chunk_id,
@@ -1243,6 +1337,7 @@ mod tests {
                     query: "fallback path".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: Some(false),
@@ -1302,6 +1397,7 @@ mod tests {
                 project_id,
                 include_global: true,
                 include_scratch: true,
+                include_needs_review: false,
             },
             lexical,
             hydrate,
@@ -1323,6 +1419,7 @@ mod tests {
                     query: "stage order".to_owned(),
                     include_global: true,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit,
                     rerank: Some(false),
                     compress: Some(true),
@@ -1409,6 +1506,7 @@ mod tests {
                 project_id,
                 include_global: false,
                 include_scratch: true,
+                include_needs_review: false,
             },
             lexical,
             hydrate,
@@ -1431,6 +1529,7 @@ mod tests {
                     query: "hybrid pool".to_owned(),
                     include_global: false,
                     include_scratch: true,
+                    include_needs_review: false,
                     limit,
                     rerank: Some(false),
                     compress: Some(false),

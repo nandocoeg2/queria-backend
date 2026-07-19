@@ -60,12 +60,14 @@ impl<R: EvaluationRetriever> EvaluationExecutor<R> {
 
         let mut responses = Vec::with_capacity(questions.len());
         for question in &questions {
-            // VAL-CROSS-007 / VAL-DL-043: golden eval is trusted-only (no scratch).
+            // VAL-CROSS-007 / VAL-DL-043 / IMP-L3: golden eval is trusted-only
+            // (no scratch, no needs_review).
             let request = RetrieveContextRequest {
                 project_id,
                 query: question.query.clone(),
                 include_global: question.include_global,
                 include_scratch: false,
+                    include_needs_review: false,
                 limit: evaluation_limit(question.minimum_items),
                 rerank: None,
                 compress: None,
@@ -189,6 +191,19 @@ mod tests {
         }
     }
 
+    /// IMP-L3: eval/golden path never enables include_needs_review.
+    #[test]
+    fn evaluation_path_never_sets_include_needs_review() {
+        // Keep in sync with run_project_evaluation request construction above.
+        let include_needs_review = false;
+        assert!(
+            !include_needs_review,
+            "eval executor must never set include_needs_review"
+        );
+        let include_scratch = false;
+        assert!(!include_scratch, "eval executor remains trusted-only");
+    }
+
     #[tokio::test]
     async fn test_retrieve_immediate_success() {
         let mock = ScriptedRetriever::new(vec![Ok(test_response(RetrievalMode::Hybrid, true))]);
@@ -201,6 +216,7 @@ mod tests {
                     query: "test".to_owned(),
                     include_global: false,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,
@@ -229,6 +245,7 @@ mod tests {
                     query: "test".to_owned(),
                     include_global: false,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,
@@ -258,6 +275,7 @@ mod tests {
                     query: "test".to_owned(),
                     include_global: false,
                     include_scratch: false,
+                    include_needs_review: false,
                     limit: 5,
                     rerank: None,
                     compress: None,

@@ -42,6 +42,8 @@ struct RetrievalArgs {
     include_global: Option<bool>,
     /// Agent default true (IMP-14); omit or true for dual-lane, false for trusted-only.
     include_scratch: Option<bool>,
+    /// Default false (IMP-L3); when true include project-scoped needs_review.
+    include_needs_review: Option<bool>,
     limit: Option<u32>,
     /// `None` uses server `QUERIA_RERANK_ENABLED` default.
     rerank: Option<bool>,
@@ -182,6 +184,8 @@ async fn call_tool(
                 include_global: args.include_global.unwrap_or(true),
                 // VAL-DL-026 / VAL-CROSS-004: agent default include_scratch=true
                 include_scratch: args.include_scratch.unwrap_or(true),
+                // IMP-L3: default false even for agents
+                include_needs_review: args.include_needs_review.unwrap_or(false),
                 limit: args.limit.unwrap_or(5),
                 rerank: args.rerank,
                 compress: args.compress,
@@ -197,6 +201,7 @@ async fn call_tool(
                 query: args.query,
                 include_global: args.include_global.unwrap_or(true),
                 include_scratch: args.include_scratch.unwrap_or(true),
+                include_needs_review: args.include_needs_review.unwrap_or(false),
                 limit: args.limit.unwrap_or(10),
                 rerank: args.rerank,
                 compress: args.compress,
@@ -748,8 +753,19 @@ mod tests {
         )
         .expect("minimal retrieval args");
         assert!(args.include_scratch.unwrap_or(true));
+        assert!(!args.include_needs_review.unwrap_or(false));
         assert!(args.rerank.is_none());
         assert!(args.compress.is_none());
+    }
+
+    /// IMP-L3: omit include_needs_review → default false on MCP args.
+    #[test]
+    fn retrieval_args_default_include_needs_review_false() {
+        let args: RetrievalArgs = serde_json::from_str(
+            r#"{"project_id":"019083a0-0000-7000-8000-000000000001","query":"hello"}"#,
+        )
+        .expect("minimal retrieval args");
+        assert!(!args.include_needs_review.unwrap_or(false));
     }
 
     /// VAL-CROSS-001/002: MCP tools accept optional rerank/compress overrides.
@@ -760,12 +776,14 @@ mod tests {
                 "project_id":"019083a0-0000-7000-8000-000000000001",
                 "query":"hello",
                 "include_scratch": false,
+                "include_needs_review": true,
                 "rerank": false,
                 "compress": true
             }"#,
         )
         .expect("retrieval args with flags");
         assert_eq!(args.include_scratch, Some(false));
+        assert_eq!(args.include_needs_review, Some(true));
         assert_eq!(args.rerank, Some(false));
         assert_eq!(args.compress, Some(true));
     }

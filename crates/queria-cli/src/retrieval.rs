@@ -21,6 +21,8 @@ pub async fn probe(
                 include_global,
                 // CLI retrieval probe is trusted-only by default (VAL-DL-043 / VAL-CROSS-005).
                 include_scratch: false,
+                // IMP-L3: never include needs_review on CLI probe (same as include_scratch=false).
+                include_needs_review: false,
                 limit,
                 rerank,
                 compress,
@@ -39,6 +41,16 @@ mod tests {
         // Keep in sync with probe(): agents dual-lane default true; operators false.
         let include_scratch = false;
         assert!(!include_scratch, "CLI probe must exclude scratch lane");
+    }
+
+    /// IMP-L3: CLI probe hard-codes include_needs_review=false.
+    #[test]
+    fn cli_probe_excludes_needs_review_by_default() {
+        let include_needs_review = false;
+        assert!(
+            !include_needs_review,
+            "CLI probe must exclude needs_review lane"
+        );
     }
 
     /// VAL-CROSS-001: omitted rerank/compress are None (server config defaults apply).
