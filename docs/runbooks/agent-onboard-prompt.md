@@ -18,8 +18,11 @@ Use this when a human wants a coding agent to finish **client-side** QuerIa setu
 | Merge `AGENTS.md` block | Allowlist / SSH for private Git (if new source) |
 | Optional hooks (droid/claude) | |
 | Smoke `list_projects` + `retrieve_context` | |
+| Optional: mention / run `index-here` only if human asks and token has `index_local` | Promote **Needs review** in Admin (or privileged MCP grant) — agent default cannot promote |
 
 If there is no token yet, the agent must **stop** after health and show the Admin checklist (see prompt). It cannot mint tokens.
+
+**Optional bulk local index:** if the human wants many local git roots indexed without cloud clone, point them at [`onboarding.md`](./onboarding.md) Part E (`queria-cli index-here`). That path writes **Needs review** only; it does not make trusted knowledge until promote.
 
 ## Before you paste
 

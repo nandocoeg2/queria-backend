@@ -487,12 +487,58 @@ Operator still does Part A (project, Git ingest, mint token) before the agent ca
 
 ---
 
+## Part E — Local multi-git `index-here` (Needs review)
+
+Use when the code lives on **this machine** (laptop / self-hosted remotes the OCI worker cannot clone). No per-repo Admin Git form. Uploads land as **Needs review**, not trusted.
+
+### E1. Token with `index_local`
+
+Mint an agent token that includes permission **`index_local`** (API tool list / grants). Default mint is propose-only and does **not** include index-local. Store raw token once:
+
+```bash
+export QUERIA_AGENT_TOKEN='qria_…'
+export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or http://127.0.0.1:17674
+```
+
+Never commit the token. Edge base only — path is `/api/v1/agent/index-local` under that host.
+
+### E2. One-command index
+
+From the workspace root (nested git roots discovered up to depth 4):
+
+```bash
+export QUERIA_AGENT_TOKEN=…
+export QUERIA_EDGE_URL=https://queria.fjulian.id   # or http://127.0.0.1:17674
+queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes
+```
+
+Dry-run without upload: omit `--yes` (or use the CLI’s dry-run path if printed). Expect `job_ids` + per-root accepted/skipped counts. Worker must be up so embed jobs leave `queued`.
+
+### E3. Review and promote
+
+1. Admin: `{BASE}/admin/needs-review` — groups by project / origin / commit.
+2. **Promote** → approved (trusted retrieve path). **Reject** removes from queue.
+3. Optional privileged MCP (explicit grant **`manage_needs_review`**, not default mint): `list_needs_review`, `promote_knowledge`, `reject_needs_review`.
+
+Default `retrieve_context` **excludes** Needs review. Opt-in: `include_needs_review=true` (org members with project access). Playground / CLI probe same flag.
+
+### E4. Non-goals for this path
+
+- No auto-promote to trusted (IMP-L6 deferred)
+- No browser full-tree file picker
+- No `QUERIA_GIT_ALLOWED_ROOTS` requirement for index-here (server re-validates gates; does not clone remotes)
+- Does **not** replace allowlisted Git cloud ingest (Part A3) for remotes the worker can reach
+
+Copy-paste block also lives on Admin **Needs review** page.
+
+---
+
 ## Related docs
 
 | Doc | Use |
 |---|---|
-| [`../HANDOFF.md`](../HANDOFF.md) | What is actually deployed; multi-org bootstrap + isolation smoke |
-| [`../PRODUCT.md`](../PRODUCT.md) | Lanes, tool contract, multi-org v1 non-goals |
+| [`../HANDOFF.md`](../HANDOFF.md) | What is actually deployed; multi-org bootstrap + isolation smoke; index-here residual |
+| [`../PRODUCT.md`](../PRODUCT.md) | Lanes (incl. Needs review), tool contract, multi-org v1 non-goals |
 | [`agent-onboard-prompt.md`](./agent-onboard-prompt.md) | One-paste client onboard + dialog questions |
 | [`local-development.md`](./local-development.md) | Compose, migrate, backfill |
 | [`hybrid-retrieval.md`](./hybrid-retrieval.md) | Rerank/compress/probe |

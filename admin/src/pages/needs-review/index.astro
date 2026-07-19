@@ -143,6 +143,26 @@ const shortSha = (sha?: string) => {
     </div>
   )}
 
+  <div class="card index-here-copy-panel">
+    <div class="panel-header">
+      <h2>Index local git (one command)</h2>
+      <p class="panel-sub">
+        Token needs <code>index_local</code>. Uploads land here as Needs review —
+        not trusted until Promote. Edge port <code>17674</code> for local.
+      </p>
+    </div>
+    <pre class="copy-command" id="index-here-command">{`export QUERIA_AGENT_TOKEN=…
+export QUERIA_EDGE_URL=https://queria.fjulian.id   # or http://127.0.0.1:17674
+queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes`}</pre>
+    <button
+      type="button"
+      class="btn btn-secondary btn-sm"
+      id="copy-index-here-cmd"
+    >
+      Copy command
+    </button>
+  </div>
+
   <div class="card review-panel">
     <div class="panel-header">
       <h2>Local index queue</h2>
@@ -353,6 +373,22 @@ const shortSha = (sha?: string) => {
 
   <script is:inline>
     (function () {
+      var copyBtn = document.getElementById('copy-index-here-cmd');
+      var copyPre = document.getElementById('index-here-command');
+      if (copyBtn && copyPre) {
+        copyBtn.addEventListener('click', function () {
+          var text = copyPre.textContent || '';
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+              copyBtn.textContent = 'Copied';
+              setTimeout(function () {
+                copyBtn.textContent = 'Copy command';
+              }, 1500);
+            });
+          }
+        });
+      }
+
       function openSingle(kind, id, label) {
         const isPromote = kind === 'promote';
         const dialog = document.getElementById(
@@ -427,6 +463,25 @@ const shortSha = (sha?: string) => {
 </AdminLayout>
 
 <style>
+  .index-here-copy-panel {
+    padding: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .copy-command {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background-color: var(--color-surface-container-lowest);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    color: var(--color-on-surface);
+    margin: 0 0 var(--spacing-md);
+  }
+
   .review-panel {
     padding: var(--spacing-xl);
   }

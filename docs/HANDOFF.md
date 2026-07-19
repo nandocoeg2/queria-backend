@@ -1,7 +1,7 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-19 (subdomain HTTPS live; host Path-B image rebuild; GHCR Actions pull still residual)
-> Branch: `main`
+> Last verified: 2026-07-19 (index-here IMP-L1…L5 on branch; subdomain HTTPS live; host Path-B image rebuild; GHCR Actions pull still residual)
+> Branch: `main` (feature work: `feat/local-git-index-here`)
 > **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
 > **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
 > **Public access live:** `http://168.110.214.130:17674/healthz` **200**; **`https://queria.fjulian.id/healthz` 200** (Nginx + Certbot LE); `/admin/login` **200**.
@@ -39,6 +39,16 @@ content_hash idempotency, shared max body with `propose_memory`, and
 `include_scratch` default true on agent retrieve. Promote / Admin scratch UI
 still deferred (`IMP-15`/`IMP-16`). See PRODUCT lanes and
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md).
+
+**Local multi-git index-here (local branch 2026-07-19):** CLI `queria-cli index-here`
+discovers nested git roots, gates files, uploads via `POST /api/v1/agent/index-local`
+(permission `IndexLocal`) → status **`needs_review`** (“Needs review”) + async
+embed jobs; default retrieve excludes unless `include_needs_review=true`; Admin
+`/admin/needs-review` promote/reject; privileged MCP `list_needs_review` /
+`promote_knowledge` / `reject_needs_review` (`ManageNeedsReview`, not default mint).
+Auto-create project from origin last path segment. **Does not** auto-promote to
+trusted (`IMP-L6` deferred). **Prod image may lag** until merge + redeploy.
+Backlog: IMP-L1…L5 `done`; IMP-L6 stays proposed.
 
 **Retrieval quality + Playground (local main 2026-07-18):** shared pipeline
 pool → RRF → hydrate → Voyage rerank (`rerank-2.5`, **fail-open**) → near-dup
@@ -125,7 +135,8 @@ not a Rust proxy crate.
 | Agent auto-retrieve hooks (hybrid) | `COMPLETED` (local main 2026-07-19) | T4+R6+H1: `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` (Bearer agent token, same authz as MCP). Setup: `/api/v1/setup/hooks-snippet?client=droid\|claude`, `/setup/hook-script`, script `agent-tools/hooks/queria-retrieve-hook.sh`. Stronger AGENTS block. SessionStart + throttled UserPromptSubmit inject, fail-open. **Prod image may lag.** Design: [`archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md`](./archive/superpowers/specs/2026-07-19-agent-auto-retrieve-hooks-design.md). |
 | Agent path edge E2E script | `COMPLETED` (local main; run on demand) | `scripts/e2e_agent_path_edge.py` E0–E12 against edge `:17674` with pre-minted smoke token. Spec: [`archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md`](./archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md). Operator green run pending (script shipped; mark green only after one successful operator run). |
 | Multi-org isolation MVP | `COMPLETED` (local main 2026-07-18) | Migration `20260718000100_multi_org_tenancy` (`org_membership`, `org_invite`, `is_platform_super_admin`, `user_session.active_organization_id`, one-org unique, backfill). Session binds active org + super-admin (DB flag and/or `QUERIA_PLATFORM_SUPER_ADMIN_EMAILS`). API: `POST/GET /api/v1/orgs`, invites, accept, current members. Admin: `/admin/orgs`, `/admin/invites/accept`, `/admin/members`. Tenant handlers + MCP/agent tokens filter home org only; SA without membership 403s tenant routes. **Prod image not redeployed** for multi-org yet. Product note: [`PRODUCT.md`](./PRODUCT.md). Ops: section **Multi-org isolation MVP** below. |
-| Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens (no evaluations HTTP). |
+| Local multi-git `index-here` (IMP-L1…L5) | `COMPLETED` (branch 2026-07-19) | Schema `needs_review`; shared gates/slug; agent `POST /api/v1/agent/index-local` + `IndexLocal`; CLI `index-here`; retrieve `include_needs_review` default false; Admin `/admin/needs-review` promote/reject; privileged MCP tools (`ManageNeedsReview`). Design/plan: [`archive/superpowers/specs/2026-07-19-local-git-index-here-design.md`](./archive/superpowers/specs/2026-07-19-local-git-index-here-design.md). **Residual:** full live multi-root edge smoke + prod redeploy not claimed here; unit/integration tests green on branch. IMP-L6 auto-promote **not** shipped. |
+| Admin-oriented API | `COMPLETED` | Dashboard, audit logs, approvals, jobs, sources, tokens, needs-review promote (no evaluations HTTP). |
 | Edge reverse proxy | `COMPLETED` | Caddy path router (`docker/Caddyfile`) for `/api/`, `/mcp`, admin, and health on host port `17674`. Pingora/`queria-proxy` removed in P1. |
 | Astro Admin UI | `COMPLETED` | Violet Void dark SSR pages; pure Astro (no React islands). SIMPLIFICATION P0 applied 2026-07-16. |
 | S3 backup and restore drill | `COMPLETED` | Backup in `queria-backup`; restore-drill lives only in `queria-cli` (removed from lib). Live empty-volume restore remains acceptance. |
@@ -149,6 +160,7 @@ not a Rust proxy crate.
 | Organizations (platform) | `COMPLETED` (local main) | `/admin/orgs` — super-admin list/create; one-time invite token after create |
 | Invite accept | `COMPLETED` (local main) | Public `/admin/invites/accept` (token + password); no SMTP |
 | Org members | `COMPLETED` (local main) | `/admin/members` — home org members + further invite |
+| Needs review (local index) | `COMPLETED` (branch 2026-07-19) | `/admin/needs-review` — list by origin/commit; Promote / Reject (single + bulk); copy-paste `index-here` panel. User term **Needs review** (not quarantine). |
 | Audit Logs | `COMPLETED` | `/admin/audit` |
 | Evaluation | `CLI` | Admin page + evaluation HTTP removed. Run `queria-cli eval run --project <slug>`; dashboard may show last report if present |
 | Backup/Restore | `API/CLI` | No dedicated Admin UI page. Backup/restore is CLI + `queria-backup` + runbook. |
@@ -575,8 +587,9 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 | Admin UI dedicated routes | Low | Sources form + Trigger Ingest and tokens (name + project_slugs) shipped. Embedding / backup remain embedded or CLI-only. Playground for retrieval probe. |
 | Maintainer MCP tools | Deferred by design | Approve/reject/reindex/token admin remain Admin HTTP; agent MCP does not expose maintainer mutations. |
 | Production redeploy for retrieval quality / multi-org / Admin polish | Medium | Local `main` ahead of live host image. Redeploy only when operator requests (out of this docs feature). |
-| Future product improvements | REFERENCE backlog | IMP-01/02/03 done on local main. Still open: IMP-04 metrics, IMP-15/16 Admin scratch/promote, agent DX. [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
+| Future product improvements | REFERENCE backlog | IMP-01/02/03 done on local main; IMP-L1…L5 done on feature branch. Still open: IMP-04 metrics, IMP-15/16 Admin scratch/promote, agent DX, IMP-L6 auto-promote (deferred). [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) / [`PRODUCT.md`](./PRODUCT.md). |
 | Multi-org on production | Medium | Code + docs on local `main`; host image still pre-multi-org. After local validators green: redeploy, migrate, flag super-admin, smoke Team B path. **Not** share grants / switcher / SMTP. |
+| index-here on production | Medium | IMP-L1…L5 on `feat/local-git-index-here`; not live edge until merge + migrate + redeploy. Residual: operator multi-root smoke on real edge. |
 
 ## Post-audit simplification
 
@@ -617,7 +630,9 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 
 8. Retrieval quality IMP-01/02 + Admin Playground IMP-03 shipped on **local main** (2026-07-18); docs/runbook aligned. Next backlog: durable metrics (`IMP-04`), Admin scratch/promote (`IMP-15`/`16`), agent DX. Contract: [`PRODUCT.md`](./PRODUCT.md). Do not mark done without updating this handoff.
 
+9. Local multi-git **index-here** IMP-L1…L5 shipped on feature branch (2026-07-19): CLI + API + Needs review Admin + privileged MCP. Onboarding Part E; PRODUCT lanes updated. **Not** IMP-L6 auto-promote. Residual live multi-root smoke / prod redeploy open.
+
 **Multi-org (local complete; prod follow-up)**
 
-9. Isolation MVP is on local `main` (schema, session, orgs/invites, Admin, enforce). Bootstrap + Team B path: **Multi-org isolation MVP** section and [`runbooks/onboarding.md`](./runbooks/onboarding.md) Part D. After validators: production redeploy + migrate + super-admin flag only when operator requests.
+10. Isolation MVP is on local `main` (schema, session, orgs/invites, Admin, enforce). Bootstrap + Team B path: **Multi-org isolation MVP** section and [`runbooks/onboarding.md`](./runbooks/onboarding.md) Part D. After validators: production redeploy + migrate + super-admin flag only when operator requests.
 

@@ -537,69 +537,74 @@ Not cloud clone of unreachable remotes. CLI on the machine that has the git chec
 | Field | Value |
 |---|---|
 | Priority | P1 |
-| Status | `proposed` |
+| Status | `done` (2026-07-19) |
 | Problem | Users must not fill Git allowlist/source forms; workspaces have many nested git roots; self-hosted remotes unreachable from OCI worker. |
 | Proposed approach | `queria index-here --token-env QUERIA_AGENT_TOKEN`: depth-limited discover of git roots under cwd; `git ls-files`; extension/path/size/secret gates; dry-run. |
 | Surfaces | `queria-cli` |
 | Acceptance | Nested multi-repo workspace lists N roots; non-git dirs skipped; dry-run no upload. |
 | Dependencies | Design + plan above. |
+| Shipped notes | `queria-cli index-here` with depth default 4, `--yes`, `--token-env`, edge `:17674`; shared gates in `queria-ingestion`. Runtime: [`HANDOFF.md`](./HANDOFF.md). |
 
 #### IMP-L2 — API + storage `needs_review` + async embed
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
-| Status | `proposed` |
+| Status | `done` (2026-07-19) |
 | Problem | Need central place for bulk local index that is not auto-trusted. |
 | Proposed approach | Agent-auth batch ingest (`IndexLocal`); re-validate gates server-side; auto-create project; chunk status **`needs_review`**; enqueue embed jobs; return `job_ids`. |
 | Surfaces | `queria-api`, `queria-db`, `queria-worker`, embed path |
 | Acceptance | Upload creates needs_review only; 202 + jobs; default retrieve does not hit it. |
 | Dependencies | IMP-L1 client shape. |
+| Shipped notes | Migration `needs_review` enum; `POST /api/v1/agent/index-local`; auto-create slug from origin last segment; embed jobs returned. |
 
 #### IMP-L3 — Retrieve `include_needs_review` (org members)
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
-| Status | `proposed` |
+| Status | `done` (2026-07-19) |
 | Problem | Org may inspect unreviewed index; default agents must not drown in dumps. |
 | Proposed approach | Flag default false; when true, any home-org member with project access (not owner-only). |
 | Surfaces | retrieval MCP/API/CLI |
 | Acceptance | Default retrieve = trusted (+ scratch rules); needs_review only when flagged. |
 | Dependencies | IMP-L2. |
+| Shipped notes | Default exclude; `include_needs_review` on agent/API/MCP/CLI probe paths. |
 
 #### IMP-L4 — Admin promote / reject UI (“Needs review”)
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
-| Status | `proposed` |
+| Status | `done` (2026-07-19) |
 | Problem | Shared trusted must not absorb garbage; human promote one-click. |
 | Proposed approach | Admin list needs_review by origin/commit/path; Promote → trusted; Reject; audit. |
 | Surfaces | Admin SSR |
 | Acceptance | Promote makes probe trusted-hit; reject clears queue row. |
 | Dependencies | IMP-L2. |
+| Shipped notes | `/admin/needs-review` grouped list; single + bulk promote/reject; copy-paste `index-here` panel. User term **Needs review**. |
 
 #### IMP-L5 — MCP promote tools (privileged)
 
 | Field | Value |
 |---|---|
 | Priority | P1 |
-| Status | `proposed` |
+| Status | `done` (2026-07-19) |
 | Problem | Privileged operators want promote without browser. |
 | Proposed approach | Tools `list_needs_review` / `promote_knowledge` / `reject_needs_review`; **not** default agent mint; grant explicit. |
 | Surfaces | `queria-mcp` |
 | Acceptance | Token without grant 403; with grant can promote to trusted. |
 | Dependencies | IMP-L2, IMP-L4 semantics. |
+| Shipped notes | Permission `ManageNeedsReview` / `manage_needs_review`; not in `default_agent_tools()`; grant vs no-grant tests green. |
 
 #### IMP-L6 — Optional auto-promote scores (default off)
 
 | Field | Value |
 |---|---|
 | Priority | P2 |
-| Status | `proposed` |
-| yagni until Needs review UX ships | Hard-score auto trusted only after promote UX proven. |
-| Dependencies | IMP-L2–L4. |
+| Status | `deferred` |
+| yagni until Needs review UX ships | Hard-score auto trusted only after promote UX proven. **Not shipped.** Promote remains explicit Admin/MCP only. |
+| Dependencies | IMP-L2–L4 (done). |
 
 ---
 

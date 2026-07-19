@@ -1,7 +1,7 @@
 # Queria Product Contract
 
 > Status: CURRENT
-> Last verified: 2026-07-18
+> Last verified: 2026-07-19
 > Implementation ledger: [`HANDOFF.md`](./HANDOFF.md)
 > Post-MVP improvements: [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
 
@@ -18,20 +18,24 @@ Dual-lane keeps personal/agent velocity without collapsing the team trust model 
 
 ## Knowledge lanes (trust model)
 
-| Lane | How it enters | Who can write via MCP | In default agent retrieve? | Admin “official” knowledge |
+| Lane / status | How it enters | Who can write | In default agent retrieve? | Admin / promote |
 |---|---|---|---|---|
-| **scratch** | `index_memory` (direct) | Agent with `index_memory` permission | Yes (same project only) | Optional list / TTL / promote / delete |
-| **trusted** | Approval of proposed items, or trusted Git pipeline | Not directly by agent | Yes | Yes |
+| **scratch** | `index_memory` (direct) | Agent with `index_memory` | Yes (same project only) | Optional list / TTL / promote / delete |
+| **trusted** | Approval of proposed items, or trusted Git pipeline, or **Promote** from Needs review | Not directly by agent | Yes | Yes |
+| **needs_review** (“Needs review”) | CLI `index-here` / `POST /api/v1/agent/index-local` (local git roots; self-hosted friendly) | Agent with **`index_local`** permission | **No** (unless `include_needs_review=true`) | Admin `/admin/needs-review` + privileged MCP promote/reject |
 | **pipeline only** | `propose_memory` → `proposed` / `draft` until approved | Agent proposes only | No (unless operator tooling) | Approval queue |
+
+Lane is derived from `knowledge_status` (no separate lane column). User-facing term is **Needs review** (not “quarantine”).
 
 ### Hard rules
 
 - Scratch is **project-scoped only**. Never `global`. Never cross-project.
 - Agents **must not** overwrite, delete, or silently mutate **trusted** items via MCP.
 - Promoting scratch toward team truth: `scratch → proposed` (optional `promote_memory`), still requires human (or policy) approval to become trusted.
-- Golden evaluation and leakage gates apply to **trusted** knowledge only.
-- When ranking near-duplicates, **prefer trusted over scratch**.
-- Audit: every scratch write records agent token (or actor), project, timestamp.
+- **Needs review** is not trusted until an operator **Promotes** (Admin session or privileged MCP). Reject leaves the queue; default retrieve never includes it.
+- Golden evaluation and leakage gates apply to **trusted** knowledge only (no needs_review in golden).
+- When ranking near-duplicates, **prefer trusted over scratch over needs_review**.
+- Audit: every scratch write and index-local / promote / reject records actor, project, timestamp.
 
 ### Agent workflow
 
@@ -39,6 +43,7 @@ Dual-lane keeps personal/agent velocity without collapsing the team trust model 
 Before work:
   retrieve_context(project_id, query)
   # default: trusted (project + optional global) ∪ scratch (project)
+  # needs_review excluded unless include_needs_review=true
 
 After work (fast, no human):
   index_memory(project_id, body, tags…)   # → scratch, searchable now
@@ -46,6 +51,10 @@ After work (fast, no human):
 After work (want team truth):
   propose_memory(...)                     # → proposed → approve → trusted
   # or promote_memory(scratch_id)         # → proposed → approve → trusted
+
+Bulk local git (self-hosted / laptop clones; no remote allowlist form):
+  queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes
+  # → needs_review + async embed jobs → Admin or privileged MCP Promote → trusted
 ```
 
 Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted (auto-approve only for trusted sources per existing rules).
@@ -63,28 +72,36 @@ Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted 
 
 | Surface | Audience | Role |
 |---|---|---|
-| Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs; later scratch list / promote / TTL |
+| Admin HTTP + Astro UI | Operators | Setup, projects, sources, approvals, tokens, audit, jobs; **Needs review** list + promote/reject (`/admin/needs-review`); later scratch list / TTL |
 | Admin Playground | Operators | Lean SSR `/admin/playground`: live retrieval probe with rerank/compress toggles, scores, lane, diagnostics (not eval product) |
 | MCP (`queria-mcp`) | Agents | See tool table below |
-| Agent HTTP retrieve (hooks) | Client-side agent hooks | `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` with Bearer `qria_…` (same authz as MCP retrieve). Powers Droid/Claude SessionStart + throttled UserPromptSubmit inject (fail-open). Setup: `/api/v1/setup/hooks-snippet`, `/setup/hook-script` |
-| CLI | Operators | Migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress`), eval (trusted/golden), backup/restore-drill |
+| Agent HTTP (hooks + index-local) | Client-side agents / CLI | `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` (Bearer `qria_…`). `POST /api/v1/agent/index-local` (Bearer + `index_local`) for bulk local git → **needs_review**. Hooks: `/api/v1/setup/hooks-snippet`, `/setup/hook-script` |
+| CLI | Operators | `index-here` (multi-git discover + upload), migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress` / `--include-needs-review`), eval (trusted/golden), backup/restore-drill |
 
 ### MCP tools (contract)
 
 | Tool | Status | Lane / role |
 |---|---|---|
-| `retrieve_context` | Shipped | Read trusted + optional scratch (`include_scratch` default **true**; optional global trusted); optional `rerank` / `compress` (server defaults on) |
-| `search_knowledge` | Shipped | Search with lane-aware filters; same optional `rerank` / `compress` flags as retrieve |
+| `retrieve_context` | Shipped | Read trusted + optional scratch (`include_scratch` default **true**; optional global trusted); optional `include_needs_review` (default **false**); optional `rerank` / `compress` (server defaults on) |
+| `search_knowledge` | Shipped | Search with lane-aware filters; same optional flags as retrieve |
 | `propose_memory` | Shipped | Write → `proposed` (not immediately trusted) |
 | `list_projects` | Shipped | Discovery |
 | `get_source` | Shipped | Trusted source metadata |
 | `index_memory` | **Shipped (Slice A)** | Direct write → **scratch** only (`IMP-13`) |
+| `list_needs_review` | **Shipped** | Privileged list of Needs review items (`manage_needs_review`; **not** default agent mint) |
+| `promote_knowledge` | **Shipped** | Privileged needs_review → approved/trusted (`manage_needs_review`) |
+| `reject_needs_review` | **Shipped** | Privileged reject Needs review item (`manage_needs_review`) |
 | `promote_memory` | **Planned** | scratch → `proposed` (`IMP-16`) |
 | `list_sources` / `describe_project` / `get_memory_status` | **Planned** | Read-only discovery (`IMP-07`) |
 
-Maintainer actions (approve/reject, reindex, token admin) stay on **session Admin HTTP** by design, not MCP.
+Maintainer actions (approve/reject, reindex, token admin) stay on **session Admin HTTP** by design, not MCP — except **privileged** Needs review promote tools above (explicit grant only).
 
-Token permission **`IndexMemory`** (Slice A): project-scoped. Without it, agent remains propose-only (legacy). Optional `promote_memory` permission stays planned (`IMP-16`).
+Token permissions:
+
+- **`IndexMemory`** (Slice A): project-scoped scratch write. Without it, agent remains propose-only (legacy).
+- **`IndexLocal`**: bulk local git via CLI/API → **needs_review** only (not trusted). Required for `queria-cli index-here`.
+- **`ManageNeedsReview`**: MCP `list_needs_review` / `promote_knowledge` / `reject_needs_review`. **Not** in default mint.
+- Optional `promote_memory` (scratch → proposed) stays planned (`IMP-16`).
 
 ## Post-cut product boundaries
 
@@ -96,12 +113,13 @@ After the hard simplification plan in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md)
 - Restore drill as product API (CLI/runbook only P2)
 - Pingora-in-process edge (Caddy; P1)
 
-### Dual-lane + retrieval quality (CURRENT)
+### Dual-lane + retrieval quality + index-here (CURRENT)
 
 - **Shipped (Slice A):** project-scoped scratch via `index_memory`; dual-lane retrieve (`include_scratch`); content_hash idempotency; shared max body with `propose_memory`.
 - **Shipped (retrieval quality):** hybrid candidate pool → RRF → hydrate → Voyage rerank (fail-open) → near-dup compress (prefer trusted); optional request flags; Admin Playground SSR (`IMP-01`/`IMP-02`/`IMP-03`).
-- **Still deferred:** Admin scratch UI (`IMP-15`), `promote_memory` (`IMP-16`), durable query metrics (`IMP-04`).
-- **Out of scope:** agent direct write into **trusted** or **global**; replacing approval for team truth; full enowx multi-store or one-binary product shape; Evaluation Admin product page.
+- **Shipped (local multi-git index-here, local main 2026-07-19):** CLI `index-here` + `POST /api/v1/agent/index-local` → status **`needs_review`**; async embed jobs; default retrieve excludes unless `include_needs_review`; Admin `/admin/needs-review` promote/reject; privileged MCP tools with `manage_needs_review` (`IMP-L1`…`IMP-L5`). Auto-create project slug from origin last path segment. **Prod image may lag.**
+- **Still deferred:** Admin scratch UI (`IMP-15`), `promote_memory` (`IMP-16`), durable query metrics (`IMP-04`), auto-promote scores (`IMP-L6`).
+- **Out of scope:** agent direct write into **trusted** or **global**; silent promote of bulk local index to trusted; replacing approval for team truth; full enowx multi-store or one-binary product shape; Evaluation Admin product page.
 
 Post-MVP backlog (metrics, Admin scratch, agent DX, etc.) lives in
 [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) (`REFERENCE`). Runtime status remains HANDOFF-only.
