@@ -1,0 +1,26 @@
+name: Cleanup GHCR
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'   # Sunday 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        # Nested GHCR packages under owner: <repo>/<name>
+        package:
+          - queria-backend/backend
+          - queria-backend/admin
+    steps:
+      - name: Delete old ${{ matrix.package }} versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 5
+          ignore-versions: '^latest$'

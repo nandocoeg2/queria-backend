@@ -1,3 +1,22 @@
+# Production stack on the deploy host.
+# CI builds+pushes GHCR images; host pulls by IMAGE_TAG (or builds locally as fallback).
+#
+# Required env (on host, usually via .env + Infisical):
+#   GITHUB_REPOSITORY  e.g. nandocoeg2/queria-backend  (default below if unset)
+#   IMAGE_TAG          commit SHA or latest (CI sets this on deploy)
+#   DATABASE_PASSWORD, QDRANT_API_KEY, VOYAGE_API_KEY, QUERIA_SETUP_TOKEN,
+#   QUERIA_FIRST_ADMIN_EMAIL, OCI_STORAGE_*, QUERIA_SOURCE_COMMIT
+#
+# Edge is Caddy on host :17674 (Nginx already owns 80/443). Path routes in docker/Caddyfile.
+
+x-backend-image: &backend_image
+  image: ghcr.io/${GITHUB_REPOSITORY:-nandocoeg2/queria-backend}/backend:${IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      QUERIA_SOURCE_COMMIT: ${QUERIA_SOURCE_COMMIT:-unknown}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -28,7 +47,7 @@ services:
     restart: unless-stopped
 
   queria-api:
-    image: queria-backend:latest
+    <<: *backend_image
     command: queria-api
     env_file:
       - .env
@@ -57,7 +76,7 @@ services:
     restart: unless-stopped
 
   queria-mcp:
-    image: queria-backend:latest
+    <<: *backend_image
     command: queria-mcp
     env_file:
       - .env
@@ -79,7 +98,7 @@ services:
     restart: unless-stopped
 
   queria-worker:
-    image: queria-backend:latest
+    <<: *backend_image
     command: queria-worker
     env_file:
       - .env
@@ -115,6 +134,7 @@ services:
     restart: unless-stopped
 
   queria-admin:
+    image: ghcr.io/${GITHUB_REPOSITORY:-nandocoeg2/queria-backend}/admin:${IMAGE_TAG:-latest}
     build:
       context: ./admin
       dockerfile: Dockerfile

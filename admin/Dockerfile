@@ -1,20 +1,32 @@
-# Stage 1: Build
-FROM node:22-alpine AS builder
+# Multi-stage Astro SSR (Node standalone adapter).
+# Prereq: output: 'server', adapter: node({ mode: 'standalone' }), base: '/admin'
+# Node engines: >=22.12.0 → pin major 22. Package manager: npm (package-lock.json).
+
+# ---- deps ----
+FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
+
+# ---- build ----
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# Stage 2: Runtime
-FROM node:22-alpine AS runner
+# ---- runtime ----
+FROM node:22-alpine AS runtime
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=4321
 
-ENV HOST=0.0.0.0
-ENV PORT=4321
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+
+USER node
 EXPOSE 4321
-
 CMD ["node", "./dist/server/entry.mjs"]

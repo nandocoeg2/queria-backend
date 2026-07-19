@@ -1,0 +1,80 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/${{ github.repository }}
+  # Production host is Oracle aarch64; build only arm64 to match (see deployment runbook).
+  PLATFORM: linux/arm64
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: .
+            dockerfile: ./Dockerfile
+          - name: admin
+            context: ./admin
+            dockerfile: ./admin/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/${{ matrix.name }}:latest
+            ${{ env.IMAGE_BASE }}/${{ matrix.name }}:${{ github.sha }}
+          build-args: |
+            QUERIA_SOURCE_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            export GITHUB_REPOSITORY="${{ github.repository }}"
+            export IMAGE_TAG="${{ github.sha }}"
+            export QUERIA_SOURCE_COMMIT="${{ github.sha }}"
+            docker compose -f docker-compose.production.yml pull
+            docker compose -f docker-compose.production.yml up -d --remove-orphans
+            docker image prune -f
