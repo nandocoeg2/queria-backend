@@ -1,7 +1,7 @@
 use crate::http::{
     agent_index_local, agent_retrieval, agent_setup, approvals, audit_logs, auth, dashboard,
-    embedding_jobs, health, ingestion_jobs, knowledge_items, orgs, projects, retrieval, setup,
-    sources, tokens,
+    embedding_jobs, health, ingestion_jobs, knowledge_items, needs_review, orgs, projects,
+    retrieval, setup, sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
@@ -102,6 +102,7 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/ingestion-jobs", ingestion_jobs::job_router())
         .nest("/api/v1/embedding-jobs", embedding_jobs::job_router())
         .nest("/api/v1/approvals", approvals::router())
+        .nest("/api/v1/needs-review", needs_review::router())
         .nest("/api/v1/knowledge-items", knowledge_items::router())
         .nest("/api/v1/dashboard", dashboard::router())
         .nest("/api/v1/audit-logs", audit_logs::router())

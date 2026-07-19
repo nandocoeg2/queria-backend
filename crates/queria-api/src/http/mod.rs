@@ -10,6 +10,7 @@ pub mod health;
 pub mod ingestion_jobs;
 pub mod isolation;
 pub mod knowledge_items;
+pub mod needs_review;
 pub mod orgs;
 pub mod projects;
 pub mod retrieval;

@@ -219,6 +219,30 @@ pub struct KnowledgeItemRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Admin queue row for index-here / needs_review items (IMP-L4).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeedsReviewItemRecord {
+    pub knowledge_item_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub project_slug: Option<String>,
+    pub source_document_id: Option<Uuid>,
+    pub title: String,
+    pub path: Option<String>,
+    pub origin_url: Option<String>,
+    pub commit_sha: Option<String>,
+    pub branch: Option<String>,
+    pub category: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Result of promoting or rejecting one needs_review knowledge item.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeedsReviewActionRecord {
+    pub knowledge_item: KnowledgeItemRecord,
+    pub chunk_ids: Vec<Uuid>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApprovedKnowledgeRecord {
     pub approval: ApprovalRecord,
@@ -363,6 +387,31 @@ pub(crate) fn knowledge_item_from_row(
         approved_at: row
             .try_get("approved_at")
             .map_err(to_infrastructure_error)?,
+        created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
+        updated_at: row.try_get("updated_at").map_err(to_infrastructure_error)?,
+    })
+}
+
+pub(crate) fn needs_review_item_from_row(
+    row: sqlx::postgres::PgRow,
+) -> QueriaResult<NeedsReviewItemRecord> {
+    Ok(NeedsReviewItemRecord {
+        knowledge_item_id: row
+            .try_get("knowledge_item_id")
+            .map_err(to_infrastructure_error)?,
+        project_id: row.try_get("project_id").map_err(to_infrastructure_error)?,
+        project_slug: row
+            .try_get("project_slug")
+            .map_err(to_infrastructure_error)?,
+        source_document_id: row
+            .try_get("source_document_id")
+            .map_err(to_infrastructure_error)?,
+        title: row.try_get("title").map_err(to_infrastructure_error)?,
+        path: row.try_get("path").map_err(to_infrastructure_error)?,
+        origin_url: row.try_get("origin_url").map_err(to_infrastructure_error)?,
+        commit_sha: row.try_get("commit_sha").map_err(to_infrastructure_error)?,
+        branch: row.try_get("branch").map_err(to_infrastructure_error)?,
+        category: row.try_get("category").map_err(to_infrastructure_error)?,
         created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
         updated_at: row.try_get("updated_at").map_err(to_infrastructure_error)?,
     })

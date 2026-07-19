@@ -16,6 +16,6 @@ pub use types::{
     AuthenticatedSession, CompleteSetupParams, CreateAgentTokenParams, CreateProjectParams,
     CreatedAdmin, IndexLocalFileParams, IndexMemoryParams, IndexMemoryResult,
     IndexedLocalFileRecord, IndexedMemoryRecord, KnowledgeItemRecord, MarkScratchChunkReadyParams,
-    ProjectRecord, ProposeMemoryParams, ProposedMemoryRecord, RegisterSourceDocumentParams,
-    SourceDocumentRecord,
+    NeedsReviewActionRecord, NeedsReviewItemRecord, ProjectRecord, ProposeMemoryParams,
+    ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord,
 };

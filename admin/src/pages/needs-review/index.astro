@@ -1,0 +1,704 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listNeedsReview, fetchFromBackend } from '../../lib/api';
+
+let message = '';
+let isError = false;
+
+// Handle promote / reject (single or bulk) via form POST
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const action = String(data.get('action') || '');
+    const knowledgeItemId = data.get('knowledge_item_id');
+    const projectSlug = data.get('project_slug');
+    const originUrl = data.get('origin_url');
+    const commitSha = data.get('commit_sha');
+    const reason = data.get('reason');
+
+    if (
+      knowledgeItemId &&
+      (action === 'promote' || action === 'reject')
+    ) {
+      const endpoint =
+        action === 'promote'
+          ? `/api/v1/needs-review/${knowledgeItemId}/promote`
+          : `/api/v1/needs-review/${knowledgeItemId}/reject`;
+      const options: RequestInit =
+        action === 'reject'
+          ? {
+              method: 'POST',
+              body: JSON.stringify({
+                reason: reason ? String(reason) : undefined,
+              }),
+            }
+          : { method: 'POST' };
+      const res = await fetchFromBackend(endpoint, Astro.request, options);
+      if (res.ok) {
+        message =
+          action === 'promote'
+            ? 'Item promoted to approved (trusted).'
+            : 'Item rejected.';
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || `Failed to ${action} item.`;
+        isError = true;
+      }
+    } else if (
+      projectSlug &&
+      (action === 'promote_bulk' || action === 'reject_bulk')
+    ) {
+      const endpoint =
+        action === 'promote_bulk'
+          ? '/api/v1/needs-review/promote-bulk'
+          : '/api/v1/needs-review/reject-bulk';
+      const payload: Record<string, string | undefined> = {
+        project_slug: String(projectSlug),
+      };
+      if (originUrl) payload.origin_url = String(originUrl);
+      if (commitSha) payload.commit_sha = String(commitSha);
+      if (action === 'reject_bulk' && reason) {
+        payload.reason = String(reason);
+      }
+      const res = await fetchFromBackend(endpoint, Astro.request, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const body = await res.json().catch(() => ({ count: 0 }));
+        const count = body.count ?? 0;
+        message =
+          action === 'promote_bulk'
+            ? `Promoted ${count} item(s) to approved.`
+            : `Rejected ${count} item(s).`;
+      } else {
+        const errorRes = await res.json().catch(() => ({}));
+        message = errorRes.error || `Failed bulk ${action}.`;
+        isError = true;
+      }
+    }
+  } catch (err) {
+    console.error('Needs-review action error:', err);
+    message = 'Error communicating with server.';
+    isError = true;
+  }
+}
+
+const result = await listNeedsReview(Astro.request, { limit: 200 });
+if (!result) {
+  return Astro.redirect('/admin/login');
+}
+
+const items: any[] = result.items || [];
+
+// Group by project_slug → origin_url → commit_sha
+type Group = {
+  projectSlug: string;
+  originUrl: string;
+  commitSha: string;
+  branch: string;
+  items: any[];
+};
+
+const groups: Group[] = [];
+const groupKey = (it: any) =>
+  `${it.project_slug || '—'}||${it.origin_url || '—'}||${it.commit_sha || '—'}`;
+const seen = new Map<string, Group>();
+
+for (const it of items) {
+  const key = groupKey(it);
+  let g = seen.get(key);
+  if (!g) {
+    g = {
+      projectSlug: it.project_slug || '—',
+      originUrl: it.origin_url || '—',
+      commitSha: it.commit_sha || '—',
+      branch: it.branch || '',
+      items: [],
+    };
+    seen.set(key, g);
+    groups.push(g);
+  }
+  g.items.push(it);
+}
+
+const formatDate = (dateStr?: string) => {
+  if (!dateStr) return 'N/A';
+  return new Date(dateStr).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+};
+
+const shortSha = (sha?: string) => {
+  if (!sha || sha === '—') return '—';
+  return sha.length > 12 ? `${sha.slice(0, 7)}…` : sha;
+};
+---
+
+<AdminLayout title="Needs review" activeTab="needs-review">
+  {message && (
+    <div class={`alert-message ${isError ? 'error' : 'success'}`}>
+      {message}
+    </div>
+  )}
+
+  <div class="card review-panel">
+    <div class="panel-header">
+      <h2>Local index queue</h2>
+      <p class="panel-sub">
+        Items from <code>index-here</code> / agent index-local. Default retrieve
+        excludes them until promoted to approved.
+      </p>
+    </div>
+
+    {groups.length > 0 ? (
+      <div class="groups">
+        {groups.map((group) => (
+          <section class="group-card">
+            <div class="group-header">
+              <div class="group-meta">
+                <span class="meta-pill project">{group.projectSlug}</span>
+                <span class="meta-pill origin" title={group.originUrl}>
+                  {group.originUrl}
+                </span>
+                <span class="meta-pill commit" title={group.commitSha}>
+                  {shortSha(group.commitSha)}
+                </span>
+                {group.branch && (
+                  <span class="meta-pill branch">{group.branch}</span>
+                )}
+                <span class="meta-count">{group.items.length} file(s)</span>
+              </div>
+              <div class="group-actions">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  data-open-confirm="promote_bulk"
+                  data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                  data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
+                  data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
+                  data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
+                >
+                  Promote all
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm btn-danger-hover"
+                  data-open-confirm="reject_bulk"
+                  data-project-slug={group.projectSlug === '—' ? '' : group.projectSlug}
+                  data-origin-url={group.originUrl === '—' ? '' : group.originUrl}
+                  data-commit-sha={group.commitSha === '—' ? '' : group.commitSha}
+                  data-label={`${group.projectSlug} @ ${shortSha(group.commitSha)} (${group.items.length})`}
+                >
+                  Reject all
+                </button>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table class="review-table">
+                <thead>
+                  <tr>
+                    <th>Path / title</th>
+                    <th>Category</th>
+                    <th>Indexed</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.items.map((item: any) => (
+                    <tr>
+                      <td>
+                        <div class="item-title">{item.path || item.title}</div>
+                        {item.path && item.path !== item.title && (
+                          <div class="item-sub">{item.title}</div>
+                        )}
+                      </td>
+                      <td class="cat-cell">{item.category}</td>
+                      <td>{formatDate(item.created_at)}</td>
+                      <td class="action-cell">
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-sm"
+                          data-open-confirm="promote"
+                          data-knowledge-item-id={item.knowledge_item_id}
+                          data-label={item.path || item.title || 'item'}
+                        >
+                          Promote
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm btn-danger-hover"
+                          data-open-confirm="reject"
+                          data-knowledge-item-id={item.knowledge_item_id}
+                          data-label={item.path || item.title || 'item'}
+                        >
+                          Reject
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+      </div>
+    ) : (
+      <div class="empty-state">
+        <p>No items waiting for review.</p>
+      </div>
+    )}
+  </div>
+
+  <!-- Promote single -->
+  <dialog id="promote-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Promote to approved</h3>
+      <button type="button" class="dialog-close" data-close-dialog="promote-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Promote <strong id="promote-confirm-label">this item</strong> to approved
+      (trusted retrieve path)?
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="promote" />
+      <input type="hidden" name="knowledge_item_id" id="promote-confirm-id" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="promote-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+          Confirm Promote
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reject single -->
+  <dialog id="reject-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Reject item</h3>
+      <button type="button" class="dialog-close" data-close-dialog="reject-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Reject <strong id="reject-confirm-label">this item</strong>? It leaves the
+      needs-review queue and will not appear in default retrieve.
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="reject" />
+      <input type="hidden" name="knowledge_item_id" id="reject-confirm-id" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="reject-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-secondary btn-danger-confirm">
+          Confirm Reject
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Promote bulk -->
+  <dialog id="promote-bulk-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Promote group</h3>
+      <button type="button" class="dialog-close" data-close-dialog="promote-bulk-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Promote all needs-review items in <strong id="promote-bulk-confirm-label">this group</strong>
+      (same project, origin, commit) to approved?
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="promote_bulk" />
+      <input type="hidden" name="project_slug" id="promote-bulk-project" value="" />
+      <input type="hidden" name="origin_url" id="promote-bulk-origin" value="" />
+      <input type="hidden" name="commit_sha" id="promote-bulk-commit" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="promote-bulk-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+          Confirm Promote All
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Reject bulk -->
+  <dialog id="reject-bulk-confirm-dialog" class="confirm-dialog">
+    <div class="dialog-header">
+      <h3>Reject group</h3>
+      <button type="button" class="dialog-close" data-close-dialog="reject-bulk-confirm-dialog" aria-label="Close">✕</button>
+    </div>
+    <p class="dialog-body">
+      Reject all needs-review items in <strong id="reject-bulk-confirm-label">this group</strong>?
+    </p>
+    <form method="POST" class="dialog-form">
+      <input type="hidden" name="action" value="reject_bulk" />
+      <input type="hidden" name="project_slug" id="reject-bulk-project" value="" />
+      <input type="hidden" name="origin_url" id="reject-bulk-origin" value="" />
+      <input type="hidden" name="commit_sha" id="reject-bulk-commit" value="" />
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-close-dialog="reject-bulk-confirm-dialog">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-secondary btn-danger-confirm">
+          Confirm Reject All
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <script is:inline>
+    (function () {
+      function openSingle(kind, id, label) {
+        const isPromote = kind === 'promote';
+        const dialog = document.getElementById(
+          isPromote ? 'promote-confirm-dialog' : 'reject-confirm-dialog'
+        );
+        const idInput = document.getElementById(
+          isPromote ? 'promote-confirm-id' : 'reject-confirm-id'
+        );
+        const labelEl = document.getElementById(
+          isPromote ? 'promote-confirm-label' : 'reject-confirm-label'
+        );
+        if (!dialog || !idInput || !labelEl) return;
+        idInput.value = id || '';
+        labelEl.textContent = label || 'this item';
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+      }
+
+      function openBulk(kind, projectSlug, originUrl, commitSha, label) {
+        const isPromote = kind === 'promote_bulk';
+        const dialog = document.getElementById(
+          isPromote ? 'promote-bulk-confirm-dialog' : 'reject-bulk-confirm-dialog'
+        );
+        const projectInput = document.getElementById(
+          isPromote ? 'promote-bulk-project' : 'reject-bulk-project'
+        );
+        const originInput = document.getElementById(
+          isPromote ? 'promote-bulk-origin' : 'reject-bulk-origin'
+        );
+        const commitInput = document.getElementById(
+          isPromote ? 'promote-bulk-commit' : 'reject-bulk-commit'
+        );
+        const labelEl = document.getElementById(
+          isPromote ? 'promote-bulk-confirm-label' : 'reject-bulk-confirm-label'
+        );
+        if (!dialog || !projectInput || !originInput || !commitInput || !labelEl) return;
+        projectInput.value = projectSlug || '';
+        originInput.value = originUrl || '';
+        commitInput.value = commitSha || '';
+        labelEl.textContent = label || 'this group';
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+      }
+
+      document.querySelectorAll('[data-open-confirm]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const kind = btn.getAttribute('data-open-confirm');
+          if (kind === 'promote' || kind === 'reject') {
+            openSingle(
+              kind,
+              btn.getAttribute('data-knowledge-item-id'),
+              btn.getAttribute('data-label')
+            );
+          } else if (kind === 'promote_bulk' || kind === 'reject_bulk') {
+            openBulk(
+              kind,
+              btn.getAttribute('data-project-slug'),
+              btn.getAttribute('data-origin-url'),
+              btn.getAttribute('data-commit-sha'),
+              btn.getAttribute('data-label')
+            );
+          }
+        });
+      });
+
+      document.querySelectorAll('[data-close-dialog]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const dialog = document.getElementById(btn.getAttribute('data-close-dialog'));
+          if (dialog && typeof dialog.close === 'function') dialog.close();
+        });
+      });
+    })();
+  </script>
+</AdminLayout>
+
+<style>
+  .review-panel {
+    padding: var(--spacing-xl);
+  }
+
+  .panel-header {
+    margin-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .panel-header h2 {
+    font-family: var(--font-family-headline);
+    font-size: 16px;
+    color: var(--color-on-surface);
+  }
+
+  .panel-sub {
+    margin-top: var(--spacing-xs);
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+  }
+
+  .panel-sub code {
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    background-color: var(--color-surface-container-lowest);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
+  }
+
+  .alert-message {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .alert-message.success {
+    background-color: #0a2e1f;
+    color: #34d399;
+    border: 1px solid #145c40;
+  }
+
+  .alert-message.error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    border: 1px solid var(--color-error);
+  }
+
+  .groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+  }
+
+  .group-card {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface-container-high);
+    overflow: hidden;
+  }
+
+  .group-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-outline-variant);
+    background-color: var(--color-surface-container);
+  }
+
+  .group-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .meta-pill {
+    font-family: var(--font-family-caption);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-outline-variant);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .meta-pill.project {
+    color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  }
+
+  .meta-pill.commit {
+    font-family: var(--font-family-mono);
+  }
+
+  .meta-count {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    font-weight: 600;
+  }
+
+  .group-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  .review-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .review-table th {
+    background-color: var(--color-surface-container-high);
+    color: var(--color-on-surface-variant);
+    font-family: var(--font-family-caption);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .review-table td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface);
+    vertical-align: top;
+  }
+
+  .review-table tbody tr:hover {
+    background-color: var(--color-surface-container);
+  }
+
+  .item-title {
+    font-weight: 600;
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+  }
+
+  .item-sub {
+    font-size: 11px;
+    color: var(--color-on-surface-variant);
+    margin-top: 2px;
+  }
+
+  .cat-cell {
+    font-weight: 500;
+  }
+
+  .action-cell {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 11px;
+  }
+
+  .btn-danger-hover:hover {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .btn-danger-confirm {
+    border-color: var(--color-error);
+    color: var(--color-error);
+    background-color: var(--color-error-container);
+  }
+
+  .btn-danger-confirm:hover {
+    background-color: color-mix(in srgb, var(--color-error) 22%, transparent);
+    color: #fff;
+    border-color: var(--color-error);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--spacing-xxl);
+    color: var(--color-on-surface-variant);
+    font-style: italic;
+  }
+
+  .confirm-dialog {
+    max-width: 26rem;
+    width: calc(100% - 2rem);
+    margin: auto;
+    padding: var(--spacing-xl);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface-container);
+    color: var(--color-on-surface);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .confirm-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.65);
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--color-outline-variant);
+  }
+
+  .dialog-header h3 {
+    font-size: 1.125rem;
+    font-family: var(--font-family-headline);
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .dialog-close {
+    background: transparent;
+    border: none;
+    color: var(--color-on-surface-variant);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+  }
+
+  .dialog-close:hover {
+    color: var(--color-primary);
+  }
+
+  .dialog-body {
+    font-family: var(--font-family-body);
+    font-size: 13px;
+    color: var(--color-on-surface-variant);
+    line-height: 1.5;
+    margin: 0 0 var(--spacing-lg);
+  }
+
+  .dialog-body strong {
+    color: var(--color-on-surface);
+    font-weight: 600;
+  }
+
+  .dialog-form {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--color-outline-variant);
+  }
+</style>

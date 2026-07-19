@@ -223,6 +223,24 @@ export async function listApprovals(astroRequest: Request, status?: string) {
   return res.json();
 }
 
+/** IMP-L4: list needs_review queue (index-here items pending promote/reject). */
+export async function listNeedsReview(
+  astroRequest: Request,
+  params: { projectSlug?: string; limit?: number } = {}
+) {
+  const searchParams = new URLSearchParams();
+  if (params.projectSlug) searchParams.set('project_slug', params.projectSlug);
+  if (params.limit) searchParams.set('limit', params.limit.toString());
+  const queryStr = searchParams.toString();
+  const url = `/api/v1/needs-review${queryStr ? `?${queryStr}` : ''}`;
+  const res = await fetchFromBackend(url, astroRequest);
+  if (!res.ok) {
+    if (res.status === 401) return null;
+    throw new Error(`Failed to fetch needs-review queue: ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export async function listAgentTokens(astroRequest: Request) {
   const res = await fetchFromBackend('/api/v1/agent-tokens', astroRequest);
   if (!res.ok) {
