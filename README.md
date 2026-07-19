@@ -105,6 +105,74 @@ Local endpoints:
 | Qdrant | `127.0.0.1:17676` |
 | MinIO | `http://127.0.0.1:17678` |
 
+## Agent client: keys for one workspace, many repos
+
+Retrieve is always **per `project_id`**. Scratch never crosses projects. Full Admin → agent path: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md). Hooks: B5. Edge E2E: B6 / `scripts/e2e_agent_path_edge.py`.
+
+### Default setup (recommended)
+
+1. **Admin** mints **one** agent token with all project slugs you use in that workspace (`project_slugs: ["repo-a", "repo-b", …]`), plus tools you need (`list_projects`, `retrieve_context`, `search_knowledge`, `index_memory`, …). Copy the raw `qria_…` once.
+2. **User-level shell** (once):
+
+```bash
+export QUERIA_AGENT_TOKEN='qria_…'          # never commit
+export QUERIA_EDGE_URL='http://127.0.0.1:17674'   # or prod host :17674
+export QUERIA_MCP_URL="${QUERIA_EDGE_URL}/mcp"
+```
+
+3. **MCP client** (Codex / Claude / Droid): one HTTP MCP server pointing at `$QUERIA_MCP_URL` with Bearer from `$QUERIA_AGENT_TOKEN` (see `GET $QUERIA_EDGE_URL/api/v1/setup/mcp-snippet?client=…`).
+4. **Per-repo active project** (hooks + clarity). Prefer [direnv](https://direnv.net/) so slug follows cwd:
+
+```bash
+# ~/work/repo-a/.envrc
+export QUERIA_PROJECT_SLUG=repo-a
+
+# ~/work/repo-b/.envrc
+export QUERIA_PROJECT_SLUG=repo-b
+```
+
+Optional: `QUERIA_PROJECT_ID=<uuid>` instead of slug. Merge each repo’s `AGENTS.md` from `GET …/setup/agents-block?project_slug=…`.
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `QUERIA_AGENT_TOKEN` | User shell / secrets | Auth for MCP + agent HTTP + hooks |
+| `QUERIA_EDGE_URL` / `QUERIA_MCP_URL` | User shell | Edge base and MCP URL |
+| `QUERIA_PROJECT_SLUG` or `QUERIA_PROJECT_ID` | **Per repo** (direnv / local env) | Active project for hooks and agent default |
+
+### Multi-repo layout example
+
+```text
+~/project/                    # IDE multi-root or parent folder
+  fjulian.me/                 # .envrc → QUERIA_PROJECT_SLUG=fjulian-me
+  knowledge-based-rag/
+    queria/backend/           # .envrc → QUERIA_PROJECT_SLUG=… (Admin slug)
+```
+
+### Agent loop (every repo)
+
+```text
+list_projects                         # slug → UUID map (or read AGENTS.md)
+retrieve_context(project_id=THIS, q)
+# work
+index_memory / propose_memory only on THIS project_id
+```
+
+Do **not** set a single global `QUERIA_PROJECT_SLUG` for all repos (hooks inject the wrong project). Do **not** expect one retrieve call to merge every repo; call once per project if you need more than one.
+
+### Alternatives
+
+| Pattern | When |
+|---|---|
+| One multi-slug token + per-repo slug (above) | Daily multi-repo workspace |
+| Token per project (direnv switches token + slug) | Least privilege / external |
+| Token only, no slug env | Pure MCP agents that always `list_projects` first; **weak for hooks** (may pick first listed project) |
+
+### What not to do
+
+- Commit `qria_…` into git
+- Write scratch for project B while working in repo A
+- Rely on “first project on the token” when multiple slugs are granted and hooks are enabled
+
 ## Git ingestion
 
 **Admin UI:** `/admin/sources` — **Register Git Source** form and **Trigger Ingest** per source (session cookie). Token mint at `/admin/tokens` requires **name** + **project_slugs**. Ops path: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) Part A.
