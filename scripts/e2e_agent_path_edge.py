@@ -176,10 +176,8 @@ def main() -> None:
 
     # --- E0 health ---
     code, body = http_request("GET", f"{edge}/healthz", timeout=15)
-    if code != 200 or "OK" not in body.upper() and "ok" not in body.lower() and body.strip() != "OK":
-        # accept literal OK body (prod) case-insensitive
-        if code != 200 or "ok" not in body.lower():
-            fail("E0", f"healthz status={code} body={body[:200]}")
+    if code != 200 or "ok" not in body.lower():
+        fail("E0", f"healthz status={code} body={body[:200]}")
     ok("E0")
 
     # --- E1 hook-script ---
@@ -289,8 +287,13 @@ def main() -> None:
         fail("E8", str(lp.get("texts")))
     sc = lp.get("structured") or {}
     projs = sc.get("projects") or []
-    if not any(isinstance(x, dict) and x.get("slug") == slug for x in projs):
-        fail("E8", f"smoke slug missing in MCP list: {projs!r}"[:300])
+    mcp_slugs = {
+        x.get("slug") for x in projs if isinstance(x, dict) and x.get("slug")
+    }
+    if slug not in mcp_slugs:
+        fail("E8", f"smoke slug missing in MCP list: {mcp_slugs!r}")
+    if mcp_slugs != {slug}:
+        fail("E8", f"unexpected extra projects (token should be smoke-only): {mcp_slugs!r}")
     ok("E8")
 
     # --- E9 retrieve_context ---
