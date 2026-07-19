@@ -229,7 +229,7 @@ Project `.mcp.json` with token from env (preferred for sharing):
 }
 ```
 
-Older client notes under parent workspace `docs/mcp-clients/claude.md` may still mention port `67671` / `queria-proxy`. **Ignore those ports;** use `17674` edge paths above.
+Parent templates: [`docs/mcp-clients/`](../../../../docs/mcp-clients/) (edge `:17674`). Prefer live `GET …/setup/mcp-snippet` when available.
 
 #### Codex
 
@@ -497,4 +497,4 @@ Operator still does Part A (project, Git ingest, mint token) before the agent ca
 | [`local-development.md`](./local-development.md) | Compose, migrate, backfill |
 | [`hybrid-retrieval.md`](./hybrid-retrieval.md) | Rerank/compress/probe |
 | [`deployment.md`](./deployment.md) | Production host |
-| Parent `docs/mcp-clients/*` | Client templates (ports may lag; prefer URLs in this runbook) |
+| Parent `docs/mcp-clients/*` | Thin Claude/Codex templates (edge `:17674`) |
