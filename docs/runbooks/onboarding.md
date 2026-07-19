@@ -310,6 +310,22 @@ Throttle defaults: 30s cooldown, same-query skip ~5m, skip trivial prompts (`ok`
 
 Hooks **do not** replace MCP `retrieve_context` for deep work (AGENTS.md still **MUST** call it).
 
+### B6. Agent-path edge E2E (prod smoke)
+
+Pre-minted smoke token only (no auto-mint). Dedicated project recommended (`queria-smoke`) with tools: `list_projects`, `retrieve_context`, `search_knowledge`, `index_memory`.
+
+```bash
+export QUERIA_EDGE_URL='http://168.110.214.130:17674'
+export QUERIA_AGENT_TOKEN='qria_…'          # smoke token, never commit
+export QUERIA_SMOKE_PROJECT_SLUG='queria-smoke'
+
+# from queria/backend checkout
+python3 scripts/e2e_agent_path_edge.py
+# optional: python3 scripts/e2e_agent_path_edge.py --skip-hooks
+```
+
+Expect `E0`…`E12 PASS` and `RESULT: PASS`. Design: [`../archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md`](../archive/superpowers/specs/2026-07-19-agent-path-edge-e2e-design.md).
+
 ### B4. Agent smoke checklist
 
 | Step | Expect |
