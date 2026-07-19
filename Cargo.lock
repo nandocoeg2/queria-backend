@@ -1599,6 +1599,7 @@ dependencies = [
  "queria-backup",
  "queria-core",
  "queria-db",
+ "queria-ingestion",
  "queria-search",
  "reqwest",
  "serde",

@@ -4,6 +4,7 @@ mod database;
 mod doctor_mcp;
 mod embeddings;
 mod evaluation;
+mod index_here;
 mod restore_drill;
 mod retrieval;
 
@@ -43,6 +44,24 @@ enum Command {
     Backup {
         #[command(subcommand)]
         command: BackupCommand,
+    },
+    /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
+    IndexHere {
+        /// Env var name holding the raw agent token (never print the token).
+        #[arg(long, default_value = "QUERIA_AGENT_TOKEN")]
+        token_env: String,
+        /// Env var name for edge base URL (default env QUERIA_EDGE_URL → http://127.0.0.1:17674).
+        #[arg(long, default_value = "QUERIA_EDGE_URL")]
+        edge_url_env: String,
+        /// Nested git scan depth under cwd.
+        #[arg(long, default_value_t = index_here::DEFAULT_DEPTH)]
+        depth: u32,
+        /// Non-interactive: required when multiple git roots are discovered.
+        #[arg(long)]
+        yes: bool,
+        /// Discover + gate counts only; no HTTP upload.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -162,6 +181,13 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
         }
+        Command::IndexHere {
+            token_env,
+            edge_url_env,
+            depth,
+            yes,
+            dry_run,
+        } => index_here::run(&token_env, &edge_url_env, depth, yes, dry_run).await,
     }
 }
 
@@ -292,6 +318,61 @@ mod tests {
                 assert_eq!(rerank, Some(false));
                 assert_eq!(compress, Some(true));
                 assert_eq!(limit, 3);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_index_here_defaults() {
+        let cli = Cli::try_parse_from(["queria-cli", "index-here"])
+            .expect("index-here should parse");
+        match cli.command {
+            Command::IndexHere {
+                token_env,
+                edge_url_env,
+                depth,
+                yes,
+                dry_run,
+            } => {
+                assert_eq!(token_env, "QUERIA_AGENT_TOKEN");
+                assert_eq!(edge_url_env, "QUERIA_EDGE_URL");
+                assert_eq!(depth, 4);
+                assert!(!yes);
+                assert!(!dry_run);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_index_here_flags() {
+        let cli = Cli::try_parse_from([
+            "queria-cli",
+            "index-here",
+            "--token-env",
+            "MY_TOKEN",
+            "--edge-url-env",
+            "MY_EDGE",
+            "--depth",
+            "2",
+            "--yes",
+            "--dry-run",
+        ])
+        .expect("index-here flags should parse");
+        match cli.command {
+            Command::IndexHere {
+                token_env,
+                edge_url_env,
+                depth,
+                yes,
+                dry_run,
+            } => {
+                assert_eq!(token_env, "MY_TOKEN");
+                assert_eq!(edge_url_env, "MY_EDGE");
+                assert_eq!(depth, 2);
+                assert!(yes);
+                assert!(dry_run);
             }
             other => panic!("unexpected command: {other:?}"),
         }

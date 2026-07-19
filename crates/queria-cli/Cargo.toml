@@ -13,6 +13,7 @@ clap.workspace = true
 queria-core = { path = "../queria-core" }
 queria-backup = { path = "../queria-backup" }
 queria-db = { path = "../queria-db" }
+queria-ingestion = { path = "../queria-ingestion" }
 queria-search = { path = "../queria-search" }
 reqwest.workspace = true
 serde.workspace = true
