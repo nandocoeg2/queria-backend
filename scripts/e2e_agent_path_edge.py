@@ -75,6 +75,91 @@ def parse_json_body(raw: str) -> Any:
     return json.loads(raw)
 
 
+def mcp(edge: str, token: str, method: str, params: dict | None = None, rid: int = 1) -> dict:
+    body: dict[str, Any] = {"jsonrpc": "2.0", "id": rid, "method": method}
+    if params is not None:
+        body["params"] = params
+    code, raw = http_request(
+        "POST",
+        f"{edge}/mcp",
+        token=token,
+        body=body,
+        timeout=180,
+    )
+    if code != 200:
+        return {"_http_status": code, "_raw": raw[:500]}
+    try:
+        return parse_json_body(raw)
+    except Exception as e:
+        return {"_parse_error": str(e), "_raw": raw[:500]}
+
+
+def tools_call(edge: str, token: str, name: str, arguments: dict, rid: int = 10) -> dict:
+    return mcp(
+        edge,
+        token,
+        "tools/call",
+        {"name": name, "arguments": arguments},
+        rid=rid,
+    )
+
+
+def tool_payload(resp: dict) -> dict:
+    """Normalize MCP tools/call response to {isError, structured, texts}."""
+    if resp.get("_http_status") and resp["_http_status"] != 200:
+        return {
+            "isError": True,
+            "texts": [f"http {resp['_http_status']}: {resp.get('_raw', '')}"],
+            "structured": None,
+        }
+    if resp.get("_parse_error"):
+        return {"isError": True, "texts": [resp["_parse_error"]], "structured": None}
+    if resp.get("error") is not None:
+        err = resp["error"]
+        msg = err.get("message") if isinstance(err, dict) else str(err)
+        return {"isError": True, "texts": [msg or "error"], "structured": None}
+    r = resp.get("result") or {}
+    content = r.get("content") or []
+    texts = [c.get("text", "") for c in content if isinstance(c, dict)]
+    if r.get("isError"):
+        return {"isError": True, "texts": texts, "structured": r.get("structuredContent")}
+    sc = r.get("structuredContent")
+    parsed = None
+    for t in texts:
+        try:
+            parsed = json.loads(t)
+            break
+        except Exception:
+            pass
+    if sc is None and isinstance(parsed, dict):
+        sc = parsed
+    return {"isError": False, "structured": sc, "texts": texts}
+
+
+def items_from(pr: dict) -> list:
+    s = pr.get("structured") or {}
+    if isinstance(s, dict):
+        its = s.get("items") or (s.get("result") or {}).get("items") or []
+        if its:
+            return its
+    for t in pr.get("texts") or []:
+        try:
+            j = json.loads(t)
+            its = j.get("items") or []
+            if its:
+                return its
+        except Exception:
+            continue
+    return []
+
+
+def payload_blob(pr: dict) -> str:
+    parts = list(pr.get("texts") or [])
+    if pr.get("structured") is not None:
+        parts.append(json.dumps(pr["structured"]))
+    return "\n".join(parts)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="QuerIa agent-path edge E2E")
     p.add_argument(
@@ -174,9 +259,124 @@ def main() -> None:
         fail("E6", "missing retrieval/project_id")
     ok("E6", f"items={len(data['items'])}")
 
-    # Task 2 appends E7–E11; Task 3 E12
-    print("RESULT: PARTIAL (E0-E6 only; continue plan Task 2)")
-    # Temporary exit 0 so Task 1 self-check can hit edge; Task 2 removes PARTIAL.
+    # --- E7 initialize + tools/list ---
+    init = mcp(
+        edge,
+        token,
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "e2e-agent-path-edge", "version": "0.1"},
+        },
+        rid=1,
+    )
+    if "result" not in init:
+        fail("E7", f"initialize failed: {init}")
+    listed = mcp(edge, token, "tools/list", {}, rid=2)
+    tools = (listed.get("result") or {}).get("tools") or []
+    names = {t.get("name") for t in tools if isinstance(t, dict)}
+    for required in ("retrieve_context", "list_projects", "index_memory"):
+        if required not in names:
+            fail("E7", f"missing tool {required} in {names}")
+    ok("E7", f"tools={len(names)}")
+
+    # --- E8 list_projects ---
+    lp = tool_payload(
+        tools_call(edge, token, "list_projects", {}, rid=11)
+    )
+    if lp["isError"]:
+        fail("E8", str(lp.get("texts")))
+    sc = lp.get("structured") or {}
+    projs = sc.get("projects") or []
+    if not any(isinstance(x, dict) and x.get("slug") == slug for x in projs):
+        fail("E8", f"smoke slug missing in MCP list: {projs!r}"[:300])
+    ok("E8")
+
+    # --- E9 retrieve_context ---
+    rv = tool_payload(
+        tools_call(
+            edge,
+            token,
+            "retrieve_context",
+            {
+                "project_id": project_id,
+                "query": "project overview conventions",
+                "include_scratch": True,
+                "include_global": False,
+                "limit": 5,
+            },
+            rid=12,
+        )
+    )
+    if rv["isError"]:
+        fail("E9", str(rv.get("texts")))
+    ok("E9", f"items={len(items_from(rv))}")
+
+    # --- E10 index_memory ---
+    marker = f"{MARKER_PREFIX}{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    body_text = f"{marker} agent-path edge e2e scratch note"
+    ix = tool_payload(
+        tools_call(
+            edge,
+            token,
+            "index_memory",
+            {
+                "project_id": project_id,
+                "body": body_text,
+                "title": f"e2e {marker}",
+                "category": "e2e",
+                "tags": ["e2e-agent"],
+            },
+            rid=13,
+        )
+    )
+    if ix["isError"]:
+        fail("E10", str(ix.get("texts")))
+    ok("E10", f"marker={marker}")
+
+    # --- E11 retrieve scratch for marker ---
+    found = False
+    last_note = ""
+    for attempt in range(RETRIES):
+        rr = tool_payload(
+            tools_call(
+                edge,
+                token,
+                "retrieve_context",
+                {
+                    "project_id": project_id,
+                    "query": marker,
+                    "include_scratch": True,
+                    "include_global": False,
+                    "limit": 10,
+                },
+                rid=20 + attempt,
+            )
+        )
+        if rr["isError"]:
+            last_note = str(rr.get("texts"))
+            time.sleep(RETRY_SLEEP_SEC)
+            continue
+        blob = payload_blob(rr)
+        if marker in blob:
+            found = True
+            break
+        # also scan item bodies
+        for it in items_from(rr):
+            if marker in json.dumps(it):
+                found = True
+                break
+        if found:
+            break
+        last_note = f"attempt {attempt+1}: items={len(items_from(rr))}"
+        time.sleep(RETRY_SLEEP_SEC)
+    if not found:
+        fail("E11", f"marker not found after retries: {last_note}")
+    ok("E11")
+
+    # Task 3: E12 then RESULT PASS
+    print("RESULT: PARTIAL (E0-E11; Task 3 adds E12)")
     sys.exit(0)
 
 
