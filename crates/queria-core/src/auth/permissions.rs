@@ -8,6 +8,8 @@ pub enum AgentToolPermission {
     ProposeMemory,
     /// Direct write to project-scoped scratch lane (not in default_agent_tools).
     IndexMemory,
+    /// Local multi-git index-here upload (not in default_agent_tools).
+    IndexLocal,
     ListProjects,
     GetSource,
 }
@@ -79,6 +81,48 @@ mod tests {
         assert_ne!(
             AgentToolPermission::IndexMemory,
             AgentToolPermission::ProposeMemory
+        );
+    }
+
+    #[test]
+    fn index_local_serializes_as_snake_case() {
+        let json = serde_json::to_string(&AgentToolPermission::IndexLocal)
+            .expect("serialize IndexLocal");
+        assert_eq!(json, "\"index_local\"");
+        let back: AgentToolPermission =
+            serde_json::from_str("\"index_local\"").expect("deserialize index_local");
+        assert_eq!(back, AgentToolPermission::IndexLocal);
+    }
+
+    #[test]
+    fn can_call_index_local_only_when_granted() {
+        let without = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::IndexMemory,
+            ],
+        };
+        assert!(!without.can_call(&AgentToolPermission::IndexLocal));
+
+        let with = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::IndexLocal,
+            ],
+        };
+        assert!(with.can_call(&AgentToolPermission::IndexLocal));
+        assert!(!with.can_call(&AgentToolPermission::IndexMemory));
+    }
+
+    #[test]
+    fn index_local_not_same_as_index_memory() {
+        assert_ne!(
+            AgentToolPermission::IndexLocal,
+            AgentToolPermission::IndexMemory
         );
     }
 }

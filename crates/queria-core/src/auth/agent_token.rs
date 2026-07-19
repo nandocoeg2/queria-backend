@@ -98,11 +98,40 @@ mod tests {
             !tools.contains(&AgentToolPermission::IndexMemory),
             "legacy default tokens must not gain index_memory"
         );
+        assert!(
+            !tools.contains(&AgentToolPermission::IndexLocal),
+            "legacy default tokens must not gain index_local"
+        );
         assert!(tools.contains(&AgentToolPermission::ProposeMemory));
         assert!(tools.contains(&AgentToolPermission::RetrieveContext));
         assert!(tools.contains(&AgentToolPermission::SearchKnowledge));
         assert!(tools.contains(&AgentToolPermission::ListProjects));
         assert!(tools.contains(&AgentToolPermission::GetSource));
+    }
+
+    #[test]
+    fn issuer_accepts_index_local_tool() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![
+                AgentToolPermission::RetrieveContext,
+                AgentToolPermission::IndexLocal,
+            ],
+        };
+        let issued = AgentTokenIssuer
+            .issue(permissions, None)
+            .expect("IndexLocal token should issue");
+        assert!(
+            issued
+                .permissions
+                .can_call(&AgentToolPermission::IndexLocal)
+        );
+        assert!(
+            !issued
+                .permissions
+                .can_call(&AgentToolPermission::IndexMemory)
+        );
     }
 
     #[test]

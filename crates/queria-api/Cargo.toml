@@ -12,6 +12,7 @@ axum.workspace = true
 chrono.workspace = true
 queria-core = { path = "../queria-core" }
 queria-db = { path = "../queria-db" }
+queria-ingestion = { path = "../queria-ingestion" }
 queria-search = { path = "../queria-search" }
 serde.workspace = true
 serde_json.workspace = true

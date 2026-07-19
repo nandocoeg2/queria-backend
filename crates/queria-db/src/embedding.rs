@@ -44,7 +44,7 @@ with candidates as (
     and job.job_type = 'embedding_backfill'
     and k.organization_id = job.organization_id
     and (k.project_id = job.project_id or k.scope = 'global')
-    and k.status = 'approved'
+    and k.status in ('approved', 'needs_review')
     and (sd.id is null or sd.is_active)
     and (
       c.embedding_status in ('pending', 'failed', 'stale')
@@ -616,7 +616,8 @@ mod tests {
     #[test]
     fn claim_query_uses_skip_locked_and_approved_chunks() {
         assert!(CLAIM_CHUNKS_SQL.contains("for update of c skip locked"));
-        assert!(CLAIM_CHUNKS_SQL.contains("k.status = 'approved'"));
+        // Needs_review local-git items must embed via same backfill path as approved.
+        assert!(CLAIM_CHUNKS_SQL.contains("k.status in ('approved', 'needs_review')"));
         assert!(CLAIM_CHUNKS_SQL.contains("c.embedding_status"));
         assert!(CLAIM_CHUNKS_SQL.contains("c.embedding_attempts < 5"));
     }

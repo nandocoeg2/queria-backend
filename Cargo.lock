@@ -1558,6 +1558,7 @@ dependencies = [
  "http",
  "queria-core",
  "queria-db",
+ "queria-ingestion",
  "queria-search",
  "serde",
  "serde_json",

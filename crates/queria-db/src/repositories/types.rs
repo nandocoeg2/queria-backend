@@ -117,6 +117,30 @@ pub struct IndexMemoryParams {
     pub content_hash: String,
 }
 
+/// Params for agent `index-local` single-file needs_review write.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexLocalFileParams {
+    pub project_id: Uuid,
+    pub path: String,
+    pub body: String,
+    pub content_hash: String,
+    pub origin_url: Option<String>,
+    pub commit_sha: Option<String>,
+    pub branch: Option<String>,
+    pub local_path_hint: Option<String>,
+}
+
+/// Result of inserting or no-op resolving a needs_review knowledge item + chunk.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IndexedLocalFileRecord {
+    pub knowledge_item_id: Uuid,
+    pub chunk_id: Uuid,
+    pub source_document_id: Uuid,
+    pub project_id: Uuid,
+    pub content_hash: String,
+    pub created: bool,
+}
+
 /// Result of inserting or no-op resolving a scratch knowledge item + chunk.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IndexedMemoryRecord {

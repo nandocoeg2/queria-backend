@@ -1,6 +1,7 @@
 use crate::http::{
-    agent_retrieval, agent_setup, approvals, audit_logs, auth, dashboard, embedding_jobs, health,
-    ingestion_jobs, knowledge_items, orgs, projects, retrieval, setup, sources, tokens,
+    agent_index_local, agent_retrieval, agent_setup, approvals, audit_logs, auth, dashboard,
+    embedding_jobs, health, ingestion_jobs, knowledge_items, orgs, projects, retrieval, setup,
+    sources, tokens,
 };
 use axum::Router;
 use queria_core::AppConfig;
@@ -83,6 +84,8 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1", agent_setup::router())
         // Agent-bearer retrieve for client auto-retrieve hooks (Bearer qria_…, not session).
         .nest("/api/v1", agent_retrieval::router())
+        // Agent-bearer local multi-git index-here (Bearer qria_… + IndexLocal).
+        .nest("/api/v1", agent_index_local::router())
         .nest("/api/v1/auth", auth::router())
         // Platform orgs + invites + members + public accept (single module).
         .merge(orgs::router())
