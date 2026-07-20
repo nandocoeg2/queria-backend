@@ -108,6 +108,23 @@ Connect works with empty retrieve; useful answers need ready chunks. Do **not** 
 - Require direnv for plain Daily retrieve
 - Rely on “first project on the token” when multiple slugs are granted and hooks are enabled
 
+## queria-cli (index-here)
+
+Laptop bulk index without building from source: download **GitHub Release** assets for your OS (`cli-v*` tags).
+
+- Releases: https://github.com/nandocoeg2/queria-backend/releases  
+- Workflow: [`.github/workflows/release-cli.yml`](.github/workflows/release-cli.yml)  
+- Ops: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) § Install `queria-cli` + Optional knowledge ingest  
+
+```bash
+# after install + Custom token with index_local:
+export QUERIA_AGENT_TOKEN='qria_…'
+export QUERIA_EDGE_URL='https://queria.fjulian.id'
+cd /path/to/git/project
+queria-cli index-here --dry-run
+queria-cli index-here   # add --yes if multiple nested git roots
+```
+
 ## Git ingestion
 
 Prefer Admin `/admin/sources` (Register Git + Trigger Ingest). Token mint `/admin/tokens` needs **name** + **project_slugs**. Steps: onboarding Part A.

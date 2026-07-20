@@ -71,13 +71,40 @@ Knowledge is **not** part of the Daily 3-step connect path. Choose one (or both 
 | **Admin Git** | Operator with Admin session | Server can clone the remote (allowlist + SSH if private) — Part A3 |
 | **Laptop index-here** | Dev on the machine with the git clone; token with **`index_local`** (Custom mint) | Self-hosted / unreachable remotes; land in Needs review until Promote — Part E |
 
+### Install `queria-cli` (laptop)
+
+Users should **not** need a Rust toolchain for `index-here`. Prefer GitHub Release binaries.
+
+| Platform | Asset (latest `cli-v*` release) |
+|---|---|
+| macOS Apple Silicon | `queria-cli-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `queria-cli-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 | `queria-cli-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux arm64 | `queria-cli-aarch64-unknown-linux-gnu.tar.gz` |
+
+Releases: https://github.com/nandocoeg2/queria-backend/releases  
+
+```bash
+# Example: macOS Apple Silicon (replace TAG with latest cli-v*)
+TAG=cli-v0.1.0
+curl -fsSL -o queria-cli.tar.gz \
+  "https://github.com/nandocoeg2/queria-backend/releases/download/${TAG}/queria-cli-aarch64-apple-darwin.tar.gz"
+tar -xzf queria-cli.tar.gz
+sudo install -m 755 queria-cli-aarch64-apple-darwin/queria-cli /usr/local/bin/queria-cli
+queria-cli index-here --help
+```
+
+Maintainers: tag `cli-vX.Y.Z` (or Actions → **Release queria-cli**) builds via [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml).  
+Dev alternative: `cargo build -p queria-cli --release` in this repo.
+
 ### Fast first knowledge (laptop)
 
 For a laptop clone without Admin Git registration:
 
-1. Create project (Admin → Projects) if missing.
-2. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
-3. From the repo (or monorepo root):
+1. Install `queria-cli` from GitHub Releases (above).
+2. Create project (Admin → Projects) if missing.
+3. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
+4. From the repo (or monorepo root):
 
    ```bash
    export QUERIA_AGENT_TOKEN='…'   # Custom token with index_local
@@ -85,8 +112,8 @@ For a laptop clone without Admin Git registration:
    queria-cli index-here --token-env QUERIA_AGENT_TOKEN
    ```
 
-4. Admin → Needs review → **Promote** (trusted path).
-5. Use a **Daily** token for normal retrieve + `index_memory` scratch (do not give Daily users `index_local`).
+5. Admin → Needs review → **Promote** (trusted path).
+6. Use a **Daily** token for normal retrieve + `index_memory` scratch (do not give Daily users `index_local`).
 
 Full contract: [Part E — Local multi-git `index-here`](#part-e--local-multi-git-index-here-needs-review). No demo corpus seed. Dual-lane (trusted vs Needs review) unchanged.
 

@@ -1,0 +1,165 @@
+# Build queria-cli binaries and publish to GitHub Releases.
+# Trigger: push tag cli-v* (e.g. cli-v0.1.0) or workflow_dispatch.
+name: Release queria-cli
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/upload (e.g. cli-v0.1.0). Leave empty to use run id asset prefix only (no GitHub Release)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  PACKAGE: queria-cli
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.target }}
+          workspaces: "."
+
+      - name: Build release binary
+        run: cargo build -p queria-cli --release --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/${{ env.PACKAGE }}"
+          test -x "$BIN"
+          STAGE="dist/${{ env.PACKAGE }}-${{ matrix.target }}"
+          mkdir -p "$STAGE"
+          cp "$BIN" "$STAGE/${{ env.PACKAGE }}"
+          chmod +x "$STAGE/${{ env.PACKAGE }}"
+          # Version string for archive metadata (tag if present, else short sha)
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            VER="${GITHUB_REF_NAME#cli-}"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            VER="${{ inputs.tag }}"
+            VER="${VER#cli-}"
+          else
+            VER="0.1.0+${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$VER" >> "$GITHUB_ENV"
+          echo "$VER" > "$STAGE/VERSION"
+          (
+            cd dist
+            tar -czf "${{ env.PACKAGE }}-${{ matrix.target }}.tar.gz" "$(basename "$STAGE")"
+            shasum -a 256 "${{ env.PACKAGE }}-${{ matrix.target }}.tar.gz" > "${{ env.PACKAGE }}-${{ matrix.target }}.tar.gz.sha256"
+          )
+          ls -la dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE }}-${{ matrix.target }}
+          path: |
+            dist/${{ env.PACKAGE }}-${{ matrix.target }}.tar.gz
+            dist/${{ env.PACKAGE }}-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip release when manual run without tag input (artifacts still available from build job).
+    if: github.ref_type == 'tag' || inputs.tag != ''
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List dist
+        run: find dist -type f | sort
+
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "No tag for release" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#cli-}" >> "$GITHUB_OUTPUT"
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: queria-cli ${{ steps.meta.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## queria-cli ${{ steps.meta.outputs.version }}
+
+            Download the archive for your OS/arch, extract, and put `queria-cli` on your `PATH`.
+
+            ### Install (example: macOS Apple Silicon)
+
+            ```bash
+            curl -fsSL -o queria-cli.tar.gz \
+              https://github.com/nandocoeg2/queria-backend/releases/download/${{ steps.meta.outputs.tag }}/queria-cli-aarch64-apple-darwin.tar.gz
+            tar -xzf queria-cli.tar.gz
+            sudo install -m 755 queria-cli-aarch64-apple-darwin/queria-cli /usr/local/bin/queria-cli
+            queria-cli index-here --help
+            ```
+
+            | Asset | Platform |
+            |---|---|
+            | `queria-cli-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon |
+            | `queria-cli-x86_64-apple-darwin.tar.gz` | macOS Intel |
+            | `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Linux arm64 |
+            | `queria-cli-x86_64-unknown-linux-gnu.tar.gz` | Linux x86_64 |
+
+            Requires a **Custom** agent token with `index_local` for `index-here`. See `docs/runbooks/onboarding.md` (Optional knowledge ingest).
+          files: |
+            dist/queria-cli-*.tar.gz
+            dist/queria-cli-*.tar.gz.sha256
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

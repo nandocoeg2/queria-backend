@@ -27,7 +27,7 @@
 | [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) | `REFERENCE` | Improvement backlog: dual-lane scratch + enowx quality/DX (not runtime truth) |
 | [`DOCS_POLICY.md`](./DOCS_POLICY.md) | `CURRENT` | Doc ownership and archive rules |
 | [`runbooks/local-development.md`](./runbooks/local-development.md) | `CURRENT` | Local infrastructure and commands |
-| [`runbooks/onboarding.md`](./runbooks/onboarding.md) | `CURRENT` | **Default 3-step Daily path** (mint → env+MCP → retrieve); optional Admin Git / index-here |
+| [`runbooks/onboarding.md`](./runbooks/onboarding.md) | `CURRENT` | **Default 3-step Daily path**; optional Admin Git / index-here; **queria-cli** install from GitHub Releases |
 | [`runbooks/agent-onboard-prompt.md`](./runbooks/agent-onboard-prompt.md) | `CURRENT` | One-paste client MCP after Daily mint; dialogs for missing fields (direnv optional) |
 | [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) | `PARTIAL` | Hybrid retrieval ops |
 | [`runbooks/deployment.md`](./runbooks/deployment.md) | `CURRENT` | Production deploy |
