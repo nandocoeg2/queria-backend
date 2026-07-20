@@ -32,8 +32,12 @@ pub fn router() -> Router<ApiState> {
         .route("/setup/hook-script", get(hook_script_handler))
 }
 
-/// Prefer reverse-proxy headers so markdown links use the public edge base.
-fn request_base(headers: &HeaderMap) -> String {
+/// Prefer configured public base; else reverse-proxy headers for edge base.
+fn request_base(public_base_url: &str, headers: &HeaderMap) -> String {
+    let configured = public_base_url.trim().trim_end_matches('/');
+    if !configured.is_empty() {
+        return configured.to_owned();
+    }
     let proto = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
@@ -46,8 +50,8 @@ fn request_base(headers: &HeaderMap) -> String {
     format!("{proto}://{host}")
 }
 
-async fn agent_setup_docs(headers: HeaderMap, State(_state): State<ApiState>) -> Response {
-    let base = request_base(&headers);
+async fn agent_setup_docs(headers: HeaderMap, State(state): State<ApiState>) -> Response {
+    let base = request_base(&state.config.public_base_url, &headers);
     let body = agent_setup_markdown(&base);
     (
         StatusCode::OK,
@@ -67,9 +71,10 @@ struct McpSnippetQuery {
 
 async fn mcp_snippet(
     headers: HeaderMap,
+    State(state): State<ApiState>,
     Query(query): Query<McpSnippetQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let base = request_base(&headers);
+    let base = request_base(&state.config.public_base_url, &headers);
     let mcp_url = query
         .mcp_url
         .filter(|s| !s.trim().is_empty())
@@ -126,9 +131,10 @@ struct HooksSnippetQuery {
 
 async fn hooks_snippet(
     headers: HeaderMap,
+    State(state): State<ApiState>,
     Query(query): Query<HooksSnippetQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let base = request_base(&headers);
+    let base = request_base(&state.config.public_base_url, &headers);
     let client = normalize_client(&query.client);
     let snippet = match client.as_str() {
         "droid" | "factory" => droid_hooks_snippet(&base),
@@ -598,6 +604,33 @@ mod tests {
     use queria_core::AppConfig;
     use tower::ServiceExt;
 
+    #[test]
+    fn request_base_prefers_configured_public_base_over_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "evil.example:9999".parse().unwrap());
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        let base = request_base("https://queria.fjulian.id/", &headers);
+        assert_eq!(base, "https://queria.fjulian.id");
+    }
+
+    #[test]
+    fn request_base_strips_trailing_slash() {
+        let headers = HeaderMap::new();
+        assert_eq!(
+            request_base("http://127.0.0.1:17674/", &headers),
+            "http://127.0.0.1:17674"
+        );
+    }
+
+    #[test]
+    fn request_base_empty_config_uses_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "edge.local:17674".parse().unwrap());
+        headers.insert("x-forwarded-proto", "https".parse().unwrap());
+        let base = request_base("   ", &headers);
+        assert_eq!(base, "https://edge.local:17674");
+    }
+
     async fn body_string(response: axum::response::Response) -> String {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -637,7 +670,10 @@ mod tests {
 
     #[tokio::test]
     async fn setup_docs_alias_matches() {
-        let app = build_app(AppConfig::default_local());
+        // Empty public base so Host header fallback is exercised.
+        let mut config = AppConfig::default_local();
+        config.public_base_url = String::new();
+        let app = build_app(config);
         let response = app
             .oneshot(
                 Request::builder()
@@ -651,6 +687,27 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("http://example.test/mcp"));
+    }
+
+    #[tokio::test]
+    async fn setup_docs_prefers_configured_public_base() {
+        let mut config = AppConfig::default_local();
+        config.public_base_url = "https://queria.fjulian.id/".into();
+        let app = build_app(config);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/docs/setup")
+                    .header("host", "evil.example:9999")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("https://queria.fjulian.id/mcp"));
+        assert!(!body.contains("evil.example"));
     }
 
     #[tokio::test]
