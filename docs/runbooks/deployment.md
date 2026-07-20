@@ -71,6 +71,17 @@ git push origin cli-v0.1.1
 # watch: Actions → "Release queria-cli" → https://github.com/nandocoeg2/queria-backend/releases
 ```
 
+If a tag already exists but no Release assets (failed/cancelled run), either re-run the workflow from the Actions UI on that tag, or move the tag:
+
+```bash
+git tag -d cli-v0.1.0
+git push origin :refs/tags/cli-v0.1.0
+git tag -a cli-v0.1.0 -m "queria-cli 0.1.0"
+git push origin cli-v0.1.0
+```
+
+Linux arm64 build is **optional** (`continue-on-error`); macOS + Linux x86_64 are required for a green release.
+
 Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.
 
 ---

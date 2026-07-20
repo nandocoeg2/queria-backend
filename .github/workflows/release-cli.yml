@@ -24,22 +24,24 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # Linux arm runners can be unavailable; do not block the release.
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            archive: tar.gz
+            optional: false
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            archive: tar.gz
+            optional: true
           - os: macos-14
             target: aarch64-apple-darwin
-            archive: tar.gz
+            optional: false
           - os: macos-13
             target: x86_64-apple-darwin
-            archive: tar.gz
+            optional: false
 
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +58,7 @@ jobs:
           workspaces: "."
 
       - name: Build release binary
+        # Host OS matches target (native build). Do not cross-link.
         run: cargo build -p queria-cli --release --target ${{ matrix.target }}
 
       - name: Stage artifact
@@ -68,16 +71,14 @@ jobs:
           mkdir -p "$STAGE"
           cp "$BIN" "$STAGE/${{ env.PACKAGE }}"
           chmod +x "$STAGE/${{ env.PACKAGE }}"
-          # Version string for archive metadata (tag if present, else short sha)
           if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             VER="${GITHUB_REF_NAME#cli-}"
-          elif [[ -n "${{ inputs.tag }}" ]]; then
+          elif [[ -n "${{ inputs.tag || '' }}" ]]; then
             VER="${{ inputs.tag }}"
             VER="${VER#cli-}"
           else
             VER="0.1.0+${GITHUB_SHA::7}"
           fi
-          echo "VERSION=$VER" >> "$GITHUB_ENV"
           echo "$VER" > "$STAGE/VERSION"
           (
             cd dist
@@ -99,14 +100,18 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    # Skip release when manual run without tag input (artifacts still available from build job).
-    if: github.ref_type == 'tag' || inputs.tag != ''
+    # Tag push always; dispatch only when tag input is set.
+    if: >-
+      startsWith(github.ref, 'refs/tags/cli-v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+          # optional linux-arm may be missing
+          pattern: queria-cli-*
 
       - name: List dist
         run: find dist -type f | sort
@@ -125,6 +130,13 @@ jobs:
             echo "No tag for release" >&2
             exit 1
           fi
+          # Require at least one archive (mac + linux x86_64 expected).
+          shopt -s nullglob
+          archives=(dist/queria-cli-*.tar.gz)
+          if [[ ${#archives[@]} -lt 1 ]]; then
+            echo "No queria-cli archives downloaded" >&2
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#cli-}" >> "$GITHUB_OUTPUT"
 
@@ -134,6 +146,7 @@ jobs:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: queria-cli ${{ steps.meta.outputs.version }}
           generate_release_notes: true
+          fail_on_unmatched_files: false
           body: |
             ## queria-cli ${{ steps.meta.outputs.version }}
 
@@ -153,13 +166,14 @@ jobs:
             |---|---|
             | `queria-cli-aarch64-apple-darwin.tar.gz` | macOS Apple Silicon |
             | `queria-cli-x86_64-apple-darwin.tar.gz` | macOS Intel |
-            | `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Linux arm64 |
             | `queria-cli-x86_64-unknown-linux-gnu.tar.gz` | Linux x86_64 |
+            | `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Linux arm64 (when built) |
 
             Requires a **Custom** agent token with `index_local` for `index-here`. See `docs/runbooks/onboarding.md` (Optional knowledge ingest).
+
+            **Note:** push to `main` does **not** publish this CLI; only tags `cli-v*` (or this workflow with a tag input).
           files: |
             dist/queria-cli-*.tar.gz
             dist/queria-cli-*.tar.gz.sha256
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
