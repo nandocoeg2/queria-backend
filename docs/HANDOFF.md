@@ -578,6 +578,10 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 
 ## Residual Gaps (current)
 
+### Runtime / config notes
+
+- Onboarding friction pack: Admin Daily mint + connect panel; dashboard checklist; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec: [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). Code on branch `feat/onboarding-friction-pack` (Tasks 1–6); prod image may lag until redeploy. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md) (Fast first knowledge + Edge public-base note).
+
 | Gap | Priority | Notes |
 |---|---|---|
 | Production empty seed | **Resolved** | `fjulian-me` seeded 2026-07-17; 1213 items / 1229 chunks; golden eval **3/3**. |

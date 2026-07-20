@@ -42,6 +42,7 @@ struct DashboardSummaryResponse {
     project_count: i64,
     source_count: i64,
     pending_approvals_count: i64,
+    agent_token_count: i64,
     chunk_counts: ChunkCountsByEmbeddingState,
     failed_jobs_count: i64,
     latest_ingestion: Option<IngestionJobSummary>,
@@ -105,6 +106,7 @@ impl From<queria_db::admin_queries::DashboardSummaryRecord> for DashboardSummary
             project_count: value.project_count,
             source_count: value.source_count,
             pending_approvals_count: value.pending_approvals_count,
+            agent_token_count: value.agent_token_count,
             chunk_counts: ChunkCountsByEmbeddingState {
                 pending: value.chunks_pending,
                 processing: value.chunks_processing,

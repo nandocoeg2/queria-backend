@@ -1,7 +1,7 @@
 # Onboarding Runbook (Admin → Agent)
 
 > Status: CURRENT  
-> Last verified: 2026-07-19  
+> Last verified: 2026-07-20  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)  
 > Local infra detail: [`local-development.md`](./local-development.md)  
 > Retrieval ops: [`hybrid-retrieval.md`](./hybrid-retrieval.md)
@@ -11,6 +11,7 @@ One path to put a project into Queria, then connect coding agents over MCP.
 ```text
 Admin (session)
   create project → register Git source → ingest/embed → issue agent token → Playground smoke
+  (laptop alt) Custom+index_local → index-here → Needs review promote → Daily token
 Agent (bearer token)
   configure MCP client → list_projects → retrieve_context → index_memory / propose_memory
 ```
@@ -24,8 +25,11 @@ Public path routing is **Caddy** (`queria-edge`). There is **no** `queria-proxy`
 | Local edge | `http://127.0.0.1:17674` | `/admin` | `/mcp` | `/healthz` |
 | Direct local services (no edge) | API `http://127.0.0.1:17671`, MCP `http://127.0.0.1:17672` | Admin SSR often `:4321` | MCP service | API `/healthz` if exposed |
 | Production host (current) | `http://168.110.214.130:17674` | `/admin` | `/mcp` | `/healthz` |
+| Production public hostname | `https://queria.fjulian.id` | `/admin` | `/mcp` | `/healthz` |
 
 Prefer the **edge** URL for agents and browsers so path routing matches production.
+
+Production **must** set `QUERIA_PUBLIC_BASE_URL=https://queria.fjulian.id` so agent-setup markdown and MCP snippet absolute URLs use the public edge (not the internal Host). Local: leave default `http://127.0.0.1:17674` or unset to use headers.
 
 ```bash
 curl -sS -o /tmp/queria-health.out -w "%{http_code}\n" http://127.0.0.1:17674/healthz
@@ -33,6 +37,27 @@ curl -sS -o /tmp/queria-health.out -w "%{http_code}\n" http://127.0.0.1:17674/he
 ```
 
 If health fails, stack is not ready. Fix infra first ([`local-development.md`](./local-development.md) or [`deployment.md`](./deployment.md)). Do not onboard agents against a dead edge.
+
+---
+
+## Fast first knowledge (laptop)
+
+For a laptop clone without Admin Git registration:
+
+1. Create project (Admin → Projects).
+2. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
+3. From the repo (or monorepo root):
+
+   ```bash
+   export QUERIA_AGENT_TOKEN='…'   # from connect panel
+   export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or local edge
+   queria-cli index-here --token-env QUERIA_AGENT_TOKEN
+   ```
+
+4. Admin → Needs review → **Promote** (trusted path).
+5. Mint **Daily** agent for normal retrieve + `index_memory` scratch.
+
+Full contract: [Part E — Local multi-git `index-here`](#part-e--local-multi-git-index-here-needs-review). No demo corpus seed. Dual-lane (trusted vs Needs review) unchanged.
 
 ---
 
