@@ -2,9 +2,26 @@
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { listAgentTokens, listProjects, fetchFromBackend } from '../../lib/api';
 
+const DAILY_TOOLS = [
+  'retrieve_context',
+  'search_knowledge',
+  'propose_memory',
+  'list_projects',
+  'get_source',
+  'index_memory',
+] as const;
+
+const ALL_TOOLS = [
+  ...DAILY_TOOLS,
+  'index_local',
+  'manage_needs_review',
+] as const;
+
 let message = '';
 let isError = false;
 let generatedToken = '';
+let generatedTools: string[] = [];
+let generatedProjectSlugs: string[] = [];
 
 // Handle generate / revoke token POST
 if (Astro.request.method === 'POST') {
@@ -19,15 +36,30 @@ if (Astro.request.method === 'POST') {
         .map((v) => v.toString())
         .filter(Boolean);
       const allowGlobal = data.get('allow_global_knowledge') === 'on';
-      const expiresIn = data.get('expires_in')?.toString() || '7_days';
+      const expiresIn = data.get('expires_in')?.toString() || 'no_expire';
+      const mode = data.get('mode')?.toString() || 'daily';
 
-      if (!name) {
+      let tools: string[];
+      if (mode === 'custom') {
+        tools = data
+          .getAll('tools')
+          .map((v) => v.toString())
+          .filter((t) => (ALL_TOOLS as readonly string[]).includes(t));
+        if (tools.length === 0) {
+          message = 'Select at least one tool for Custom mode.';
+          isError = true;
+        }
+      } else {
+        tools = [...DAILY_TOOLS];
+      }
+
+      if (!isError && !name) {
         message = 'Token name is required.';
         isError = true;
-      } else if (selectedSlugs.length === 0) {
+      } else if (!isError && selectedSlugs.length === 0) {
         message = 'Select at least one project.';
         isError = true;
-      } else {
+      } else if (!isError) {
         const res = await fetchFromBackend('/api/v1/agent-tokens', Astro.request, {
           method: 'POST',
           body: JSON.stringify({
@@ -35,12 +67,17 @@ if (Astro.request.method === 'POST') {
             project_slugs: selectedSlugs,
             allow_global_knowledge: allowGlobal,
             expires_in: expiresIn,
+            tools,
           }),
         });
 
         if (res.ok) {
           const result = await res.json();
           generatedToken = result.token;
+          generatedTools = Array.isArray(result.agent_token?.tools)
+            ? result.agent_token.tools
+            : tools;
+          generatedProjectSlugs = selectedSlugs;
           message = 'Agent token successfully generated.';
         } else {
           const errorRes = await res.json().catch(() => ({}));
@@ -219,18 +256,70 @@ const formatDate = (dateStr?: string) => {
           </div>
 
           <div class="form-group">
+            <label>Mode</label>
+            <div class="radio-list">
+              <label class="checkbox-row single">
+                <input type="radio" name="mode" value="daily" checked />
+                <span class="checkbox-label">Daily agent (recommended)</span>
+              </label>
+              <label class="checkbox-row single">
+                <input type="radio" name="mode" value="custom" id="mode-custom" />
+                <span class="checkbox-label">Custom tools</span>
+              </label>
+            </div>
+            <p class="field-hint">Daily includes retrieve, search, propose, list_projects, get_source, and index_memory. Privileged tools only via Custom.</p>
+          </div>
+
+          <div class="form-group custom-tools" id="custom-tools" hidden>
+            <label>Tools</label>
+            {['retrieve_context','search_knowledge','propose_memory','list_projects','get_source','index_memory'].map((t) => (
+              <label class="checkbox-row">
+                <input type="checkbox" name="tools" value={t} checked />
+                <span class="checkbox-label"><code>{t}</code></span>
+              </label>
+            ))}
+            <label class="checkbox-row">
+              <input type="checkbox" name="tools" value="index_local" />
+              <span class="checkbox-label">
+                <code>index_local</code>
+                <span class="field-hint warn">Uploads land in Needs review only.</span>
+              </span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="tools" value="manage_needs_review" />
+              <span class="checkbox-label">
+                <code>manage_needs_review</code>
+                <span class="field-hint warn">Can promote/reject Needs review items.</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="form-group">
             <label for="expires_in">Expires in</label>
             <select name="expires_in" id="expires_in" class="form-control">
               <option value="1_day">1 day</option>
-              <option value="7_days" selected>7 days</option>
+              <option value="7_days">7 days</option>
               <option value="30_days">30 days</option>
               <option value="1_year">1 year</option>
-              <option value="no_expire">No expiry</option>
+              <option value="no_expire" selected>No expiry</option>
             </select>
           </div>
 
           <button type="submit" class="btn btn-primary btn-block">Generate Token</button>
         </form>
+        <script is:inline>
+          (function () {
+            const custom = document.getElementById('mode-custom');
+            const box = document.getElementById('custom-tools');
+            if (!custom || !box) return;
+            const sync = () => {
+              const isCustom = document.querySelector('input[name="mode"]:checked')?.value === 'custom';
+              box.hidden = !isCustom;
+            };
+            document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener('change', sync));
+            sync();
+          })();
+        </script>
       )}
     </div>
   </div>
@@ -398,6 +487,31 @@ const formatDate = (dateStr?: string) => {
     text-transform: none;
     font-weight: 400;
     letter-spacing: normal;
+  }
+
+  .field-hint.warn {
+    color: var(--color-warning, #f0a000);
+    display: block;
+    margin-top: 0.25rem;
+  }
+
+  .radio-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .checkbox-row input[type="radio"] {
+    margin-top: 2px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  .custom-tools {
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm);
+    background-color: var(--color-surface-container-lowest);
   }
 
   .form-control {
