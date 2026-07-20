@@ -66,6 +66,19 @@ pub fn default_agent_tools() -> Vec<AgentToolPermission> {
     ]
 }
 
+/// Daily agent tool set: propose path + project-scoped scratch `index_memory`.
+/// No privileged tools (`index_local`, `manage_needs_review`).
+pub fn daily_agent_tools() -> Vec<AgentToolPermission> {
+    vec![
+        AgentToolPermission::RetrieveContext,
+        AgentToolPermission::SearchKnowledge,
+        AgentToolPermission::ProposeMemory,
+        AgentToolPermission::ListProjects,
+        AgentToolPermission::GetSource,
+        AgentToolPermission::IndexMemory,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,5 +200,36 @@ mod tests {
                 .permissions
                 .can_call(&AgentToolPermission::ProposeMemory)
         );
+    }
+
+    #[test]
+    fn daily_agent_tools_includes_index_memory_not_privileged() {
+        let tools = daily_agent_tools();
+        assert!(tools.contains(&AgentToolPermission::RetrieveContext));
+        assert!(tools.contains(&AgentToolPermission::SearchKnowledge));
+        assert!(tools.contains(&AgentToolPermission::ProposeMemory));
+        assert!(tools.contains(&AgentToolPermission::ListProjects));
+        assert!(tools.contains(&AgentToolPermission::GetSource));
+        assert!(
+            tools.contains(&AgentToolPermission::IndexMemory),
+            "Daily must grant index_memory"
+        );
+        assert!(
+            !tools.contains(&AgentToolPermission::IndexLocal),
+            "Daily must not grant index_local"
+        );
+        assert!(
+            !tools.contains(&AgentToolPermission::ManageNeedsReview),
+            "Daily must not grant manage_needs_review"
+        );
+    }
+
+    #[test]
+    fn default_and_daily_tools_differ_only_by_index_memory() {
+        let default = default_agent_tools();
+        let daily = daily_agent_tools();
+        assert!(!default.contains(&AgentToolPermission::IndexMemory));
+        assert!(daily.contains(&AgentToolPermission::IndexMemory));
+        assert_eq!(default.len() + 1, daily.len());
     }
 }
