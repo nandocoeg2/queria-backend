@@ -56,6 +56,10 @@ pub struct DashboardSummaryRecord {
     pub project_count: i64,
     pub source_count: i64,
     pub pending_approvals_count: i64,
+    /// Active agent tokens for orgs the user belongs to (`revoked_at is null`).
+    /// Intentionally excludes revoked tokens so checklist step 3 is green only when
+    /// a usable token exists (list_agent_tokens also shows revoked rows).
+    pub agent_token_count: i64,
     pub chunks_pending: i64,
     pub chunks_processing: i64,
     pub chunks_ready: i64,
@@ -351,7 +355,8 @@ impl PgAdminQueriesRepository {
                (select count(*) from project p join org_membership m on m.organization_id = p.organization_id where m.user_id = $1) as project_count,
                (select count(*) from source_document sd join org_membership m on m.organization_id = sd.organization_id where m.user_id = $1 and sd.source_root_id is null and sd.is_active) as source_count,
                (select count(*) from approval a join knowledge_item ki on ki.id = a.knowledge_item_id join org_membership m on m.organization_id = ki.organization_id where m.user_id = $1 and a.status = 'pending') as pending_approvals,
-               (select count(*) from ingestion_job j join org_membership m on m.organization_id = j.organization_id where m.user_id = $1 and j.status = 'failed' and j.created_at >= now() - interval '7 days') as failed_jobs"
+               (select count(*) from ingestion_job j join org_membership m on m.organization_id = j.organization_id where m.user_id = $1 and j.status = 'failed' and j.created_at >= now() - interval '7 days') as failed_jobs,
+               (select count(*) from agent_token at join org_membership m on m.organization_id = at.organization_id where m.user_id = $1 and at.revoked_at is null) as agent_token_count"
         )
         .bind(user_id)
         .fetch_one(&self.pool)
@@ -414,6 +419,9 @@ impl PgAdminQueriesRepository {
                 .map_err(to_infrastructure_error)?,
             pending_approvals_count: stats
                 .try_get("pending_approvals")
+                .map_err(to_infrastructure_error)?,
+            agent_token_count: stats
+                .try_get("agent_token_count")
                 .map_err(to_infrastructure_error)?,
             failed_jobs_count: stats
                 .try_get("failed_jobs")

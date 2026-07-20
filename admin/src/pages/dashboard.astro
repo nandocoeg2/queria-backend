@@ -11,11 +11,39 @@ const {
   project_count,
   source_count,
   pending_approvals_count,
+  agent_token_count = 0,
   chunk_counts,
   failed_jobs_count,
   latest_ingestion,
   latest_evaluation,
 } = summary;
+
+const readyChunks = chunk_counts?.ready ?? 0;
+const checklist = [
+  {
+    id: 'project',
+    label: 'Create a project',
+    done: project_count > 0,
+    href: '/admin/projects',
+    cta: 'Projects',
+  },
+  {
+    id: 'ready',
+    label: 'Have ready knowledge chunks',
+    done: readyChunks > 0,
+    href: '/admin/sources',
+    cta: 'Sources / jobs',
+    note: 'Register a Git source and embed, or index-here + promote Needs review first.',
+  },
+  {
+    id: 'token',
+    label: 'Mint an agent token',
+    done: (agent_token_count ?? 0) > 0,
+    href: '/admin/tokens',
+    cta: 'Tokens',
+  },
+];
+const checklistComplete = checklist.every((s) => s.done);
 
 // Format dates nicely
 const formatDate = (dateStr?: string) => {
@@ -28,6 +56,29 @@ const formatDate = (dateStr?: string) => {
 ---
 
 <AdminLayout title="Console Dashboard" activeTab="dashboard">
+  {!checklistComplete && (
+    <div class="card checklist-card">
+      <div class="panel-header">
+        <h2>Get ready for agents</h2>
+        <p class="muted-text">Finish these steps before your first retrieve_context.</p>
+      </div>
+      <ol class="ready-checklist">
+        {checklist.map((step, i) => (
+          <li class={step.done ? 'done' : 'todo'}>
+            <span class="step-mark">{step.done ? '✓' : String(i + 1)}</span>
+            <span class="step-body">
+              <strong>{step.label}</strong>
+              {step.note && !step.done && <span class="field-hint">{step.note}</span>}
+            </span>
+            {!step.done && (
+              <a class="btn btn-secondary btn-sm" href={step.href}>{step.cta} →</a>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )}
+
   <div class="dashboard-grid">
     <!-- Stat Card: Projects -->
     <div class="card stat-card">
@@ -172,6 +223,58 @@ const formatDate = (dateStr?: string) => {
 </AdminLayout>
 
 <style>
+  .checklist-card {
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-xl);
+  }
+
+  .ready-checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .ready-checklist li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ready-checklist li.done {
+    opacity: 0.65;
+  }
+
+  .step-mark {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #222233;
+    font-size: 0.85rem;
+  }
+
+  .ready-checklist li.done .step-mark {
+    background: #582CFF;
+    color: #fff;
+  }
+
+  .step-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .field-hint {
+    font-size: 12px;
+    color: var(--color-on-surface-variant);
+    margin-top: 0.125rem;
+  }
+
   .dashboard-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
