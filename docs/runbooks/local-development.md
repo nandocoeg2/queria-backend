@@ -1,7 +1,7 @@
 # Local Development Runbook
 
 > Status: CURRENT for implemented local backend workflows.
-> Last verified: 2026-07-18.
+> Last verified: 2026-07-20.
 > Known gaps and current counts: [`../HANDOFF.md`](../HANDOFF.md).
 > Operator UI path (project / Git source / token): [`onboarding.md`](./onboarding.md) **Part A**.
 
@@ -31,10 +31,16 @@ After the stack is up (API/worker/Admin as needed), use **[onboarding Part A](./
 
 ## First Project
 
-The seeded first project is:
+First-run setup (`/admin/setup`) creates **org + admin membership only**. It does **not** create a project.
 
-- project slug: `fjulian-me`
-- source path: `/Users/fernandojulian/project/fjulian/fjulian.me`
+Operators create a project via Admin `/admin/projects` (see [onboarding Part A](./onboarding.md)).
+
+In this repo’s CLI samples and golden evals, `fjulian-me` is a common **example / local workspace project slug** — not auto-seeded by the wizard. Example operator values for that project after you create it:
+
+- project slug: `fjulian-me` (example; use your own slug if different)
+- source path (example local git path for that project): `/Users/fernandojulian/project/fjulian/fjulian.me`
+
+Commands below assume a project with slug `fjulian-me` already exists (create via Admin first, or substitute your slug).
 
 Prefer Admin `/admin/sources` (Register Git Source + Trigger Ingest) after local login. Or run Git ingestion via worker if the source registry/chunks need a CLI refresh:
 

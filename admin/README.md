@@ -54,6 +54,7 @@ npx playwright test
 
 ## Notes
 
+- First-run `/admin/setup` creates **org + admin only** (no project seed). Create projects at `/admin/projects`.
 - **Sources** (`/admin/sources`): Register Git Source form (uri, title, branch, optional path) + Trigger Ingest per row.
 - **Agent Tokens** (`/admin/tokens`): mint requires **name** + at least one **project_slugs**.
 - **Approvals**: approve/reject use native confirm dialogs and SSR POST handlers.

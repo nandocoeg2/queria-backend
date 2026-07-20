@@ -48,6 +48,8 @@ Use a human session cookie via Admin UI (or authenticated Admin HTTP). Agents ne
 2. Complete first-run with the setup token from env (`QUERIA_SETUP_TOKEN` when required).
 3. Log in as admin (setup creates one org + membership; login binds that org as session home).
 
+Setup does **not** create a project; continue with **A2** (Create project).
+
 Production org/user for this deployment is already bootstrapped (see HANDOFF). Skip setup if login works.
 
 ### A2. Create project
