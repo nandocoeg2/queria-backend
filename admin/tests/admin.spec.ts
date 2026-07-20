@@ -39,14 +39,12 @@ test.describe('Admin UI Authentication & Navigation', () => {
     const adminNameInput = page.locator('input[name="admin_name"]');
     const adminEmailInput = page.locator('input[name="admin_email"]');
     const adminPasswordInput = page.locator('input[name="admin_password"]');
-    const seedCheckbox = page.locator('input[name="seed_project"]');
     
     await expect(orgNameInput).toBeVisible();
     await expect(orgSlugInput).toBeVisible();
     await expect(adminNameInput).toBeVisible();
     await expect(adminEmailInput).toBeVisible();
     await expect(adminPasswordInput).toBeVisible();
-    await expect(seedCheckbox).toBeChecked();
   });
 
   test('approvals page gates unauth and document confirms dialog chrome exists in markup when sessionless', async ({ page }) => {

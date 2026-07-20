@@ -12,7 +12,6 @@ if (Astro.request.method === 'POST') {
     const adminName = data.get('admin_name');
     const adminEmail = data.get('admin_email');
     const adminPassword = data.get('admin_password');
-    const seedProject = data.get('seed_project') === 'true';
 
     const backendUrl = import.meta.env.QUERIA_API_URL || process.env.QUERIA_API_URL || 'http://localhost:17671';
     const setupToken = import.meta.env.QUERIA_SETUP_TOKEN || process.env.QUERIA_SETUP_TOKEN || 'queria-local-development-setup-token-2026';
@@ -29,7 +28,6 @@ if (Astro.request.method === 'POST') {
         admin_name: adminName,
         admin_email: adminEmail,
         admin_password: adminPassword,
-        seed_project: seedProject,
       }),
     });
 
@@ -95,7 +93,7 @@ if (Astro.request.method === 'POST') {
               id="organization_name" 
               name="organization_name" 
               required 
-              placeholder="Fernando Julian Organization" 
+              placeholder="Acme Engineering" 
               class="form-control"
             />
           </div>
@@ -107,7 +105,7 @@ if (Astro.request.method === 'POST') {
               id="organization_slug" 
               name="organization_slug" 
               required 
-              placeholder="fjulian" 
+              placeholder="acme" 
               class="form-control"
             />
           </div>
@@ -123,7 +121,7 @@ if (Astro.request.method === 'POST') {
               id="admin_name" 
               name="admin_name" 
               required 
-              placeholder="Nando Julian" 
+              placeholder="Admin User" 
               class="form-control"
             />
           </div>
@@ -135,7 +133,7 @@ if (Astro.request.method === 'POST') {
               id="admin_email" 
               name="admin_email" 
               required 
-              placeholder="nando@fjulian.id" 
+              placeholder="admin@example.com" 
               class="form-control"
             />
           </div>
@@ -153,22 +151,8 @@ if (Astro.request.method === 'POST') {
             />
           </div>
 
-          <div class="section-title">
-            <h3>3. Project Seeding</h3>
-          </div>
-
-          <div class="form-group checkbox-group">
-            <input 
-              type="checkbox" 
-              id="seed_project" 
-              name="seed_project" 
-              value="true" 
-              checked
-            />
-            <label for="seed_project">Seed default project <code>fjulian-me</code></label>
-          </div>
-
           <button type="submit" class="btn btn-primary btn-block">Complete System Setup</button>
+          <p class="setup-next-hint">Next: create a project under Projects, then register a source or mint an agent token.</p>
         </form>
       </div>
     </div>
@@ -280,21 +264,6 @@ if (Astro.request.method === 'POST') {
     color: var(--color-on-surface-variant);
   }
 
-  .checkbox-group {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-xl);
-  }
-
-  .checkbox-group label {
-    text-transform: none;
-    letter-spacing: normal;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: var(--font-family-body);
-  }
-
   .form-control {
     width: 100%;
     padding: 0.5rem var(--spacing-md);
@@ -318,5 +287,14 @@ if (Astro.request.method === 'POST') {
     padding: 0.75rem var(--spacing-xl);
     font-size: 14px;
     margin-top: var(--spacing-md);
+  }
+
+  .setup-next-hint {
+    margin-top: var(--spacing-md);
+    font-size: 12px;
+    font-family: var(--font-family-caption);
+    color: var(--color-on-surface-variant);
+    text-align: center;
+    line-height: 1.4;
   }
 </style>
