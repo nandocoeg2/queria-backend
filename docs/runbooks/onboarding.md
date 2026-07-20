@@ -6,15 +6,37 @@
 > Local infra detail: [`local-development.md`](./local-development.md)  
 > Retrieval ops: [`hybrid-retrieval.md`](./hybrid-retrieval.md)
 
-One path to put a project into Queria, then connect coding agents over MCP.
+Default path: mint a **Daily** agent token, connect the client once, then retrieve.
+Knowledge ingest (Admin Git or laptop `index-here`) is optional and separate.
 
 ```text
-Admin (session)
-  create project → register Git source → ingest/embed → issue agent token → Playground smoke
-  (laptop alt) Custom+index_local → index-here → Needs review promote → Daily token
-Agent (bearer token)
-  configure MCP client → list_projects → retrieve_context → index_memory / propose_memory
+Default (Daily agent)
+  Admin: create project → mint Daily token → copy connect panel
+  User (once): env + MCP
+  Work: list_projects → retrieve_context → index_memory / propose_memory
+
+Optional knowledge
+  Admin Git register + ingest/embed
+  or Custom + index_local → queria-cli index-here → Promote Needs review
 ```
+
+## Default: 3 steps for Daily users
+
+1. **Admin mints Daily** — Admin → Tokens → **Daily agent (recommended)** → select project(s) → generate. Copy values from the once-only **Connect this agent** panel (raw token + env export). Daily includes `list_projects`, `retrieve_context`, `search_knowledge`, `propose_memory`, `get_source`, `index_memory`. It does **not** include `index_local` or `manage_needs_review`.
+2. **User sets env once + MCP** — On the laptop (session or shell profile / secrets store; no required per-repo file):
+
+   ```bash
+   export QUERIA_AGENT_TOKEN='qria_…'          # from connect panel; never commit
+   export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or local edge
+   export QUERIA_MCP_URL="${QUERIA_EDGE_URL}/mcp"
+   ```
+
+   Install HTTP MCP with Bearer from that env (`GET $QUERIA_EDGE_URL/api/v1/setup/mcp-snippet?client=…`). Optional: `QUERIA_PROJECT_SLUG` only if auto-retrieve **hooks** need an active project.
+3. **Work** — Agent: `list_projects` → `retrieve_context(project_id, query)`. Optional: `index_memory` (scratch) / `propose_memory` (approval).
+
+**Connect works empty; useful when chunks are ready.** MCP + `list_projects` can succeed with zero embeddings. Useful answers need trusted knowledge (Admin Git ingest/embed, or index-here then Promote). Empty retrieve is not a client-setup failure.
+
+Client one-paste (dialogs for missing fields): [`agent-onboard-prompt.md`](./agent-onboard-prompt.md). Live client doc: `GET {EDGE}/api/v1/docs/agent-setup`.
 
 ## Edge URLs (do not use stale ports)
 
@@ -22,40 +44,49 @@ Public path routing is **Caddy** (`queria-edge`). There is **no** `queria-proxy`
 
 | Environment | Base URL | Admin | MCP | Health |
 |---|---|---|---|---|
+| **Production (primary)** | `https://queria.fjulian.id` | `/admin` | `/mcp` | `/healthz` |
 | Local edge | `http://127.0.0.1:17674` | `/admin` | `/mcp` | `/healthz` |
 | Direct local services (no edge) | API `http://127.0.0.1:17671`, MCP `http://127.0.0.1:17672` | Admin SSR often `:4321` | MCP service | API `/healthz` if exposed |
-| Production host (current) | `http://168.110.214.130:17674` | `/admin` | `/mcp` | `/healthz` |
-| Production public hostname | `https://queria.fjulian.id` | `/admin` | `/mcp` | `/healthz` |
+| Production host IP (fallback) | `http://168.110.214.130:17674` | `/admin` | `/mcp` | `/healthz` |
 
-Prefer the **edge** URL for agents and browsers so path routing matches production.
+Prefer the **public hostname** for agents and browsers so path routing and TLS match production.
 
 Production **must** set `QUERIA_PUBLIC_BASE_URL=https://queria.fjulian.id` so agent-setup markdown and MCP snippet absolute URLs use the public edge (not the internal Host). Local: leave default `http://127.0.0.1:17674` or unset to use headers.
 
 ```bash
-curl -sS -o /tmp/queria-health.out -w "%{http_code}\n" http://127.0.0.1:17674/healthz
-# expect 200 and body OK
+curl -sS -o /tmp/queria-health.out -w "%{http_code}\n" https://queria.fjulian.id/healthz
+# expect 200 and body OK (local: http://127.0.0.1:17674/healthz)
 ```
 
 If health fails, stack is not ready. Fix infra first ([`local-development.md`](./local-development.md) or [`deployment.md`](./deployment.md)). Do not onboard agents against a dead edge.
 
 ---
 
-## Fast first knowledge (laptop)
+## Optional knowledge ingest
+
+Knowledge is **not** part of the Daily 3-step connect path. Choose one (or both later):
+
+| Path | Who | When |
+|---|---|---|
+| **Admin Git** | Operator with Admin session | Server can clone the remote (allowlist + SSH if private) — Part A3 |
+| **Laptop index-here** | Dev on the machine with the git clone; token with **`index_local`** (Custom mint) | Self-hosted / unreachable remotes; land in Needs review until Promote — Part E |
+
+### Fast first knowledge (laptop)
 
 For a laptop clone without Admin Git registration:
 
-1. Create project (Admin → Projects).
+1. Create project (Admin → Projects) if missing.
 2. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
 3. From the repo (or monorepo root):
 
    ```bash
-   export QUERIA_AGENT_TOKEN='…'   # from connect panel
+   export QUERIA_AGENT_TOKEN='…'   # Custom token with index_local
    export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or local edge
    queria-cli index-here --token-env QUERIA_AGENT_TOKEN
    ```
 
 4. Admin → Needs review → **Promote** (trusted path).
-5. Mint **Daily** agent for normal retrieve + `index_memory` scratch.
+5. Use a **Daily** token for normal retrieve + `index_memory` scratch (do not give Daily users `index_local`).
 
 Full contract: [Part E — Local multi-git `index-here`](#part-e--local-multi-git-index-here-needs-review). No demo corpus seed. Dual-lane (trusted vs Needs review) unchanged.
 
@@ -150,11 +181,16 @@ Ready counts in HANDOFF / dashboard. Retrieval quality needs non-zero **ready** 
 
 ### A5. Issue an agent token
 
-Tokens are bearer credentials for MCP (`Authorization: Bearer …`). Raw token is shown **once**.
+Tokens are bearer credentials for MCP (`Authorization: Bearer …`). Raw token is shown **once** in the connect panel.
 
-**Prefer Admin UI:** `{BASE}/admin/tokens` → create form requires **name** + **project_slugs**. Optional: `allow_global_knowledge`, `expires_in`. List/revoke on the same page.
+**Prefer Admin UI:** `{BASE}/admin/tokens` → **Daily agent (recommended)** for normal retrieve/scratch, or **Custom** for privileged tools. Form requires **name** + **project_slugs**. Optional: `allow_global_knowledge`, `expires_in` (default no expiry). After mint, copy **token + env export** from **Connect this agent** (once-only).
 
-**API** when you need advanced tool lists or automation:
+| Mode | Tools | Use |
+|---|---|---|
+| **Daily** (default) | `list_projects`, `retrieve_context`, `search_knowledge`, `propose_memory`, `get_source`, `index_memory` | Everyday agent work |
+| **Custom** | Checkbox list; `index_local` / `manage_needs_review` default off with warnings | Laptop `index-here` or Needs-review promote via MCP |
+
+**API** when you need automation (Admin UI always POSTs explicit `tools`; omit-`tools` on API stays propose-only without `index_memory`):
 
 ```bash
 curl -sS -X POST "$API/api/v1/agent-tokens" \
@@ -172,7 +208,7 @@ curl -sS -X POST "$API/api/v1/agent-tokens" \
       "list_projects",
       "get_source"
     ],
-    "expires_in": "30_days"
+    "expires_in": "no_expire"
   }'
 ```
 
@@ -180,9 +216,10 @@ Response includes `token` (raw, e.g. `qria_…`) and metadata. Store it only in 
 
 Notes:
 
-- Default tools (if `tools` omitted) are **propose-only** write path: no `index_memory`. Include `index_memory` explicitly for scratch DX (UI may not expose full tool list; use API for custom grants).
-- `project_slugs` bound the token; agents only see those projects in `list_projects`.
+- API omit `tools` → **propose-only** (no `index_memory`). Daily path = Admin Daily mode or explicit tools list including `index_memory`.
+- `project_slugs` bound the token; agents only see those projects in `list_projects`. Multi-slug tokens are fine; pick project via `list_projects` (no required per-repo env).
 - `allow_global_knowledge: true` is required for retrieve with global trusted knowledge.
+- Full-repo ingest is **not** a Daily grant: use Custom + `index_local` or Admin Git (Optional knowledge ingest above).
 
 ### A6. Operator smoke (before agents)
 
@@ -205,18 +242,21 @@ cargo run -p queria-cli -- eval run --project fjulian-me
 
 ## Part B — Agent / MCP client
 
-Prerequisite: Part A complete for at least one project with embeddings (or accept empty retrieve until backfill finishes).
+Same as **Default: 3 steps** above. Prerequisite: a Daily (or equivalent) token exists. Project may have zero embeddings yet — connect still works; answers improve when chunks are ready.
 
 ### B1. Export the token
 
+Prefer the connect panel **Copy env** after mint. Manual equivalent:
+
 ```bash
-export QUERIA_AGENT_TOKEN='qria_…'   # paste once-from-create value
-export QUERIA_MCP_URL='http://127.0.0.1:17674/mcp'   # local edge
-# production example:
-# export QUERIA_MCP_URL='http://168.110.214.130:17674/mcp'
+export QUERIA_AGENT_TOKEN='qria_…'          # paste once-from-create value; never commit
+export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or http://127.0.0.1:17674
+export QUERIA_MCP_URL="${QUERIA_EDGE_URL}/mcp"
+# optional, hooks only:
+# export QUERIA_PROJECT_SLUG='my-project'
 ```
 
-Never commit the raw token. Prefer env injection over hardcoding in project configs.
+User-level session or shell profile is enough. Do **not** require a per-repo env file for Daily retrieve.
 
 ### B2. Configure clients
 

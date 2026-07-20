@@ -1,7 +1,7 @@
 # queria-backend
 
 > Status: CURRENT - core product live; residual ops acceptance.
-> Last verified: 2026-07-19.
+> Last verified: 2026-07-20.
 > Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Product: [`docs/PRODUCT.md`](docs/PRODUCT.md). Cuts: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md). Backlog: [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
 
 Queria backend workspace for centralized team and agent knowledge.
@@ -22,8 +22,8 @@ Short pointers:
 |---|---|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Canonical current state |
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract |
-| [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) | Admin → agent onboard |
-| [`docs/runbooks/agent-onboard-prompt.md`](docs/runbooks/agent-onboard-prompt.md) | One-paste agent client setup (dialogs) |
+| [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) | Default 3-step Daily onboard; optional Git / index-here |
+| [`docs/runbooks/agent-onboard-prompt.md`](docs/runbooks/agent-onboard-prompt.md) | One-paste client setup after Daily mint (dialogs) |
 | [`docs/runbooks/`](docs/runbooks/) | Local, deploy, retrieval, backup, rollback |
 | [`docs/README.md`](docs/README.md) | Full docs index |
 
@@ -57,37 +57,29 @@ Ports, migrate, embeddings pacing: [`docs/runbooks/local-development.md`](docs/r
 
 ## Agent client: keys for one workspace, many repos
 
-Retrieve is always **per `project_id`**. Scratch never crosses projects. Full Admin path: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md). One-paste client setup: [`docs/runbooks/agent-onboard-prompt.md`](docs/runbooks/agent-onboard-prompt.md).
+Retrieve is always **per `project_id`**. Scratch never crosses projects. **Default path:** [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) (3-step Daily). One-paste client: [`docs/runbooks/agent-onboard-prompt.md`](docs/runbooks/agent-onboard-prompt.md).
 
 ### Default setup (recommended)
 
-1. **Admin** mints **one** agent token with all project slugs in that workspace (`project_slugs: ["repo-a", "repo-b", …]`) and tools needed (`list_projects`, `retrieve_context`, `search_knowledge`, `index_memory`, …). Copy `qria_…` once.
-2. **User-level shell** (once):
+1. **Admin** mints **Daily** token with project slug(s) (`project_slugs: ["repo-a", "repo-b", …]`). Copy env from connect panel once.
+2. **User-level shell** (once — session or profile; no required per-repo file):
 
 ```bash
 export QUERIA_AGENT_TOKEN='qria_…'          # never commit
-export QUERIA_EDGE_URL='http://127.0.0.1:17674'   # or https://queria.fjulian.id
+export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or http://127.0.0.1:17674
 export QUERIA_MCP_URL="${QUERIA_EDGE_URL}/mcp"
 ```
 
 3. **MCP client** once: HTTP MCP at `$QUERIA_MCP_URL` with Bearer from env (`GET $QUERIA_EDGE_URL/api/v1/setup/mcp-snippet?client=…`).
-4. **Per-repo active project** (hooks). Prefer [direnv](https://direnv.net/):
+4. **Work:** `list_projects` → `retrieve_context(project_id, …)`. Optional `AGENTS.md` from `GET …/setup/agents-block?project_slug=…`.
 
-```bash
-# repo-a/.envrc
-export QUERIA_PROJECT_SLUG=repo-a
-
-# repo-b/.envrc
-export QUERIA_PROJECT_SLUG=repo-b
-```
-
-Optional: `QUERIA_PROJECT_ID=<uuid>`. Merge `AGENTS.md` from `GET …/setup/agents-block?project_slug=…`.
+**Optional — hooks only:** if auto-retrieve hooks need an active project in a multi-root workspace, set `QUERIA_PROJECT_SLUG` (or `QUERIA_PROJECT_ID`) per repo (e.g. direnv). Not required for Daily MCP retrieve.
 
 | Variable | Where | Purpose |
 |---|---|---|
 | `QUERIA_AGENT_TOKEN` | User shell / secrets | Auth MCP + agent HTTP + hooks |
 | `QUERIA_EDGE_URL` / `QUERIA_MCP_URL` | User shell | Edge base and MCP URL |
-| `QUERIA_PROJECT_SLUG` or `QUERIA_PROJECT_ID` | **Per repo** | Active project for hooks / default |
+| `QUERIA_PROJECT_SLUG` or `QUERIA_PROJECT_ID` | **Optional** (hooks) | Active project for auto-retrieve hooks |
 
 ### Agent loop (every repo)
 
@@ -98,20 +90,22 @@ retrieve_context(project_id=THIS, q)
 index_memory / propose_memory only on THIS project_id
 ```
 
-Do **not** set one global `QUERIA_PROJECT_SLUG` for all repos when hooks are on. Do **not** expect one retrieve to merge every repo.
+Connect works with empty retrieve; useful answers need ready chunks. Do **not** expect one retrieve to merge every repo. Do **not** set one global slug for all folders when hooks are on.
 
 ### Alternatives
 
 | Pattern | When |
 |---|---|
-| One multi-slug token + per-repo slug (above) | Daily multi-repo workspace |
-| Token per project (direnv switches both) | Least privilege |
-| Token only, no slug env | Pure MCP that always `list_projects` first; weak for hooks |
+| One multi-slug Daily token + `list_projects` | Default multi-repo |
+| + per-repo slug / direnv | Auto-retrieve hooks multi-root |
+| Token per project | Least privilege |
+| Custom + `index_local` | Laptop `index-here` only (not Daily) |
 
 ### What not to do
 
 - Commit `qria_…`
 - Write scratch for project B while working in repo A
+- Require direnv for plain Daily retrieve
 - Rely on “first project on the token” when multiple slugs are granted and hooks are enabled
 
 ## Git ingestion

@@ -170,8 +170,8 @@ fn agent_setup_markdown(base: &str) -> String {
     format!(
         r#"# QuerIa agent setup
 
-Connect a coding agent to the centralized QuerIa knowledge hub (MCP over HTTP).
-Do the steps in order. Skip steps the human already finished (token issued, MCP already configured).
+Default path: **Daily agent** — mint once, set 2–3 env vars on the laptop, install MCP, then `list_projects` → `retrieve_context`.
+Skip steps the human already finished.
 
 **Server base (this request):** {base}
 
@@ -181,31 +181,37 @@ Public edge (typical):
 - API: `{base}/api/v1/...`
 - Health: `{base}/healthz`
 
-Do **not** use stale port `67671` or service name `queria-proxy`. Edge is Caddy on host port **17674** in local/prod compose.
+Do **not** use stale port `67671` or service name `queria-proxy`. Prefer this public base; local compose edge host port is **17674**.
 
 ---
 
 ## Prerequisites (human / operator)
 
 1. QuerIa stack is up (`GET {base}/healthz` → 200).
-2. A **project** exists (Admin `/admin/projects`) and knowledge is indexed or embeddings are in progress.
-3. An **agent token** was created (`POST {base}/api/v1/agent-tokens` with session cookie). Copy the raw token once (`qria_…`).
-   - Include tools you need. Default write path is propose-only; add `index_memory` for scratch.
-   - Scope `project_slugs` to the projects this agent may access.
+2. A **project** exists (Admin `/admin/projects`). Knowledge may still be empty — connect still works.
+3. An **agent token** was minted. Prefer Admin **Tokens → Daily agent** (connect panel copies env once).
+   - Daily tools: `list_projects`, `retrieve_context`, `search_knowledge`, `propose_memory`, `get_source`, `index_memory`.
+   - Daily does **not** include `index_local` or `manage_needs_review` (use **Custom** only when needed).
+   - Scope `project_slugs` to the projects this agent may access (multi-slug OK).
    - Set `allow_global_knowledge: true` if global trusted knowledge should be retrievable.
+   - API omit-`tools` is propose-only (no `index_memory`); Admin Daily always POSTs the Daily tool list.
 
 The agent **cannot** mint tokens. Ask the operator for `QUERIA_AGENT_TOKEN` if missing.
 
+**Useful answers need ready chunks** (Admin Git ingest/embed, or laptop `index-here` + Promote). Empty retrieve is fine for client connectivity.
+
 ---
 
-## 1. Export token (agent machine)
+## 1. Export env (agent machine, once)
 
 ```bash
-export QUERIA_AGENT_TOKEN='qria_…'   # from operator
+export QUERIA_AGENT_TOKEN='qria_…'   # from Daily connect panel; never commit
+export QUERIA_EDGE_URL='{base}'
 export QUERIA_MCP_URL='{base}/mcp'
 ```
 
-Never commit the raw token.
+User-level session or shell profile is enough. Do **not** require a per-repo env file for Daily retrieve.
+Optional: `QUERIA_PROJECT_SLUG` or `QUERIA_PROJECT_ID` **only if** auto-retrieve hooks need an active project.
 
 ---
 
@@ -259,6 +265,8 @@ Use `~/.cursor/mcp.json` or project `.cursor/mcp.json` with url + headers Author
 
 ## 3. Merge project AGENTS.md (agent machine)
 
+Pick a project from `list_projects` (after MCP works), then:
+
 ```http
 GET {base}/api/v1/setup/agents-block?project_slug=<SLUG>&project_id=<OPTIONAL_UUID>
 ```
@@ -272,9 +280,11 @@ Do not delete the rest of the file.
 
 ---
 
-## 4. Install auto-retrieve hooks (Droid / Claude)
+## 4. Install auto-retrieve hooks (optional; Droid / Claude)
 
-Hooks inject condensed QuerIa context on **SessionStart** and throttled **UserPromptSubmit** (hybrid T4+R6+H1). Fail-open: edge down does not block work. Codex: AGENTS.md only (no native hooks in v1).
+Hooks inject condensed QuerIa context on **SessionStart** and throttled **UserPromptSubmit** (hybrid T4+R6+H1). Fail-open: edge down does not block work. Codex: AGENTS.md only (no native hooks in v1). **Skip hooks for a minimal Daily setup.**
+
+When enabling hooks, also set an active project:
 
 ```bash
 export QUERIA_AGENT_TOKEN='qria_…'
@@ -309,7 +319,9 @@ After MCP connects:
 1. `list_projects` — only projects allowed by the token.
 2. Note each project's **UUID** (`project_id` for retrieve/search/index_memory).
 3. `retrieve_context` with `project_id` + a real query.
-4. Optional: `index_memory` (scratch) if the token includes that tool.
+   - Hits: knowledge ready.
+   - Empty: embeddings pending or no knowledge yet — **still connected** (not a client failure).
+4. Optional: `index_memory` (scratch) if the token includes that tool (Daily does).
 5. Optional: `propose_memory` for team truth (needs Admin approval).
 6. Optional: start a new Droid/Claude session and confirm `## QuerIa context (auto)` appears when hooks are installed.
 
@@ -320,13 +332,16 @@ Operator Playground: `{base}/admin/playground`.
 ## Workflow contract
 
 ```text
-SessionStart / UserPromptSubmit hooks: auto HTTP retrieve inject (fail-open, throttled)
-Before deep work: MCP retrieve_context(project_id, query)   # include_scratch default true
-After (fast): index_memory(...)                   # scratch, project only
-After (team): propose_memory(...)                 # proposed → human approve → trusted
+Default Daily:
+  list_projects → retrieve_context(project_id, query)
+  after (fast): index_memory(...)      # scratch, project only
+  after (team): propose_memory(...)    # proposed → human approve → trusted
+
+Optional hooks:
+  SessionStart / UserPromptSubmit: auto HTTP retrieve inject (fail-open, throttled)
 ```
 
-Trusted code knowledge still enters via Git ingestion + approval, not agent overwrite.
+Trusted code knowledge still enters via **Admin Git** ingestion or laptop **`index-here`** (Custom + `index_local`) then **Promote** — not via Daily overwrite.
 
 ---
 
@@ -343,7 +358,7 @@ Trusted code knowledge still enters via Git ingestion + approval, not agent over
 | POST | `{base}/api/v1/agent/retrieve-context` | Bearer agent token |
 | GET | `{base}/api/v1/agent/projects` | Bearer agent token |
 
-Creating projects, sources, and agent tokens remains **session Admin HTTP** (see full onboarding runbook).
+Creating projects, sources, and agent tokens remains **session Admin HTTP** (see onboarding runbook: default 3-step Daily).
 
 ---
 
@@ -351,11 +366,11 @@ Creating projects, sources, and agent tokens remains **session Admin HTTP** (see
 
 | Symptom | Check |
 |---|---|
-| Edge not 200 | Stack / wrong port |
+| Edge not 200 | Stack / wrong host or port |
 | MCP 401 | Token env, `Bearer ` prefix |
-| Empty retrieve | Embeddings not ready; wrong project UUID |
-| Missing `index_memory` | Token tools list |
-| Hook silent | `jq`/`curl` present; QUERIA_EDGE_URL + token; `droid --debug` / Claude debug log |
+| Empty retrieve | No chunks yet or wrong project UUID — connect can still be OK |
+| Missing `index_memory` | Not a Daily token; remint Daily or add tool |
+| Hook silent | `jq`/`curl` present; QUERIA_EDGE_URL + token + project slug/id; `droid --debug` / Claude debug log |
 "#,
         base = base
     )

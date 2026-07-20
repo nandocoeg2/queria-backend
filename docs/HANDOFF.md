@@ -580,7 +580,7 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 
 ### Runtime / config notes
 
-- Onboarding friction pack: Admin Daily mint + connect panel; dashboard checklist; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec: [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). Code on branch `feat/onboarding-friction-pack` (Tasks 1–6); prod image may lag until redeploy. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md) (Fast first knowledge + Edge public-base note).
+- Onboarding friction pack **code shipped on `main`**: Admin Daily mint + connect panel; dashboard “Get ready for agents”; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec (historical): [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). **Docs** lead with Daily **3-step** default (mint → env+MCP → retrieve); Admin Git / index-here optional; direnv not required for Daily. Live copy: `GET …/docs/agent-setup`. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Ops residual: confirm host image has Daily UI + `QUERIA_PUBLIC_BASE_URL` set (not a re-open of UI implementation).
 
 | Gap | Priority | Notes |
 |---|---|---|
