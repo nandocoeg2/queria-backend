@@ -62,6 +62,7 @@ services:
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
       - QUERIA_FIRST_ADMIN_EMAIL=${QUERIA_FIRST_ADMIN_EMAIL}
+      - QUERIA_PUBLIC_BASE_URL=${QUERIA_PUBLIC_BASE_URL:-https://queria.fjulian.id}
       - QUERIA_MINIO_ENDPOINT=${OCI_STORAGE_ENDPOINT}
       - QUERIA_MINIO_BUCKET=${OCI_STORAGE_BUCKET}
       - QUERIA_MINIO_ACCESS_KEY=${OCI_STORAGE_ACCESS_KEY}
@@ -143,6 +144,7 @@ services:
       - PORT=4321
       - QUERIA_API_URL=http://queria-api:17671
       - QUERIA_SETUP_TOKEN=${QUERIA_SETUP_TOKEN}
+      - QUERIA_PUBLIC_BASE_URL=${QUERIA_PUBLIC_BASE_URL:-https://queria.fjulian.id}
     restart: unless-stopped
 
   # Caddy edge replaces legacy queria-proxy (Pingora binary removed in SIMPLIFICATION P1).

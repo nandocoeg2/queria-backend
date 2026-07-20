@@ -119,18 +119,18 @@ if (!tokens || !projects) {
 
 const hasProjects = Array.isArray(projects) && projects.length > 0;
 
-const publicBase = (
-  import.meta.env.QUERIA_PUBLIC_BASE_URL ||
-  process.env.QUERIA_PUBLIC_BASE_URL ||
-  (() => {
-    try {
-      const u = new URL(Astro.request.url);
-      return `${u.protocol}//${u.hostname}:17674`;
-    } catch {
-      return 'http://127.0.0.1:17674';
-    }
-  })()
-).replace(/\/$/, '');
+function resolvePublicBase(astroUrl: URL): string {
+  const fromEnv = (import.meta.env.QUERIA_PUBLIC_BASE_URL || process.env.QUERIA_PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+  const host = astroUrl.hostname;
+  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    const proto = astroUrl.protocol === 'https:' ? 'https' : (host.endsWith('fjulian.id') ? 'https' : astroUrl.protocol.replace(':', ''));
+    return `${proto}://${host}`;
+  }
+  return 'http://127.0.0.1:17674';
+}
+
+const publicBase = resolvePublicBase(new URL(Astro.request.url));
 
 // Format dates
 const formatDate = (dateStr?: string) => {
