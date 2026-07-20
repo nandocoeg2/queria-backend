@@ -13,251 +13,196 @@
 
 ## Problem
 
-Operators drop off between Admin login and a first successful agent `retrieve_context`. Friction is product/DX packaging, not trust-model design:
+Operators drop off between Admin login and first agent `retrieve_context`. Friction is product/DX packaging, not trust-model design:
 
-1. **Public base URLs** in setup docs/snippets follow proxy headers and can emit wrong host/scheme in production without an explicit public base.
-2. **Token mint UI** has no ready “Daily agent” tool set; operators must know which MCP tools to grant, and default API mint stays propose-only without `index_memory`.
-3. **After mint**, the tokens page shows a raw secret once but does not assemble env, MCP one-liners, and paste prompt — operators leave the page incomplete.
-4. **Dashboard** does not tell operators what is still missing (project / knowledge / embeddings / token).
-5. **Docs-only first-win** via laptop `index-here` exists as Part E but is not called out as the fast path for “I have code on my machine.”
-
-**Need:** a single phased friction pack that gets an operator from empty console to agent retrieve without rewriting the dual-lane trust model.
+1. Setup docs/snippets can emit wrong host/scheme without an explicit public base.
+2. Token mint has no ready Daily tool set; API mint omit-tools stays propose-only without `index_memory`.
+3. After mint, raw secret shows once but no assembled env/edge connect info.
+4. Dashboard does not list what is still missing.
+5. Docs do not call out laptop `index-here` as the fast first-knowledge path.
 
 ## Goals
 
-Cut operator → first agent retrieve drop-off **without** rewriting the dual-lane trust model (trusted vs scratch / Needs review, propose vs promote gates).
+Cut drop-off to first agent retrieve **without** rewriting dual-lane trust (trusted vs Needs review, propose vs promote).
 
-Success looks like:
+Success:
 
-- Setup markdown and MCP snippets always point at the real public edge.
-- Admin can mint a Daily agent token in one click (explicit tools POST).
-- Mint success surfaces a complete connect-agent panel once (token never re-shown).
-- Dashboard checklist drives the remaining gaps until green.
-- Docs explain a laptop-only first knowledge path using Local index + promote + Daily retrieve.
+- Setup markdown/MCP snippets use the real public edge.
+- Admin mints Daily (with `index_memory`) in one form submit; always POSTs tools.
+- After mint, operator has enough connect info without leaving the product blind (once-only secret).
+- Dashboard checklist until ready for agents.
+- Docs: laptop first-win via index-here (Custom + `index_local` → promote → Daily retrieve).
 
-## Non-goals (out of scope)
+## Non-goals
 
 | Out | Why |
 |---|---|
-| Demo corpus seed | Product must not fake “first knowledge”; use real project or index-here |
-| Self-serve token mint (agents minting their own tokens) | Admin session remains the only mint surface |
-| Dual-lane rule changes | Trusted still gated; Needs review still excluded by default retrieve |
-| SMTP / org switcher | Multi-org remains invite-token out of band; v1 one home org |
-| API omit-`tools` → Daily default | Backward compatible: omit keeps `default_agent_tools()` propose-only |
-| Multi-repo installer product | Snippets + paste prompt only; no remote machine config writer |
+| Demo corpus seed | Real project or index-here only |
+| Self-serve mint | Admin session is the only mint surface |
+| Dual-lane changes | Trusted gated; Needs review excluded by default retrieve |
+| SMTP / multi-org | v1 one home org; invite out of band |
+| API omit-`tools` → Daily | Omit keeps `default_agent_tools()` propose-only |
+| Client installers in Admin | Operators use agent-setup / mcp-snippet endpoints |
 
 ## Locked approach
-
-Single phased design. Ship order:
 
 ```text
 H → T → C → D → F
 ```
 
-| Phase | Name | Outcome |
-|---|---|---|
-| **H** | Public base URL | Setup docs/snippets use config-first public edge base |
-| **T** | Admin token presets | Daily default; explicit tools always POSTed from Admin |
-| **C** | Connect agent after mint | Once-only full panel on token reveal |
-| **D** | Dashboard checklist | Steps until project + knowledge + embeddings + token |
-| **F** | Docs-only first-win | Onboarding runbook points to index-here path |
+| Phase | Outcome |
+|---|---|
+| **H** | Public edge base for docs/snippets |
+| **T** | Daily default + Custom; Admin always POSTs tools |
+| **C** | Once-only lazy connect panel |
+| **D** | Three-step checklist + `agent_token_count` |
+| **F** | Docs laptop path via Custom + `index_local` |
 
-Suggested milestones: `ob-base` (H), `ob-tokens` (T+C), `ob-dashboard-docs` (D+F).
+Milestones: `ob-base` (H), `ob-tokens` (T+C), `ob-dashboard-docs` (D+F).
 
 ---
 
 ## H — Public base URL
 
-### Surface
+**Surface:** `request_base` in `crates/queria-api/src/http/agent_setup.rs`.
 
-`request_base` in `crates/queria-api/src/http/agent_setup.rs` (used by agent-setup markdown, MCP snippets, hooks-snippet URLs).
+**Resolution order:**
 
-### Resolution order (locked)
-
-1. Prefer `QUERIA_PUBLIC_BASE_URL` from config when set (strip trailing slash).
-2. Else `X-Forwarded-Proto` + `X-Forwarded-Host` / `Host` (current header path).
-3. Default proto `http` only as last resort (local development).
-
-### Config / deploy
+1. `QUERIA_PUBLIC_BASE_URL` when set (strip trailing slash).
+2. Else `X-Forwarded-Proto` + `X-Forwarded-Host` / `Host`.
+3. Default proto `http` last resort (local).
 
 | Item | Value |
 |---|---|
 | Env | `QUERIA_PUBLIC_BASE_URL` |
-| Production (this deploy) | `https://queria.fjulian.id` |
+| Production | `https://queria.fjulian.id` |
 | Local | unset → headers / `http://127.0.0.1:17674` family |
 
-Deploy note: set `QUERIA_PUBLIC_BASE_URL=https://queria.fjulian.id` on API (and any service that regenerates setup absolute URLs). Strip trailing `/` once at config load or in `request_base`.
+Markdown from `GET /api/v1/docs/agent-setup` and snippet absolute URLs share this base. No separate docs host.
 
-### Behavior
-
-- Markdown from `GET /api/v1/docs/agent-setup` links use the resolved base.
-- Snippet endpoints that embed absolute MCP/edge URLs use the same base.
-- No other public docs product surface; this pack does not add a separate docs host.
-
-### Tests (H)
-
-- Unit: config value wins over headers; trailing slash stripped.
-- Unit: when config empty, proto/host headers form base; missing Host falls back sensibly for local.
+**Tests:** config wins over headers; slash stripped; empty config uses headers / local fallback.
 
 ---
 
-## T — Admin token presets
+## T — Admin token modes
 
-### Surface
+**Surface:** `admin/src/pages/tokens/index.astro`, `POST /api/v1/agent-tokens`, tool lists in `crates/queria-core/src/auth/agent_token.rs`.
 
-Admin tokens page: `admin/src/pages/tokens/index.astro`  
-API mint: `POST /api/v1/agent-tokens` in `crates/queria-api/src/http/tokens.rs`  
-Tool lists: `crates/queria-core/src/auth/agent_token.rs` (+ permissions enum)
+### UI modes (only two)
 
-### Presets (locked)
-
-| Preset | Tools | UI default |
+| Mode | Tools | Default |
 |---|---|---|
-| **Daily agent** | `list_projects`, `retrieve_context`, `search_knowledge`, `propose_memory`, `get_source`, **`index_memory`** | **Yes** (selected by default in Admin form) |
-| **Read + propose** | current `default_agent_tools()` (no `index_memory`) | opt-in |
-| **Read-only** | `list_projects`, `retrieve_context`, `search_knowledge`, `get_source` | opt-in |
-| **Local index** | Daily tools + **`index_local`** | opt-in dedicated preset; warning: uploads land in **Needs review only** |
-| **Custom** | per-tool checkboxes; advanced **`manage_needs_review`** default **off** with warning | advanced |
+| **Daily agent** | `list_projects`, `retrieve_context`, `search_knowledge`, `propose_memory`, `get_source`, `index_memory` | Yes |
+| **Custom** | Per-tool checkboxes for all tools, including `index_local` and `manage_needs_review` | Advanced |
 
-Privileged tools **never** appear in the Daily default:
+Privileged defaults **off** in Custom:
 
-- `index_local` — only Local index preset (or Custom)
-- `manage_needs_review` — only Custom, default unchecked
+- `index_local` — short warning: uploads land in **Needs review only**
+- `manage_needs_review` — short warning: promote/reject
 
-### Admin vs API contract (explicit, no contradiction)
+No dedicated presets for Read + propose, Read-only, or Local index. Laptop path uses Custom + check `index_local` (or start Daily then Custom-add `index_local` via a Custom mint).
+
+### Admin vs API
 
 | Client | Behavior |
 |---|---|
-| **Admin UI** | Always POSTs an explicit `tools` array matching the selected preset (or Custom checkboxes). Never relies on server default for Daily. |
-| **API / curl / scripts omitting `tools`** | Keep **`default_agent_tools()`** = propose-only (no `index_memory`, no privileged tools). Backward compatible. |
+| **Admin** | Always POSTs explicit `tools` for selected mode. Never relies on server default for Daily. |
+| **API omit `tools`** | `default_agent_tools()` propose-only (no `index_memory`, no privileged). |
 
-### Rust helper (locked)
+### Helper
 
-Add `daily_agent_tools()` next to `default_agent_tools()` in `agent_token.rs`:
+`daily_agent_tools()` next to `default_agent_tools()`:
 
 ```text
-daily_agent_tools():
-  ListProjects, RetrieveContext, SearchKnowledge,
-  ProposeMemory, GetSource, IndexMemory
+ListProjects, RetrieveContext, SearchKnowledge,
+ProposeMemory, GetSource, IndexMemory
 ```
 
-Use in tests and docs alignment. Admin may hardcode the same tool **names** client-side (string parity with API tool enum serialization).
+### Expiry
 
-### Expiry form (locked)
+Default: **`no_expire`**. Finite options remain opt-in.
 
-Default selected expiry control: **`no_expire`**.
+### Mint response (for C)
 
-Existing expiry options may remain for opt-in finite lifetimes; the selected default on the generate form is no expiry.
+Return raw token once plus granted `tools` so the connect panel can chip without a second secret-bearing fetch.
 
-### Mint response (for phase C)
-
-Successful mint already returns raw token once. Ensure response includes the granted `tools` list (or equivalent permissions payload) so the connect panel can render chips without a second round-trip that re-exposes the secret.
-
-### Tests (T)
-
-- Unit: `daily_agent_tools()` contains `index_memory` and does **not** contain `index_local` / `manage_needs_review`.
-- Unit: `default_agent_tools()` remains propose-only (existing assertion stays green).
-- Integration / API: mint with explicit Daily tools persists `index_memory` on the token permissions.
-- Admin always sends `tools` in generate POST (form mapping tests or SSR unit if present).
+**Tests:** `daily_agent_tools()` has `index_memory`, not privileged tools; omit-tools stays propose-only; Admin POST maps Daily/Custom; privileged Custom defaults off.
 
 ---
 
-## C — Connect agent on token reveal (full)
+## C — Connect panel (once after mint)
 
-### Surface
+**Surface:** Admin tokens page, **once** after successful mint. Never re-show secret after navigation away.
 
-Admin tokens page, **once** after successful mint (raw token already shown today). Never re-fetch or re-display the secret after navigation away.
+### Contents (required)
 
-### Once-only panel contents (locked order)
-
-1. **Raw token + copy** (existing)
-2. **Tools chips** from mint response (Daily / custom labels optional; chips = tool names)
-3. **Env export block**
+1. Raw token + copy
+2. Tools chips (from mint response)
+3. Env export:
    ```bash
-   export QUERIA_AGENT_TOKEN='…'          # one-shot; never commit
-   export QUERIA_EDGE_URL='{public base}' # H resolution / known edge
+   export QUERIA_AGENT_TOKEN='…'
+   export QUERIA_EDGE_URL='{public base}'
    export QUERIA_MCP_URL='{public base}/mcp'
    # only when a single project slug was selected on mint:
    export QUERIA_PROJECT_SLUG='…'
    ```
-4. **Client one-liners** for **droid**, **claude**, **codex** (short; point at MCP URL + env token pattern already documented on agent-setup)
-5. **Short agent paste prompt** with EDGE / TOKEN / SLUG filled for the operator to paste into the coding agent
-6. **Link** to `GET {EDGE}/api/v1/docs/agent-setup` for the full markdown path
+4. Link to `GET {EDGE}/api/v1/docs/agent-setup`
 
-### Security rules (locked)
+Client one-liners and paste prompts are **not** embedded in Admin HTML. Operators use agent-setup / mcp-snippet endpoints for client commands.
 
-- Never write the raw token into git-tracked files, downloaded configs committed to repo, or persistent Admin DB plaintext.
-- Token appears only in that **one** response HTML after mint (same threat model as today).
-- Copy-to-clipboard is fine; no auto-download of files containing the secret by default.
+### Security
+
+- Token only in that one response HTML after mint.
+- No git-tracked files, no secret downloads, no Admin DB plaintext secret.
+- Copy-to-clipboard OK.
 
 ### URL sources
 
-- Edge / MCP base: same public base as phase H (config / headers), not hard-coded IP in UI if base is available.
-- If Admin SSR cannot call `request_base` directly, use configured public base env mirrored to Admin, or derive from request Host with the same preference order where possible. Production deploy documents `QUERIA_PUBLIC_BASE_URL`.
+Same public base as H. If Admin SSR cannot call `request_base`, use mirrored public-base env or same preference order from request Host. Deploy documents `QUERIA_PUBLIC_BASE_URL`.
 
-### Tests (C)
-
-- Manual / Playwright optional (Admin server available): after generate, panel shows token, tools chips, env block, docs link; after reload of tokens list, raw token is **not** shown again.
+**Tests:** after generate: token, chips, env, docs link; after reload list: raw token gone.
 
 ---
 
-## D — Dashboard checklist + `agent_token_count`
+## D — Dashboard checklist
 
-### Surface
-
-- Admin dashboard: `admin/src/pages/dashboard.astro`
-- Summary API: `crates/queria-api/src/http/dashboard.rs`
-- Admin client: `getDashboardSummary` in `admin/src/lib/api.ts`
-- Store: `get_dashboard_summary` / `DashboardSummaryRecord` in `queria-db` admin queries
+**Surface:** `admin/src/pages/dashboard.astro`, summary API `dashboard.rs`, `getDashboardSummary`, DB `DashboardSummaryRecord`.
 
 ### Card: “Get ready for agents”
 
-Show until **all** steps complete; hide or collapse when green.
+Show until all green; hide/collapse when complete.
 
-| # | Complete when | CTA link | Note |
-|---|---|---|---|
-| 1 | `project_count > 0` | `/admin/projects` | Create at least one project |
-| 2 | Knowledge present: `source_count > 0` **OR** `chunk_counts.ready > 0` | `/admin/sources` | Note index-here as laptop alternative |
-| 3 | Embeddings: `chunk_counts.ready > 0` | jobs / sources (existing job/status surfaces) | Wait for embed ready |
-| 4 | `agent_token_count > 0` | `/admin/tokens` | Mint Daily (or other) agent token |
+| # | Complete when | CTA |
+|---|---|---|
+| 1 | `project_count > 0` | `/admin/projects` |
+| 2 | `chunk_counts.ready > 0` | sources / jobs — note: register source or index-here + promote first |
+| 3 | `agent_token_count > 0` | `/admin/tokens` |
 
-Step 2 allows either a registered source **or** ready chunks so Local index / needs_review → promote / scratch paths can complete without a Git source form.
+Ready chunks are the first-win gate (not a separate source-vs-ready split).
 
-### API change (locked)
+### API
 
-Add `agent_token_count: i64` to dashboard summary response.
+Add `agent_token_count: i64` — active (non-revoked) tokens matching `list_agent_tokens` visibility (home org / session scope). Required for accurate step 3.
 
-**Count semantics:** active (**non-revoked**) agent tokens visible for the session home org / user, matching **`list_agent_tokens` visibility** (same filter the tokens page list uses). Do not invent a broader super-admin global count for this card.
-
-### Tests (D)
-
-- Unit / repository: summary includes `agent_token_count`.
-- Active vs revoked: revoked tokens do not increment count.
-- Admin type / client updated so checklist can read the field.
+**Tests:** field present; revoked excluded; Admin client/types read it.
 
 ---
 
-## F — Docs-only fast first-win (`index-here`)
+## F — Docs laptop first-win
 
-### Surface
-
-`docs/runbooks/onboarding.md` — short section near the top or a clearly linked “Fast first knowledge (laptop)” block.
-
-### Path (docs only; no product demo corpus)
+**Surface:** `docs/runbooks/onboarding.md` — short “Fast first knowledge (laptop)” block.
 
 ```text
 1. Create project (Admin)
-2. Mint Local index preset (or Custom with index_local grant)
+2. Mint Custom with index_local checked (Needs review only warning)
 3. queria-cli index-here --token-env QUERIA_AGENT_TOKEN
 4. Admin Needs review → Promote (trusted)
-5. Mint / use Daily agent token for agents (retrieve + index_memory scratch)
+5. Mint Daily agent for retrieve + index_memory scratch
 ```
 
-Point to **Part E** for the full index-here contract (discover, needs_review, promote, non-goals). This pack does **not** seed a demo corpus and does **not** change dual-lane rules.
+Point to Part E for full index-here contract. No demo corpus. Dual-lane unchanged.
 
-### Tests (F)
-
-- Docs review only (link integrity to Part E / agent-setup). No runtime test required for prose.
+**Tests:** docs review / link integrity only.
 
 ---
 
@@ -265,25 +210,25 @@ Point to **Part E** for the full index-here contract (discover, needs_review, pr
 
 | Area | Paths |
 |---|---|
-| Public base (H) | `crates/queria-api/src/http/agent_setup.rs`, `crates/queria-core/src/config.rs`, `.env.example`, deploy/runbook notes in `docs/runbooks/deployment.md` or `onboarding.md` |
-| Daily tools (T) | `crates/queria-core/src/auth/agent_token.rs`, `crates/queria-api/src/http/tokens.rs` (only if validation/helpers need wiring), `admin/src/pages/tokens/index.astro` |
-| Connect panel (C) | `admin/src/pages/tokens/index.astro` (and small CSS if needed under admin styles) |
-| Dashboard (D) | `crates/queria-api/src/http/dashboard.rs`, `crates/queria-db/src/admin_queries.rs` (and/or repositories), `admin/src/lib/api.ts`, `admin/src/pages/dashboard.astro` |
-| Docs (F) | `docs/runbooks/onboarding.md` |
-| Tests | unit tests next to `request_base` / `daily_agent_tools`; API mint integration; optional Playwright under `admin/` |
+| H | `agent_setup.rs`, config, `.env.example`, deploy/onboarding notes |
+| T | `agent_token.rs`, tokens page Admin form |
+| C | tokens page (once-only panel) |
+| D | dashboard API/DB, `api.ts`, `dashboard.astro` |
+| F | `docs/runbooks/onboarding.md` |
+| Tests | `request_base`, `daily_agent_tools`, mint, `agent_token_count` |
 
 ---
 
-## Acceptance criteria (pack)
+## Acceptance criteria
 
-1. **H:** With `QUERIA_PUBLIC_BASE_URL` set, setup docs and snippet absolute URLs use that base (trailing slash stripped); without it, header-based base still works; local fallback remains `http`.
-2. **T:** Admin Daily preset is the default selection and POSTs the Daily tool list including `index_memory` but excluding privileged tools.
-3. **T:** API clients that omit `tools` still get `default_agent_tools()` propose-only (no `index_memory`).
-4. **T:** Local index preset exists, includes `index_local`, and shows a Needs review warning; Custom can grant `manage_needs_review` only with advanced warning and default off.
-5. **T:** Expiry control defaults to **`no_expire`**.
-6. **C:** After mint, the once-only panel includes raw token + copy, tools chips, env exports, droid/claude/codex one-liners, short paste prompt, and link to agent-setup docs; token is not written to git-tracked files.
-7. **D:** Dashboard exposes `agent_token_count` and shows “Get ready for agents” until project + knowledge + embeddings + token steps are all green, then hides/collapses.
-8. **F:** Onboarding runbook documents the laptop fast first-win via index-here → promote → Daily agent retrieve, without a demo corpus seed.
+1. **H:** Config public base wins (slash stripped); without it headers/local work.
+2. **T:** Admin Daily default POSTs Daily tools including `index_memory`, excluding privileged tools.
+3. **T:** API omit-`tools` remains propose-only.
+4. **T:** Custom can grant `index_local` / `manage_needs_review` with warnings and default off.
+5. **T:** Expiry defaults to **`no_expire`**.
+6. **C:** Once-only panel: raw token + copy, tools chips, env export, agent-setup link. No required client one-liners or paste prompt in Admin.
+7. **D:** `agent_token_count` on summary; three-step checklist hides when green.
+8. **F:** Onboarding docs document Custom + `index_local` → promote → Daily retrieve; no demo corpus.
 
 ---
 
@@ -291,71 +236,68 @@ Point to **Part E** for the full index-here contract (discover, needs_review, pr
 
 | Layer | What |
 |---|---|
-| Unit | `request_base` resolution (config wins; strip slash) |
-| Unit | `daily_agent_tools()` contents; privileged tools absent |
-| Unit / integration | mint with explicit tools persists `index_memory` |
-| Unit / repository | dashboard summary includes `agent_token_count`; revoked excluded |
-| Playwright (optional) | mint → connect panel; dashboard checklist visibility if Admin server available |
+| Unit | `request_base` (config wins; strip slash) |
+| Unit | `daily_agent_tools()`; privileged absent |
+| Unit / integration | mint with Daily tools persists `index_memory` |
+| Unit / repository | `agent_token_count`; revoked excluded |
+| Playwright (optional) | mint → connect panel; checklist visibility |
 
 ---
 
-## Risks and mitigations
+## Risks
 
 | Risk | Mitigation |
 |---|---|
-| Wrong public base still ships if env unset in prod | Deploy checklist: set `QUERIA_PUBLIC_BASE_URL=https://queria.fjulian.id`; unit test config path; smoke `GET /api/v1/docs/agent-setup` links |
-| Operators assume omit-`tools` API mint is Daily | Keep propose-only omit; Admin only POSTs Daily; document clearly in this design + runbook |
-| Local index preset over-grants / confuses trust | Warning copy: Needs review only; promote still human (or explicit `manage_needs_review`, not Daily) |
-| Token leak via HTML logs / screenshots | Same once-only secret model; no file download of secret; docs “never commit” |
-| Checklist step 2 false-negative for index-here-only orgs | Complete when `source_count > 0` **OR** `chunk_counts.ready > 0` |
-| `agent_token_count` mismatches list visibility | Reuse list filter / same org-home scope as `list_agent_tokens` |
-| Scope creep into dual-lane or SMTP | Non-goals table; ship H→T→C→D→F only |
+| Wrong public base if env unset | Deploy: set `QUERIA_PUBLIC_BASE_URL`; unit + smoke agent-setup links |
+| Operators assume API omit = Daily | Keep propose-only omit; Admin always posts tools |
+| Custom privileged over-grant | Warnings; both default off |
+| Token leak via logs/screenshots | Once-only secret; no secret download; “never commit” |
+| Checklist blocks index-here path | Step 2 is `chunk_counts.ready > 0` after promote |
+| Count vs list mismatch | Same filter as `list_agent_tokens` |
 
 ---
 
 ## Implementation order
 
 ```text
-ob-base:
-  H — config field + request_base preference + deploy note + unit tests
-
-ob-tokens:
-  T — daily_agent_tools + Admin presets + no_expire default + mint tools POST
-  C — once-only connect panel (depends on mint response tools + public base)
-
+ob-base:     H — config + request_base + deploy note + unit tests
+ob-tokens:   T — daily_agent_tools + Daily/Custom UI + no_expire
+             C — once-only panel (tools + public base)
 ob-dashboard-docs:
-  D — agent_token_count + checklist UI
-  F — onboarding.md fast first-win section
+             D — agent_token_count + 3-step checklist
+             F — onboarding.md laptop section
 ```
 
-No parallel dependency between D and F after T/C. H should land first so C’s env block and docs links share one base.
+H first so C env and docs links share one base.
 
 ---
 
-## Self-review (pre-implementation)
+## Self-review
 
 | Check | Result |
 |---|---|
-| No TBD / TODO left in this design | Pass |
-| No dual-lane / demo corpus / self-serve mint | Pass (non-goals) |
-| API omit-`tools` vs Admin Daily | Explicit: omit = propose-only; Admin always posts tools; Daily is Admin UI default only |
-| Expiry default | Explicit: **`no_expire`** |
-| Local index preset | Explicit: Daily + `index_local` with Needs review warning |
-| Privileged tools out of Daily | Explicit: never in Daily default |
+| No TBD / TODO | Pass |
+| No dual-lane / demo corpus / self-serve mint | Pass |
+| Admin Daily vs API omit | Admin posts tools; omit = propose-only |
+| Expiry default | `no_expire` |
+| No Local index preset | Pass; F uses Custom + `index_local` |
+| No required one-liners / paste | Pass; agent-setup endpoints for clients |
+| Privileged out of Daily | Pass |
+| D three steps | project / ready / token |
 | Ship order | H → T → C → D → F |
-| Runtime truth not claimed | Status REFERENCE until HANDOFF updates after ship |
+| Status | REFERENCE until HANDOFF after ship |
 
 ---
 
-## End state (operator story)
+## End state
 
 ```text
 Admin logs in
-  → dashboard checklist (D) shows gaps
+  → checklist (D) shows gaps
   → create project
-  → either Git source + embed, or F path: Local index mint (T) → index-here → promote
-  → mint Daily agent (T), copy connect panel (C)
-  → agent uses public edge (H) + token → retrieve_context first win
+  → Git source + embed, or F: Custom+index_local → index-here → promote
+  → mint Daily (T), copy connect panel (C)
+  → agent uses public edge (H) + token → retrieve_context
 ```
 
-Dual-lane trust model unchanged end-to-end.
+Dual-lane unchanged.
