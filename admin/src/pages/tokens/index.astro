@@ -119,6 +119,19 @@ if (!tokens || !projects) {
 
 const hasProjects = Array.isArray(projects) && projects.length > 0;
 
+const publicBase = (
+  import.meta.env.QUERIA_PUBLIC_BASE_URL ||
+  process.env.QUERIA_PUBLIC_BASE_URL ||
+  (() => {
+    try {
+      const u = new URL(Astro.request.url);
+      return `${u.protocol}//${u.hostname}:17674`;
+    } catch {
+      return 'http://127.0.0.1:17674';
+    }
+  })()
+).replace(/\/$/, '');
+
 // Format dates
 const formatDate = (dateStr?: string) => {
   if (!dateStr) return 'Never';
@@ -137,19 +150,58 @@ const formatDate = (dateStr?: string) => {
   )}
 
   {generatedToken && (
-    <div class="card token-reveal-box">
+    <div class="card token-reveal-box connect-panel">
       <div class="reveal-header">
-        <h3>⚠️ Copy Your Agent Token</h3>
-        <p class="warning-text">This token is only shown once. It cannot be recovered after you navigate away or refresh this page.</p>
+        <h3>Connect this agent</h3>
+        <p class="warning-text">
+          This token is shown once. It cannot be recovered after you navigate away or refresh.
+          Never commit it.
+        </p>
       </div>
       <div class="reveal-body">
-        <code class="raw-token">{generatedToken}</code>
-        <button 
+        <label class="field-hint">Raw token</label>
+        <code class="raw-token" id="raw-token">{generatedToken}</code>
+        <button
+          type="button"
           class="btn btn-primary btn-sm"
-          onclick={`navigator.clipboard.writeText("${generatedToken}"); alert("Copied token to clipboard!");`}
+          onclick={`navigator.clipboard.writeText(document.getElementById('raw-token').textContent || '');`}
         >
-          Copy Token
+          Copy token
         </button>
+      </div>
+
+      <div class="connect-section">
+        <label class="field-hint">Granted tools</label>
+        <div class="tools-chips">
+          {generatedTools.map((t) => (
+            <code class="tool-chip">{t}</code>
+          ))}
+        </div>
+      </div>
+
+      <div class="connect-section">
+        <label class="field-hint">Env export</label>
+        <pre class="env-export" id="env-export">{`export QUERIA_AGENT_TOKEN='${generatedToken}'
+export QUERIA_EDGE_URL='${publicBase}'
+export QUERIA_MCP_URL='${publicBase}/mcp'${
+  generatedProjectSlugs.length === 1
+    ? `\nexport QUERIA_PROJECT_SLUG='${generatedProjectSlugs[0]}'`
+    : ''
+}`}</pre>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          onclick={`navigator.clipboard.writeText(document.getElementById('env-export').textContent || '');`}
+        >
+          Copy env
+        </button>
+      </div>
+
+      <div class="connect-section">
+        <a class="stat-link" href={`${publicBase}/api/v1/docs/agent-setup`}>
+          Agent setup docs →
+        </a>
+        <p class="field-hint">Use setup / mcp-snippet endpoints for client commands. No paste required here.</p>
       </div>
     </div>
   )}
@@ -405,6 +457,49 @@ const formatDate = (dateStr?: string) => {
     font-size: 14px;
     color: var(--color-on-surface);
     word-break: break-all;
+  }
+
+  .connect-panel .connect-section {
+    margin-top: var(--spacing-md);
+  }
+
+  .connect-panel .reveal-body {
+    flex-wrap: wrap;
+  }
+
+  .tools-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .tool-chip {
+    background: var(--surface-card, #111);
+    border: 1px solid var(--border-subtle, #222233);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .env-export {
+    background: #0a0a0a;
+    border: 1px solid #222233;
+    padding: 0.75rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    margin: 0 0 var(--spacing-sm);
+    color: var(--color-on-surface);
+    font-family: var(--font-family-mono);
+  }
+
+  .stat-link {
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: 13px;
+  }
+
+  .stat-link:hover {
+    text-decoration: underline;
   }
 
   .table-container {
