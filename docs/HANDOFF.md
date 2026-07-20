@@ -581,7 +581,7 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 ### Runtime / config notes
 
 - Onboarding friction pack **code shipped on `main`**: Admin Daily mint + connect panel; dashboard “Get ready for agents”; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec (historical): [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). **Docs** lead with Daily **3-step** default (mint → env+MCP → retrieve); Admin Git / index-here optional; direnv not required for Daily. Live copy: `GET …/docs/agent-setup`. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Ops residual: confirm host image has Daily UI + `QUERIA_PUBLIC_BASE_URL` set (not a re-open of UI implementation).
-- **queria-cli GitHub Releases:** workflow [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds multi-arch binaries on tag `cli-v*` (or workflow_dispatch with tag). Users install from https://github.com/nandocoeg2/queria-backend/releases for laptop `index-here` (no Rust required).
+- **queria-cli GitHub Releases:** workflow [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds multi-arch binaries **only** on tag `cli-v*` (or workflow_dispatch with tag). **Push `main` does not create a CLI release** (main push → host image deploy only). Users install from https://github.com/nandocoeg2/queria-backend/releases for laptop `index-here` (no Rust required). Ops note: [`runbooks/deployment.md`](./runbooks/deployment.md) § What push main does not do.
 
 | Gap | Priority | Notes |
 |---|---|---|

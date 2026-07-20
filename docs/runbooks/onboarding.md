@@ -94,7 +94,7 @@ sudo install -m 755 queria-cli-aarch64-apple-darwin/queria-cli /usr/local/bin/qu
 queria-cli index-here --help
 ```
 
-Maintainers: tag `cli-vX.Y.Z` (or Actions → **Release queria-cli**) builds via [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml).  
+**Maintainers (do not forget):** push to **`main` does not publish CLI binaries.** Only a tag matching **`cli-v*`** (e.g. `cli-v0.1.1`) or Actions → **Release queria-cli** (`workflow_dispatch` with tag) runs [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml). Host deploy Path A is separate ([`deployment.md`](./deployment.md)).  
 Dev alternative: `cargo build -p queria-cli --release` in this repo.
 
 ### Fast first knowledge (laptop)

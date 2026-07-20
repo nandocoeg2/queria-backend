@@ -1,7 +1,7 @@
 # Production Deployment Runbook
 
 > Status: CURRENT  
-> Last verified: 2026-07-19  
+> Last verified: 2026-07-21  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)
 
 This runbook documents how Queria reaches production on the shared OCI host.
@@ -55,6 +55,24 @@ sequenceDiagram
 | **A — CI / GHCR (primary)** | Normal deploys: push `main` → Actions build arm64 → GHCR → SSH pull/up |
 | **B — rsync + host build (fallback)** | GHCR/Actions broken, first cold host without images, or emergency |
 
+### What push `main` does **not** do
+
+| Workflow | Trigger | Output |
+|---|---|---|
+| **Build & Deploy** ([`deploy.yml`](../../.github/workflows/deploy.yml)) | Push **`main`** (or `workflow_dispatch`) | Host **container** images (`backend` / `admin` on GHCR) + SSH pull/up |
+| **Release queria-cli** ([`release-cli.yml`](../../.github/workflows/release-cli.yml)) | Tag **`cli-v*`** only (or Actions → this workflow + optional tag input) | **GitHub Release** assets: multi-arch `queria-cli-*.tar.gz` |
+
+**Do not expect** a new `queria-cli` binary/release from a normal docs or app push to `main`. Cut a client binary only when you deliberately ship CLI:
+
+```bash
+# from queria/backend, on the commit you want frozen in the release
+git tag -a cli-v0.1.1 -m "queria-cli 0.1.1"
+git push origin cli-v0.1.1
+# watch: Actions → "Release queria-cli" → https://github.com/nandocoeg2/queria-backend/releases
+```
+
+Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.
+
 ---
 
 ## Path A — CI / GHCR (primary)
@@ -65,8 +83,9 @@ sequenceDiagram
 |---|---|
 | [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) | Build `backend` + `admin` (`linux/arm64`), push GHCR, SSH deploy |
 | [`.github/workflows/cleanup-ghcr.yml`](../../.github/workflows/cleanup-ghcr.yml) | Keep 5 versions per package; ignore `latest` |
+| [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml) | **Not** a host deploy. Builds `queria-cli` on **tag `cli-v*`** → GitHub Releases |
 
-Triggers: `push` to **`main`**, or Actions → **workflow_dispatch**.
+Triggers for **deploy**: `push` to **`main`**, or Actions → **workflow_dispatch**.
 
 Deploy job (host):
 
