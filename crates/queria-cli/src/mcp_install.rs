@@ -121,6 +121,61 @@ fn droid_install_script(mcp_url: &str) -> String {
     )
 }
 
+fn claude_install_script(mcp_url: &str) -> String {
+    format!(
+        r#"claude mcp add queria --transport http {url} \
+  --header "Authorization: Bearer ${{QUERIA_AGENT_TOKEN}}"
+"#,
+        url = mcp_url
+    )
+}
+
+fn run_claude_mcp_add(creds: &ResolvedCredentials) -> Result<()> {
+    let token = creds
+        .agent_token
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .context("agent token required for claude MCP install")?;
+    let header = format!("Authorization: Bearer {token}");
+    // Remove stale entry that may be stuck in OAuth (no header).
+    let _ = Command::new("claude")
+        .args(["mcp", "remove", "queria"])
+        .output();
+    let output = Command::new("claude")
+        .args([
+            "mcp",
+            "add",
+            "queria",
+            "--transport",
+            "http",
+            &creds.mcp_url,
+            "--header",
+            &header,
+        ])
+        .output()
+        .context("run claude mcp add (is `claude` on PATH?)")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+        if combined.contains("already") || combined.contains("exists") {
+            println!("claude: queria MCP already configured");
+            return Ok(());
+        }
+        bail!(
+            "claude mcp add failed ({})\n{}\n{}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.trim().is_empty() {
+        println!("{}", stdout.trim());
+    }
+    Ok(())
+}
+
 fn run_droid_mcp_add(creds: &ResolvedCredentials) -> Result<()> {
     let token = creds
         .agent_token
@@ -278,14 +333,17 @@ pub async fn install(
     let format = snippet.format.to_ascii_lowercase();
     let content = rewrite_snippet_urls(&snippet.content, &creds.mcp_url);
 
-    // Droid shell install: build a known-good command (snippet alone may lack --type http).
+    // Shell installs: droid/claude need explicit HTTP + Bearer (no OAuth).
     if client_norm == "droid"
+        || client_norm == "claude"
         || format == "shell"
         || content.trim_start().starts_with("droid ")
         || content.contains("claude mcp add")
     {
         let shell_body = if client_norm == "droid" {
             droid_install_script(&creds.mcp_url)
+        } else if client_norm == "claude" {
+            claude_install_script(&creds.mcp_url)
         } else {
             content.clone()
         };
@@ -302,6 +360,11 @@ pub async fn install(
         if client_norm == "droid" {
             run_droid_mcp_add(creds)?;
             println!("MCP install (droid) finished OK");
+            return Ok(());
+        }
+        if client_norm == "claude" {
+            run_claude_mcp_add(creds)?;
+            println!("MCP install (claude) finished OK");
             return Ok(());
         }
         let tmp =

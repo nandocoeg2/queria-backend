@@ -514,26 +514,24 @@ fn claude_hooks_snippet(base: &str) -> Value {
 }
 
 fn claude_snippet(mcp_url: &str) -> Value {
+    // Claude Code HTTP MCP auth is Bearer header — not OAuth.
+    // Without --header, Claude tries /.well-known + /register (404 HTML on QuerIa).
     let content = format!(
-        r#"{{
-  "mcpServers": {{
-    "queria": {{
-      "type": "http",
-      "url": "{url}",
-      "headersHelper": "printf '{{\"Authorization\":\"Bearer %s\"}}' \"$QUERIA_AGENT_TOKEN\"",
-      "timeout": 60000
-    }}
-  }}
-}}
+        r#"# Claude Code — remote HTTP MCP (Bearer agent token; no OAuth)
+# export QUERIA_AGENT_TOKEN=...
+claude mcp add queria --transport http {url} \
+  --header "Authorization: Bearer ${{QUERIA_AGENT_TOKEN}}"
 "#,
         url = mcp_url
     );
     json!({
         "client": "claude",
-        "path_hint": ".mcp.json (project) or use `claude mcp add --transport http`",
-        "format": "json",
+        "path_hint": "run claude mcp add (or project .mcp.json with headers)",
+        "format": "shell",
         "env": ["QUERIA_AGENT_TOKEN"],
         "content": content,
+        "mcp_url": mcp_url,
+        "note": "QuerIa has no OAuth; Claude must use Authorization Bearer header.",
     })
 }
 
