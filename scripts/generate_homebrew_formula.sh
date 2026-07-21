@@ -53,7 +53,7 @@ if [[ -z "$TAG" || "$TAG" != cli-v* ]]; then
   exit 2
 fi
 
-VERSION="${TAG#cli-}"
+VERSION="${TAG#cli-v}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_OUT="$(cd "$ROOT/.." && pwd)/homebrew-queria/Formula/queria-cli.rb"
 OUT="${OUT:-$DEFAULT_OUT}"
