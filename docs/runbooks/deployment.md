@@ -103,6 +103,24 @@ Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-c
 
 Triggers for **deploy**: `push` to **`main`**, or Actions → **workflow_dispatch**.
 
+### Build speed / cache (backend + admin images)
+
+| Issue | Cause | Fix in repo |
+|---|---|---|
+| Multi-hour Rust image build | `linux/arm64` on `ubuntu-latest` via **QEMU** | Job runs on **`ubuntu-24.04-arm`** (native arm64; no QEMU) |
+| Cargo rebuilds everything every push | `COPY . .` then one fat `cargo build` | Manifest-first cook + **BuildKit cache mounts** (`cargo` registry/git/target) |
+| GHA cache alone cold often | GHA cache eviction / scope miss | **Also** `cache-from/to` registry tag `…/backend:buildcache` and `…/admin:buildcache` on GHCR |
+
+Warm rebuild (deps unchanged): expect cargo mostly cache-hit; cold after `Cargo.lock` bump still compiles deps once into mounts.
+
+Path B (rsync + host `compose build`) does **not** use GHA/registry buildcache unless the host Buildx is configured — native host arm64 is still faster than QEMU CI was.
+
+Notes:
+
+- First green run after this change still pays a full compile to seed `buildcache`.
+- `GITHUB_TOKEN` packages:write must allow push of `:buildcache` tags (same as `:latest`).
+- If `ubuntu-24.04-arm` is unavailable on the org, fall back temporarily to `ubuntu-latest` + QEMU (slow again).
+
 Deploy job (host):
 
 ```bash
