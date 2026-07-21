@@ -39,12 +39,14 @@ Push **`queria-backend` `main` never** updates Homebrew. Only:
 
 ## Preconditions
 
-- [ ] Actions run **Release queria-cli** green for tag `cli-vX.Y.Z`
-- [ ] Assets downloadable (HTTP 200), e.g.  
-  `…/releases/download/cli-vX.Y.Z/queria-cli-aarch64-apple-darwin.tar.gz`
-- [ ] Required assets present: Darwin aarch64 + Linux x86_64 (Darwin x86_64 recommended; Linux arm optional)
+Release first — do **not** generate a formula until assets exist. Full cut/unstick sequence (cancel stuck run → re-tag or `workflow_dispatch` → wait for assets → **then** this page): [`deployment.md`](./deployment.md) § *queria-cli Release — operator checklist*.
 
-If the backend repo is **private**, downloads need auth (see below).
+- [ ] Actions run **Release queria-cli** green for tag `cli-vX.Y.Z` (or green after dispatch with tag input)
+- [ ] Required assets present: Darwin aarch64 + Linux x86_64 (Darwin x86_64 expected; Linux arm optional)
+- [ ] Assets downloadable — **public** HTTP 200, or **private** with token / logged-in UI (unauth 404 is not proof of missing assets)
+- [ ] Archive layout: top-level dir `queria-cli-<triple>/` contains binary named **`queria-cli`** (Homebrew `bin.install "queria-cli"`)
+
+If the backend repo is **private**, downloads need auth (see below). Live private verification without `GH_TOKEN` / UI is **BLOCKED** — confirm assets in Releases UI before generating formula.
 
 ## One-time: create the tap on GitHub
 
