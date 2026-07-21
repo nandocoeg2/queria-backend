@@ -68,11 +68,15 @@ Do **not** put this under `queria-backend` as the only copy long-term: Homebrew 
 
 ```bash
 cd queria/backend
-# private release:
-# export GH_TOKEN=ghp_…   # or HOMEBREW_GITHUB_API_TOKEN
+# private release (any one of these; script precedence: GH_TOKEN → GITHUB_TOKEN → HOMEBREW_GITHUB_API_TOKEN):
+# export GH_TOKEN=ghp_…
+# export GITHUB_TOKEN=ghp_…
+# export HOMEBREW_GITHUB_API_TOKEN=ghp_…
 
 ./scripts/generate_homebrew_formula.sh cli-v0.1.0
-# default writes ../homebrew-queria/Formula/queria-cli.rb
+# default writes sibling: ../homebrew-queria/Formula/queria-cli.rb
+# custom path:
+# ./scripts/generate_homebrew_formula.sh cli-v0.1.0 --out /tmp/queria-cli.rb
 
 cd ../homebrew-queria
 git add Formula/queria-cli.rb
@@ -80,10 +84,25 @@ git commit -m "queria-cli 0.1.0"
 git push origin main
 ```
 
+### Generator behavior (usage edges)
+
+| Case | Behavior |
+|---|---|
+| Required assets missing / HTTP 404 | **Exit 1**, lists missing files; **does not write** a partial formula or invent sha256 |
+| No token on private Release | **Exit 1** with hint to set `GH_TOKEN` / `GITHUB_TOKEN` / `HOMEBREW_GITHUB_API_TOKEN` |
+| Token 401/403 | **Exit 1** with auth/scopes hint |
+| Linux arm64 asset missing | Warning only; formula `odie` on Linux arm for that version |
+| Tag not `cli-v*` | Exit 2 usage error |
+| `--out` without path | Exit 2 usage error |
+
+Ship-gate required downloads (hard fail): `queria-cli-aarch64-apple-darwin.tar.gz`, `queria-cli-x86_64-unknown-linux-gnu.tar.gz`. Also required by the generator for full macOS coverage: `queria-cli-x86_64-apple-darwin.tar.gz` (workflow builds it non-optional).
+
+**Do not** re-run with inventing zeros if download fails — fix the Release/token, then re-run.
+
 Smoke:
 
 ```bash
-# private assets:
+# private assets (brew download uses HOMEBREW_GITHUB_API_TOKEN):
 # export HOMEBREW_GITHUB_API_TOKEN=ghp_…
 brew tap nandocoeg2/queria
 brew install queria-cli
@@ -117,9 +136,9 @@ curl + tar from GitHub Releases — see [`onboarding.md`](./onboarding.md).
 |---|---|
 | `version` | Semver without `cli-v` prefix (`0.1.0` from `cli-v0.1.0`) |
 | `url` | Exact asset name from release-cli workflow |
-| `sha256` | Of the **tarball**, not the binary inside |
-| `install` | `bin.install "queria-cli"` (archive root contains that file) |
-| Linux arm missing | Formula may `odie` on arm Linux for that version |
+| `sha256` | Of the **tarball**, not the binary inside (generator only writes real downloads) |
+| `install` | `bin.install "queria-cli"` — release tarball is `queria-cli-<triple>/queria-cli`; Homebrew auto-extracts and **chdirs into the single top-level directory**, so the binary is at the stage root (not a nested path) |
+| Linux arm missing | Formula `odie` on arm Linux for that version |
 
 Generator: [`../../scripts/generate_homebrew_formula.sh`](../../scripts/generate_homebrew_formula.sh).
 
