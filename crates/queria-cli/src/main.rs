@@ -17,6 +17,7 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "queria-cli")]
 #[command(about = "Queria operational CLI")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Cli {
     /// Profile from ~/.config/queria/config.toml (overrides active_profile).
     #[arg(long, global = true, env = "QUERIA_PROFILE")]
