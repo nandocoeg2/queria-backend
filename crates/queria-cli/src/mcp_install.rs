@@ -1,8 +1,8 @@
 //! Fetch live MCP snippets from edge and apply safely to local client configs.
 
 use crate::credentials::ResolvedCredentials;
-use anyhow::{bail, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, bail};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -196,7 +196,9 @@ pub async fn install(
     let format = snippet.format.to_ascii_lowercase();
     let content = snippet.content.clone();
 
-    if format == "shell" || content.trim_start().starts_with("droid ") || content.contains("claude mcp add")
+    if format == "shell"
+        || content.trim_start().starts_with("droid ")
+        || content.contains("claude mcp add")
     {
         println!("--- shell snippet ---\n{content}");
         if dry_run {
@@ -204,13 +206,13 @@ pub async fn install(
             return Ok(());
         }
         if !yes {
-            bail!("shell snippet: re-run with --yes to execute, or run the printed commands manually");
+            bail!(
+                "shell snippet: re-run with --yes to execute, or run the printed commands manually"
+            );
         }
         // Execute via sh -c only the non-comment lines carefully — safer: write temp script
-        let tmp = std::env::temp_dir().join(format!(
-            "queria-mcp-install-{}.sh",
-            uuid::Uuid::now_v7()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("queria-mcp-install-{}.sh", uuid::Uuid::now_v7()));
         let mut script = String::from("#!/usr/bin/env bash\nset -euo pipefail\n");
         if let Some(t) = creds.agent_token.as_deref() {
             script.push_str(&format!(

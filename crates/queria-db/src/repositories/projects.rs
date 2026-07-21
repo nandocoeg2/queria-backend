@@ -10,12 +10,12 @@ use super::types::{
     CreateAgentTokenParams, CreateProjectParams, IndexLocalFileParams, IndexMemoryParams,
     IndexedLocalFileRecord, IndexedMemoryRecord, KnowledgeItemRecord, MarkScratchChunkReadyParams,
     NeedsReviewActionRecord, NeedsReviewItemRecord, ProjectRecord, ProposeMemoryParams,
-    ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord,
-    agent_token_from_row, approval_for_update, approval_from_row,
-    authenticated_agent_token_from_row, count_accessible_project_slugs,
-    ensure_approval_source_document, insert_approval_audit_log, knowledge_item_from_row,
-    needs_review_item_from_row, organization_id_for_user, project_from_row, project_id_for_slug,
-    retrieved_item_from_row, source_from_row, to_infrastructure_error,
+    ProposedMemoryRecord, RegisterSourceDocumentParams, SourceDocumentRecord, agent_token_from_row,
+    approval_for_update, approval_from_row, authenticated_agent_token_from_row,
+    count_accessible_project_slugs, ensure_approval_source_document, insert_approval_audit_log,
+    knowledge_item_from_row, needs_review_item_from_row, organization_id_for_user,
+    project_from_row, project_id_for_slug, retrieved_item_from_row, source_from_row,
+    to_infrastructure_error,
 };
 
 #[derive(Clone, Debug)]
@@ -996,9 +996,7 @@ impl PgProjectRepository {
         // Race or pre-existing: re-read.
         self.find_project_by_slug_in_org(agent.organization_id, slug)
             .await?
-            .ok_or_else(|| {
-                QueriaError::Infrastructure("project create race unresolved".to_owned())
-            })
+            .ok_or_else(|| QueriaError::Infrastructure("project create race unresolved".to_owned()))
     }
 
     /// Append slug to agent_token.permissions.project_slugs JSONB when missing.
@@ -1041,14 +1039,13 @@ impl PgProjectRepository {
         let mut transaction = self.pool.begin().await.map_err(to_infrastructure_error)?;
 
         // Ensure project belongs to agent home org.
-        let project_ok: Option<Uuid> = sqlx::query_scalar(
-            "select id from project where id = $1 and organization_id = $2",
-        )
-        .bind(params.project_id)
-        .bind(agent.organization_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(to_infrastructure_error)?;
+        let project_ok: Option<Uuid> =
+            sqlx::query_scalar("select id from project where id = $1 and organization_id = $2")
+                .bind(params.project_id)
+                .bind(agent.organization_id)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(to_infrastructure_error)?;
         if project_ok.is_none() {
             return Err(QueriaError::PermissionDenied);
         }
@@ -1163,7 +1160,7 @@ impl PgProjectRepository {
         .bind(&title)
         .bind(&params.body)
         .bind("local_git")
-        .bind(&vec!["local-git".to_owned(), "needs-review".to_owned()])
+        .bind(vec!["local-git".to_owned(), "needs-review".to_owned()])
         .bind(&params.content_hash)
         .bind(format!("agent:{}:{}", agent.token_prefix, agent.name))
         .fetch_one(&mut *transaction)
@@ -2551,8 +2548,7 @@ mod needs_review_tests {
     #[test]
     fn promote_sets_approved() {
         assert!(
-            PgProjectRepository::promote_needs_review_status_sql()
-                .contains("status = 'approved'")
+            PgProjectRepository::promote_needs_review_status_sql().contains("status = 'approved'")
         );
     }
 

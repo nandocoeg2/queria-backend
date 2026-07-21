@@ -19,8 +19,7 @@ const AGENTS_MARKER_START: &str = "<!-- queria:start -->";
 const AGENTS_MARKER_END: &str = "<!-- queria:end -->";
 
 /// Shared client-side auto-retrieve hook script (T4+R6+H1 fail-open).
-const HOOK_SCRIPT: &str =
-    include_str!("../../../../agent-tools/hooks/queria-retrieve-hook.sh");
+const HOOK_SCRIPT: &str = include_str!("../../../../agent-tools/hooks/queria-retrieve-hook.sh");
 
 pub fn router() -> Router<ApiState> {
     Router::new()

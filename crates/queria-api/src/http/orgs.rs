@@ -114,7 +114,10 @@ pub fn router() -> Router<ApiState> {
         .route("/api/v1/invites/accept", post(accept_invite))
 }
 
-async fn list_orgs(State(state): State<ApiState>, headers: HeaderMap) -> ApiResult<Vec<OrganizationResponse>> {
+async fn list_orgs(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<OrganizationResponse>> {
     let session = require_session(&state, &headers).await?;
     auth::require_platform_super_admin(&session)
         .map_err(|message| error(StatusCode::FORBIDDEN, message))?;
@@ -149,9 +152,12 @@ async fn create_org(
         return Err(error(StatusCode::BAD_REQUEST, "invalid_first_admin_email"));
     }
 
-    let issued = OrgInviteTokenIssuer
-        .issue()
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "invite_token_issue_failed"))?;
+    let issued = OrgInviteTokenIssuer.issue().map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invite_token_issue_failed",
+        )
+    })?;
     let expires_at = Utc::now() + Duration::days(INVITE_TTL_DAYS);
 
     let repository = org_repository(&state)?;
@@ -217,9 +223,12 @@ async fn create_invite(
         return Err(error(StatusCode::BAD_REQUEST, "invalid_invite_role"));
     }
 
-    let issued = OrgInviteTokenIssuer
-        .issue()
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "invite_token_issue_failed"))?;
+    let issued = OrgInviteTokenIssuer.issue().map_err(|_| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invite_token_issue_failed",
+        )
+    })?;
     let expires_at = Utc::now() + Duration::days(INVITE_TTL_DAYS);
 
     let invite = repository
@@ -394,9 +403,7 @@ async fn require_session(
         .map_err(|message| error(StatusCode::UNAUTHORIZED, message))
 }
 
-fn org_repository(
-    state: &ApiState,
-) -> Result<PgOrgRepository, (StatusCode, Json<ErrorResponse>)> {
+fn org_repository(state: &ApiState) -> Result<PgOrgRepository, (StatusCode, Json<ErrorResponse>)> {
     state.org_repository().ok_or_else(|| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -517,14 +524,13 @@ mod tests {
         is_platform_super_admin: bool,
     ) -> (Uuid, Uuid, String) {
         let slug = format!("org-{}", Uuid::now_v7().simple());
-        let org_id: Uuid = sqlx::query_scalar(
-            "insert into organization(slug, name) values ($1, $2) returning id",
-        )
-        .bind(&slug)
-        .bind(format!("Org {slug}"))
-        .fetch_one(pool)
-        .await
-        .expect("insert org");
+        let org_id: Uuid =
+            sqlx::query_scalar("insert into organization(slug, name) values ($1, $2) returning id")
+                .bind(&slug)
+                .bind(format!("Org {slug}"))
+                .fetch_one(pool)
+                .await
+                .expect("insert org");
 
         let password_hash = PasswordHasher
             .hash_password(password)
@@ -617,11 +623,7 @@ mod tests {
             .await;
     }
 
-    async fn login_cookie(
-        app: axum::Router,
-        email: &str,
-        password: &str,
-    ) -> (String, Value) {
+    async fn login_cookie(app: axum::Router, email: &str, password: &str) -> (String, Value) {
         let response = app
             .oneshot(
                 Request::builder()
@@ -705,8 +707,7 @@ mod tests {
     #[tokio::test]
     async fn unauthenticated_orgs_routes_denied() {
         let app = crate::app::build_app(AppConfig::default_local());
-        let (status, _) =
-            json_request(app.clone(), "GET", "/api/v1/orgs", None, None).await;
+        let (status, _) = json_request(app.clone(), "GET", "/api/v1/orgs", None, None).await;
         assert_eq!(status, HttpStatus::UNAUTHORIZED);
 
         let (status, _) = json_request(
@@ -757,18 +758,14 @@ mod tests {
         );
 
         // Stored hash only — raw token not at rest.
-        let stored_hash: String = sqlx::query_scalar(
-            "select token_hash from org_invite where id = $1",
-        )
-        .bind(Uuid::parse_str(invite_id).unwrap())
-        .fetch_one(&pool)
-        .await
-        .expect("hash");
+        let stored_hash: String =
+            sqlx::query_scalar("select token_hash from org_invite where id = $1")
+                .bind(Uuid::parse_str(invite_id).unwrap())
+                .fetch_one(&pool)
+                .await
+                .expect("hash");
         assert_ne!(stored_hash, token);
-        assert_eq!(
-            stored_hash,
-            OrgInviteTokenIssuer::hash_token(token)
-        );
+        assert_eq!(stored_hash, OrgInviteTokenIssuer::hash_token(token));
         let raw_in_row: bool = sqlx::query_scalar(
             "select exists(
                select 1 from org_invite
@@ -792,7 +789,10 @@ mod tests {
             "list missing {slug}: {list_body}"
         );
         let list_str = list_body.to_string();
-        assert!(!list_str.contains(token), "list must not re-expose raw token");
+        assert!(
+            !list_str.contains(token),
+            "list must not re-expose raw token"
+        );
 
         // Duplicate slug rejected without orphan second invite.
         let (status, dup) = json_request(
@@ -821,13 +821,12 @@ mod tests {
         )
         .await;
         assert_eq!(status, HttpStatus::BAD_REQUEST);
-        let exists: bool = sqlx::query_scalar(
-            "select exists(select 1 from organization where slug = $1)",
-        )
-        .bind(&bad_slug)
-        .fetch_one(&pool)
-        .await
-        .expect("exists");
+        let exists: bool =
+            sqlx::query_scalar("select exists(select 1 from organization where slug = $1)")
+                .bind(&bad_slug)
+                .fetch_one(&pool)
+                .await
+                .expect("exists");
         assert!(!exists);
 
         let (status, _) = json_request(
@@ -871,17 +870,15 @@ mod tests {
         .await;
         assert_eq!(status, HttpStatus::FORBIDDEN);
 
-        let exists: bool = sqlx::query_scalar(
-            "select exists(select 1 from organization where slug = $1)",
-        )
-        .bind(&slug)
-        .fetch_one(&pool)
-        .await
-        .expect("exists");
+        let exists: bool =
+            sqlx::query_scalar("select exists(select 1 from organization where slug = $1)")
+                .bind(&slug)
+                .fetch_one(&pool)
+                .await
+                .expect("exists");
         assert!(!exists);
 
-        let (status, body) =
-            json_request(app, "GET", "/api/v1/orgs", Some(&cookie), None).await;
+        let (status, body) = json_request(app, "GET", "/api/v1/orgs", Some(&cookie), None).await;
         assert_eq!(status, HttpStatus::FORBIDDEN);
         assert!(!body.is_array());
 
@@ -898,8 +895,7 @@ mod tests {
         let password = "correct horse battery staple";
 
         let super_email = format!("super-{}@orgs.test", Uuid::now_v7().simple());
-        let (super_id, super_org, _) =
-            seed_user(&pool, &super_email, password, false, true).await;
+        let (super_id, super_org, _) = seed_user(&pool, &super_email, password, false, true).await;
 
         let admin_email = format!("admin-{}@orgs.test", Uuid::now_v7().simple());
         let (admin_id, admin_org, admin_slug) =
@@ -979,8 +975,7 @@ mod tests {
         };
         let password = "correct horse battery staple";
         let super_email = format!("super-{}@orgs.test", Uuid::now_v7().simple());
-        let (super_id, super_org, _) =
-            seed_user(&pool, &super_email, password, false, true).await;
+        let (super_id, super_org, _) = seed_user(&pool, &super_email, password, false, true).await;
 
         let app = build_app_with_pool(AppConfig::default_local(), pool.clone());
         let (super_cookie, _) = login_cookie(app.clone(), &super_email, password).await;
@@ -1052,7 +1047,10 @@ mod tests {
         assert_eq!(status, HttpStatus::OK, "{accepted}");
         assert_eq!(accepted["accepted"], true);
         assert_eq!(accepted["created_user"], true);
-        assert_eq!(accepted["organization_id"].as_str(), Some(org_b_id.as_str()));
+        assert_eq!(
+            accepted["organization_id"].as_str(),
+            Some(org_b_id.as_str())
+        );
 
         // Membership + organization_id synced.
         let email_norm = admin_b.to_ascii_lowercase();
@@ -1068,18 +1066,13 @@ mod tests {
             .await
             .expect("user");
             use sqlx::Row;
-            (
-                row.get("id"),
-                row.get("organization_id"),
-                row.get("has_m"),
-            )
+            (row.get("id"), row.get("organization_id"), row.get("has_m"))
         };
         assert!(has_membership);
         assert_eq!(org_id.to_string(), org_b_id);
 
         // Login binds active org.
-        let (cookie_b, login_json) =
-            login_cookie(app.clone(), &email_norm, password).await;
+        let (cookie_b, login_json) = login_cookie(app.clone(), &email_norm, password).await;
         assert_eq!(
             login_json["active_organization_id"].as_str(),
             Some(org_b_id.as_str())
@@ -1122,13 +1115,12 @@ mod tests {
         .await;
         assert_eq!(status, HttpStatus::OK, "{reaccepted}");
         // Still single membership.
-        let mcount: i64 = sqlx::query_scalar(
-            "select count(*) from org_membership where user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .expect("count");
+        let mcount: i64 =
+            sqlx::query_scalar("select count(*) from org_membership where user_id = $1")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .expect("count");
         assert_eq!(mcount, 1);
 
         // Second-org invite rejected for existing Team B user.
@@ -1158,13 +1150,12 @@ mod tests {
         assert_eq!(status, HttpStatus::CONFLICT);
         assert_eq!(body["error"], "already_member_of_other_org");
         // org_id unchanged
-        let still: Uuid = sqlx::query_scalar(
-            "select organization_id from user_account where id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .expect("org");
+        let still: Uuid =
+            sqlx::query_scalar("select organization_id from user_account where id = $1")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .expect("org");
         assert_eq!(still.to_string(), org_b_id);
 
         // Expired invite rejected.
@@ -1262,13 +1253,12 @@ mod tests {
         // Home-org only: every listed email belongs to user_account rows with this org.
         for member in arr {
             let mid = member["user_id"].as_str().expect("user_id");
-            let member_org: Uuid = sqlx::query_scalar(
-                "select organization_id from user_account where id = $1",
-            )
-            .bind(Uuid::parse_str(mid).unwrap())
-            .fetch_one(&pool)
-            .await
-            .expect("member org");
+            let member_org: Uuid =
+                sqlx::query_scalar("select organization_id from user_account where id = $1")
+                    .bind(Uuid::parse_str(mid).unwrap())
+                    .fetch_one(&pool)
+                    .await
+                    .expect("member org");
             assert_eq!(member_org.to_string(), org_b_id);
         }
 

@@ -207,10 +207,9 @@ pub async fn run_restore_drill_with_options(
         if let (Some(data), Some(target_database_url)) = (
             pg_dump_data.as_deref(),
             options.target_database_url.as_deref(),
-        ) {
-            if let Err(error) = restore_postgres_dump(data, target_database_url).await {
-                report.errors.push(format!("pg_restore failed: {error}"));
-            }
+        ) && let Err(error) = restore_postgres_dump(data, target_database_url).await
+        {
+            report.errors.push(format!("pg_restore failed: {error}"));
         }
         if report.errors.is_empty() && options.should_restore_qdrant() {
             let qdrant_url = options.target_qdrant_url.as_deref().unwrap_or_default();

@@ -169,6 +169,7 @@ impl PgHybridRetrievalRepository {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn authorize_agent(
         &self,
         organization_id: Uuid,

@@ -67,7 +67,7 @@ impl<R: EvaluationRetriever> EvaluationExecutor<R> {
                 query: question.query.clone(),
                 include_global: question.include_global,
                 include_scratch: false,
-                    include_needs_review: false,
+                include_needs_review: false,
                 limit: evaluation_limit(question.minimum_items),
                 rerank: None,
                 compress: None,

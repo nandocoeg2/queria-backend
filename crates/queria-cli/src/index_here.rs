@@ -2,9 +2,9 @@
 //!
 //! POST `{edge}/api/v1/agent/index-local` with Bearer agent token.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use queria_ingestion::local_index_gates::{
-    content_hash, content_is_indexable, should_index_local_file, MAX_LOCAL_FILE_BYTES,
+    MAX_LOCAL_FILE_BYTES, content_hash, content_is_indexable, should_index_local_file,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -21,7 +21,6 @@ const MAX_ROOTS_PER_REQUEST: usize = 20;
 const MAX_FILES_PER_REQUEST: usize = 500;
 /// Stay under ~4 MiB JSON body before request overhead.
 const MAX_BATCH_BYTES: usize = 4 * 1024 * 1024;
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredRoot {
@@ -142,23 +141,13 @@ pub async fn run(
 fn print_discovery_summary(plans: &[RootFilePlan]) {
     println!("discovered {} git root(s):", plans.len());
     for plan in plans {
-        let origin = plan
-            .root
-            .origin_url
-            .as_deref()
-            .unwrap_or("(no origin)");
+        let origin = plan.root.origin_url.as_deref().unwrap_or("(no origin)");
         let branch = plan.root.branch.as_deref().unwrap_or("?");
         let sha = plan
             .root
             .commit_sha
             .as_deref()
-            .map(|s| {
-                if s.len() > 12 {
-                    &s[..12]
-                } else {
-                    s
-                }
-            })
+            .map(|s| if s.len() > 12 { &s[..12] } else { s })
             .unwrap_or("?");
         println!(
             "  {}  origin={}  branch={}  HEAD={}  accept={} skip={}",
@@ -195,9 +184,7 @@ pub fn discover_git_roots(start: &Path, depth: u32) -> Result<Vec<DiscoveredRoot
 }
 
 fn push_unique_root(ordered: &mut Vec<PathBuf>, seen: &mut BTreeSet<PathBuf>, path: &Path) {
-    let canonical = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     if seen.insert(canonical.clone()) {
         ordered.push(canonical);
     }
@@ -217,11 +204,11 @@ fn walk_for_nested_roots(
     // At depth 0 we may already be inside a root; still scan children up to max_depth.
     // When we find a nested root at or below max_depth, record it and do not descend into it
     // for the parent's file listing (each root has its own ls-files later).
-    if current_depth > 0 {
-        if let Some(root) = git_root_if_present(dir) {
-            push_unique_root(ordered, seen, &root);
-            return Ok(());
-        }
+    if current_depth > 0
+        && let Some(root) = git_root_if_present(dir)
+    {
+        push_unique_root(ordered, seen, &root);
+        return Ok(());
     }
 
     if current_depth == max_depth {
@@ -338,7 +325,9 @@ pub fn nested_path_prefixes(root: &Path, all_roots: &[PathBuf]) -> Vec<String> {
 /// True if `rel` is the nested root path itself or any file under it.
 pub fn path_under_nested_prefixes(rel: &str, prefixes: &[String]) -> bool {
     let rel = rel.replace('\\', "/");
-    prefixes.iter().any(|p| rel == *p || rel.starts_with(&format!("{p}/")))
+    prefixes
+        .iter()
+        .any(|p| rel == *p || rel.starts_with(&format!("{p}/")))
 }
 
 /// List tracked files under root and apply client quality gates.
@@ -377,7 +366,11 @@ fn git_ls_files(root: &Path) -> Result<Vec<String>> {
         .with_context(|| format!("git ls-files in {}", root.display()))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("git ls-files failed in {}: {}", root.display(), stderr.trim());
+        bail!(
+            "git ls-files failed in {}: {}",
+            root.display(),
+            stderr.trim()
+        );
     }
     let paths = output
         .stdout
@@ -426,6 +419,7 @@ pub fn process_tracked_file(root: &Path, rel_path: &str) -> Option<IndexableFile
 }
 
 /// Pure gate counting for tests without filesystem: given (path, size, content) outcomes.
+#[cfg(test)]
 pub fn count_gate_outcomes(files: &[(&str, u64, &str)]) -> (u32, u32) {
     let mut accept = 0_u32;
     let mut skip = 0_u32;
@@ -711,10 +705,7 @@ mod tests {
         assert_eq!(plan.accepted.len(), 1);
         assert_eq!(plan.accepted[0].path, "docs/ok.md");
         assert!(plan.skipped >= 2);
-        assert_eq!(
-            plan.accepted[0].content_hash,
-            content_hash("hello")
-        );
+        assert_eq!(plan.accepted[0].content_hash, content_hash("hello"));
     }
 
     #[test]
@@ -740,10 +731,15 @@ mod tests {
 
         let prefixes = nested_path_prefixes(&parent_c, &all);
         assert!(
-            prefixes.iter().any(|p| p == "services/api" || p.ends_with("services/api")),
+            prefixes
+                .iter()
+                .any(|p| p == "services/api" || p.ends_with("services/api")),
             "expected nested prefix, got {prefixes:?}"
         );
-        assert!(path_under_nested_prefixes("services/api/src/main.ts", &prefixes));
+        assert!(path_under_nested_prefixes(
+            "services/api/src/main.ts",
+            &prefixes
+        ));
         assert!(!path_under_nested_prefixes("docs/parent.md", &prefixes));
 
         let parent_root = inspect_root(parent_c.clone()).expect("inspect parent");
@@ -754,19 +750,33 @@ mod tests {
                 .iter()
                 .all(|f| !f.path.starts_with("services/api")),
             "parent must not accept nested paths: {:?}",
-            parent_plan.accepted.iter().map(|f| &f.path).collect::<Vec<_>>()
+            parent_plan
+                .accepted
+                .iter()
+                .map(|f| &f.path)
+                .collect::<Vec<_>>()
         );
         assert!(
-            parent_plan.accepted.iter().any(|f| f.path == "docs/parent.md"),
+            parent_plan
+                .accepted
+                .iter()
+                .any(|f| f.path == "docs/parent.md"),
             "parent should still accept own files"
         );
 
         let nested_root = inspect_root(nested_c.clone()).expect("inspect nested");
         let nested_plan = plan_root_files(nested_root, &all).expect("plan nested");
         assert!(
-            nested_plan.accepted.iter().any(|f| f.path == "src/main.ts" || f.path == "README.md"),
+            nested_plan
+                .accepted
+                .iter()
+                .any(|f| f.path == "src/main.ts" || f.path == "README.md"),
             "nested root should accept own tracked files: {:?}",
-            nested_plan.accepted.iter().map(|f| &f.path).collect::<Vec<_>>()
+            nested_plan
+                .accepted
+                .iter()
+                .map(|f| &f.path)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -833,7 +843,10 @@ mod tests {
             .max()
             .unwrap_or(0);
         assert!(max_files <= MAX_FILES_PER_REQUEST);
-        let total: usize = batches.iter().map(|b| b.iter().map(|r| r.files.len()).sum::<usize>()).sum();
+        let total: usize = batches
+            .iter()
+            .map(|b| b.iter().map(|r| r.files.len()).sum::<usize>())
+            .sum();
         assert_eq!(total, 501);
     }
 

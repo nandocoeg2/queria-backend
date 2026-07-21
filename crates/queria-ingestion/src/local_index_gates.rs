@@ -132,16 +132,16 @@ fn extract_repo_name_from_origin(origin: &str) -> Option<String> {
     }
 
     // SCP form: git@host:path/to/repo.git
-    if let Some((_, host_and_path)) = origin.split_once('@') {
-        if let Some((_, path)) = host_and_path.split_once(':') {
-            let last = path
-                .rsplit(['/', '\\'])
-                .next()
-                .unwrap_or(path)
-                .trim_end_matches('/');
-            let name = strip_git_suffix(last);
-            return if name.is_empty() { None } else { Some(name) };
-        }
+    if let Some((_, host_and_path)) = origin.split_once('@')
+        && let Some((_, path)) = host_and_path.split_once(':')
+    {
+        let last = path
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(path)
+            .trim_end_matches('/');
+        let name = strip_git_suffix(last);
+        return if name.is_empty() { None } else { Some(name) };
     }
 
     None
@@ -210,20 +210,14 @@ mod tests {
     #[test]
     fn slug_from_https_origin() {
         assert_eq!(
-            normalize_project_slug_from_origin(
-                Some("https://gitlab.example/x/y/z.git"),
-                "ignored"
-            ),
+            normalize_project_slug_from_origin(Some("https://gitlab.example/x/y/z.git"), "ignored"),
             "z"
         );
     }
 
     #[test]
     fn slug_from_basename_when_no_origin() {
-        assert_eq!(
-            normalize_project_slug_from_origin(None, "My App"),
-            "my-app"
-        );
+        assert_eq!(normalize_project_slug_from_origin(None, "My App"), "my-app");
     }
 
     #[test]
@@ -255,10 +249,7 @@ mod tests {
             "config.yml",
             "Cargo.toml",
         ] {
-            assert!(
-                should_index_local_file(path, 100),
-                "expected allow: {path}"
-            );
+            assert!(should_index_local_file(path, 100), "expected allow: {path}");
         }
     }
 
@@ -291,8 +282,14 @@ mod tests {
 
     #[test]
     fn gate_denies_oversized_and_bad_paths() {
-        assert!(!should_index_local_file("docs/runbook.md", MAX_LOCAL_FILE_BYTES + 1));
-        assert!(should_index_local_file("docs/runbook.md", MAX_LOCAL_FILE_BYTES));
+        assert!(!should_index_local_file(
+            "docs/runbook.md",
+            MAX_LOCAL_FILE_BYTES + 1
+        ));
+        assert!(should_index_local_file(
+            "docs/runbook.md",
+            MAX_LOCAL_FILE_BYTES
+        ));
         assert!(!should_index_local_file("../escape.md", 10));
         assert!(!should_index_local_file("/abs.md", 10));
         assert!(!should_index_local_file("", 10));

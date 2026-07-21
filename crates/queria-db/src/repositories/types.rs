@@ -529,14 +529,12 @@ pub(crate) async fn organization_id_for_user(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     user_id: Uuid,
 ) -> QueriaResult<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(
-        "select organization_id from org_membership where user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(to_infrastructure_error)?
-    .ok_or(QueriaError::PermissionDenied)
+    sqlx::query_scalar::<_, Uuid>("select organization_id from org_membership where user_id = $1")
+        .bind(user_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(to_infrastructure_error)?
+        .ok_or(QueriaError::PermissionDenied)
 }
 
 pub(crate) async fn count_accessible_project_slugs(

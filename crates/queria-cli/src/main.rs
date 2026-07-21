@@ -348,8 +348,8 @@ mod tests {
 
     #[test]
     fn parses_index_here_defaults() {
-        let cli = Cli::try_parse_from(["queria-cli", "index-here"])
-            .expect("index-here should parse");
+        let cli =
+            Cli::try_parse_from(["queria-cli", "index-here"]).expect("index-here should parse");
         match cli.command {
             Command::IndexHere {
                 token_env,

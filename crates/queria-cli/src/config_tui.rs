@@ -3,18 +3,18 @@
 use crate::config::{self, UserConfig};
 use crate::credentials::{self, ResolveOpts};
 use crate::mcp_install;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Terminal;
 use std::io::stdout;
 use std::time::Duration;
 
@@ -61,9 +61,8 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
         list_state.select(Some(idx));
     }
 
-    let mut status = String::from(
-        "↑↓ select · e edit · n new · u use · d delete · m mcp install · q quit",
-    );
+    let mut status =
+        String::from("↑↓ select · e edit · n new · u use · d delete · m mcp install · q quit");
     let mut edit_name = String::new();
     let mut edit_field = EditField::Edge;
     let mut edge = String::new();
@@ -121,7 +120,7 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         f.render_stateful_widget(list, chunks[1], &mut list_state);
                     }
                     Screen::Edit => {
-                        let lines = vec![
+                        let lines = [
                             format!("profile: {edit_name}"),
                             format!(
                                 "{} edge_url: {edge}",
@@ -172,12 +171,7 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         let lines: Vec<String> = clients
                             .iter()
                             .enumerate()
-                            .map(|(i, c)| {
-                                format!(
-                                    "{} {c}",
-                                    if i == mcp_idx { ">" } else { " " }
-                                )
-                            })
+                            .map(|(i, c)| format!("{} {c}", if i == mcp_idx { ">" } else { " " }))
                             .collect();
                         let p = Paragraph::new(lines.join("\n")).block(
                             Block::default()
@@ -318,15 +312,13 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         }
                     }
                     KeyCode::Backspace => {
-                        let t = active_edit_buf(
-                            edit_field, &mut edge, &mut token, &mut mcp, &mut slug,
-                        );
+                        let t =
+                            active_edit_buf(edit_field, &mut edge, &mut token, &mut mcp, &mut slug);
                         t.pop();
                     }
                     KeyCode::Char(c) => {
-                        let t = active_edit_buf(
-                            edit_field, &mut edge, &mut token, &mut mcp, &mut slug,
-                        );
+                        let t =
+                            active_edit_buf(edit_field, &mut edge, &mut token, &mut mcp, &mut slug);
                         t.push(c);
                     }
                     _ => {}
@@ -384,11 +376,7 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
 
 fn nonempty(s: String) -> Option<String> {
     let s = s.trim().to_owned();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 fn active_edit_buf<'a>(

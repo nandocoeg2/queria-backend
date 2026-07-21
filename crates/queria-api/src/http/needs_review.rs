@@ -315,7 +315,11 @@ impl From<NeedsReviewActionRecord> for NeedsReviewActionResponse {
     fn from(value: NeedsReviewActionRecord) -> Self {
         Self {
             knowledge_item: KnowledgeItemResponse::from(value.knowledge_item),
-            chunk_ids: value.chunk_ids.into_iter().map(|id| id.to_string()).collect(),
+            chunk_ids: value
+                .chunk_ids
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect(),
         }
     }
 }
@@ -331,7 +335,10 @@ async fn require_session(
 
 /// Pure gate: session promote/reject requires org_admin role OR platform super-admin.
 #[cfg_attr(test, allow(dead_code))]
-fn session_may_manage_needs_review(is_platform_super_admin: bool, membership_role: Option<&str>) -> bool {
+fn session_may_manage_needs_review(
+    is_platform_super_admin: bool,
+    membership_role: Option<&str>,
+) -> bool {
     is_platform_super_admin || membership_role == Some("org_admin")
 }
 
@@ -478,7 +485,10 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let body = body_string(response).await;
-        assert!(body.contains("session_required") || body.contains("error"), "body={body}");
+        assert!(
+            body.contains("session_required") || body.contains("error"),
+            "body={body}"
+        );
     }
 
     #[test]
@@ -504,10 +514,9 @@ mod tests {
 
     #[test]
     fn bulk_request_force_project_all_true() {
-        let payload: BulkNeedsReviewRequest = serde_json::from_str(
-            r#"{"project_slug":"api","force_project_all":true}"#,
-        )
-        .expect("deserialize");
+        let payload: BulkNeedsReviewRequest =
+            serde_json::from_str(r#"{"project_slug":"api","force_project_all":true}"#)
+                .expect("deserialize");
         assert!(payload.force_project_all);
     }
 
