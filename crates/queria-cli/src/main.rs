@@ -77,9 +77,11 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum DoctorCommand {
+    /// Probe MCP tools/list. Default URL: config/env mcp_url (or {edge}/mcp), not localhost hardcode.
     Mcp {
-        #[arg(long, default_value = "http://127.0.0.1:17672/mcp")]
-        url: String,
+        /// Override MCP endpoint. When omitted, resolve from profile/env.
+        #[arg(long)]
+        url: Option<String>,
     },
 }
 
@@ -150,7 +152,20 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Doctor {
             command: DoctorCommand::Mcp { url },
-        } => doctor_mcp::run(&url).await,
+        } => {
+            let url = match url {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    let creds = credentials::resolve(credentials::ResolveOpts {
+                        profile: profile.clone(),
+                        require_token: false,
+                        ..Default::default()
+                    })?;
+                    creds.mcp_url
+                }
+            };
+            doctor_mcp::run(&url).await
+        }
         Command::Bootstrap => bootstrap::run().await,
         Command::Database {
             command: DatabaseCommand::Migrate,

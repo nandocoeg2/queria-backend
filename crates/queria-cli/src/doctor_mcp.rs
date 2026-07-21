@@ -2,6 +2,7 @@ use anyhow::Context;
 use serde_json::json;
 
 pub async fn run(url: &str) -> anyhow::Result<()> {
+    println!("mcp_url={url}");
     let response = reqwest::Client::new()
         .post(url)
         .json(&json!({
