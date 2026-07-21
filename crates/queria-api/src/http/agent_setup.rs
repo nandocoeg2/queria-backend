@@ -592,9 +592,11 @@ fn cursor_snippet(mcp_url: &str) -> Value {
 
 fn droid_snippet(mcp_url: &str) -> Value {
     let content = format!(
-        r#"# Factory Droid — remote MCP (pattern; adjust to your droid mcp CLI)
+        r#"# Factory Droid — remote HTTP MCP
 # export QUERIA_AGENT_TOKEN=...
 droid mcp add queria {url} \
+  --type http \
+  --no-oauth \
   --header "Authorization: Bearer ${{QUERIA_AGENT_TOKEN}}"
 "#,
         url = mcp_url

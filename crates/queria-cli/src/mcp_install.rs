@@ -15,10 +15,13 @@ pub struct Snippet {
     pub content: String,
 }
 
-pub async fn fetch_snippet(edge: &str, client: &str) -> Result<Snippet> {
+pub async fn fetch_snippet(edge: &str, client: &str, mcp_url: Option<&str>) -> Result<Snippet> {
     let client = normalize_client(client)?;
     let base = edge.trim().trim_end_matches('/');
-    let url = format!("{base}/api/v1/setup/mcp-snippet?client={client}");
+    let mut url = format!("{base}/api/v1/setup/mcp-snippet?client={client}");
+    if let Some(mcp) = mcp_url.map(str::trim).filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&mcp_url={}", urlencoding_lite(mcp)));
+    }
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
@@ -57,6 +60,20 @@ pub async fn fetch_snippet(edge: &str, client: &str) -> Result<Snippet> {
     })
 }
 
+/// Minimal query-escape for mcp_url (no extra deps).
+fn urlencoding_lite(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b':' | b'/' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 fn normalize_client(raw: &str) -> Result<String> {
     let c = raw.trim().to_ascii_lowercase();
     match c.as_str() {
@@ -91,6 +108,68 @@ pub fn expand_path_hint(hint: &str) -> Result<PathBuf> {
         return Ok(PathBuf::from(home));
     }
     Ok(PathBuf::from(primary))
+}
+
+fn droid_install_script(mcp_url: &str) -> String {
+    format!(
+        r#"droid mcp add queria {url} \
+  --type http \
+  --no-oauth \
+  --header "Authorization: Bearer ${{QUERIA_AGENT_TOKEN}}"
+"#,
+        url = mcp_url
+    )
+}
+
+fn run_droid_mcp_add(creds: &ResolvedCredentials) -> Result<()> {
+    let token = creds
+        .agent_token
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .context("agent token required for droid MCP install")?;
+    let header = format!("Authorization: Bearer {token}");
+    let output = Command::new("droid")
+        .args([
+            "mcp",
+            "add",
+            "queria",
+            &creds.mcp_url,
+            "--type",
+            "http",
+            "--no-oauth",
+            "--header",
+            &header,
+        ])
+        .output()
+        .context("run droid mcp add (is `droid` on PATH?)")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Idempotent-ish: already configured is OK for re-run.
+        let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+        if combined.contains("already") || combined.contains("exists") {
+            println!("droid: queria MCP already configured");
+            return Ok(());
+        }
+        bail!(
+            "droid mcp add failed ({})\n{}\n{}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.trim().is_empty() {
+        println!("{}", stdout.trim());
+    }
+    Ok(())
+}
+
+/// Prefer configured MCP URL if snippet still contains localhost defaults.
+fn rewrite_snippet_urls(content: &str, mcp_url: &str) -> String {
+    content
+        .replace("http://127.0.0.1:17674/mcp", mcp_url)
+        .replace("http://localhost:17674/mcp", mcp_url)
 }
 
 fn backup_file(path: &Path) -> Result<Option<PathBuf>> {
@@ -188,19 +267,29 @@ pub async fn install(
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
-    let snippet = fetch_snippet(&creds.edge_url, client).await?;
+    let client_norm = normalize_client(client)?;
+    // Prefer local resolved MCP URL so install works even when edge still advertises localhost.
+    let snippet = fetch_snippet(&creds.edge_url, &client_norm, Some(&creds.mcp_url)).await?;
     println!("client: {}", snippet.client);
+    println!("mcp_url: {}", creds.mcp_url);
     println!("path_hint: {}", snippet.path_hint);
     println!("format: {}", snippet.format);
 
     let format = snippet.format.to_ascii_lowercase();
-    let content = snippet.content.clone();
+    let content = rewrite_snippet_urls(&snippet.content, &creds.mcp_url);
 
-    if format == "shell"
+    // Droid shell install: build a known-good command (snippet alone may lack --type http).
+    if client_norm == "droid"
+        || format == "shell"
         || content.trim_start().starts_with("droid ")
         || content.contains("claude mcp add")
     {
-        println!("--- shell snippet ---\n{content}");
+        let shell_body = if client_norm == "droid" {
+            droid_install_script(&creds.mcp_url)
+        } else {
+            content.clone()
+        };
+        println!("--- shell snippet ---\n{shell_body}");
         if dry_run {
             println!("dry-run: not executing shell");
             return Ok(());
@@ -210,7 +299,11 @@ pub async fn install(
                 "shell snippet: re-run with --yes to execute, or run the printed commands manually"
             );
         }
-        // Execute via sh -c only the non-comment lines carefully — safer: write temp script
+        if client_norm == "droid" {
+            run_droid_mcp_add(creds)?;
+            println!("MCP install (droid) finished OK");
+            return Ok(());
+        }
         let tmp =
             std::env::temp_dir().join(format!("queria-mcp-install-{}.sh", uuid::Uuid::now_v7()));
         let mut script = String::from("#!/usr/bin/env bash\nset -euo pipefail\n");
@@ -224,7 +317,7 @@ pub async fn install(
             "export QUERIA_MCP_URL='{}'\n",
             creds.mcp_url.replace('\'', r"'\''")
         ));
-        script.push_str(&content);
+        script.push_str(&shell_body);
         script.push('\n');
         fs::write(&tmp, script)?;
         #[cfg(unix)]
@@ -232,10 +325,17 @@ pub async fn install(
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&tmp, fs::Permissions::from_mode(0o700))?;
         }
-        let status = Command::new("bash").arg(&tmp).status()?;
+        let output = Command::new("bash").arg(&tmp).output()?;
         let _ = fs::remove_file(&tmp);
-        if !status.success() {
-            bail!("shell install exited {status}");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            bail!(
+                "shell install failed ({})\n{}\n{}",
+                output.status,
+                stdout.trim(),
+                stderr.trim()
+            );
         }
         println!("shell install finished");
         return Ok(());
