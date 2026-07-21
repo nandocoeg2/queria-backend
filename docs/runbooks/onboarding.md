@@ -1,7 +1,7 @@
 # Onboarding Runbook (Admin → Agent)
 
 > Status: CURRENT  
-> Last verified: 2026-07-20  
+> Last verified: 2026-07-21  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)  
 > Local infra detail: [`local-development.md`](./local-development.md)  
 > Retrieval ops: [`hybrid-retrieval.md`](./hybrid-retrieval.md)
@@ -75,18 +75,11 @@ Knowledge is **not** part of the Daily 3-step connect path. Choose one (or both 
 
 Users should **not** need a Rust toolchain for `index-here`.
 
-**Preferred (when Homebrew formula is published):**
+**Daily agent onboard does not need this section.** Mint token → env + MCP → retrieve works with zero CLI install. Use install only for optional laptop **`index-here`** (or maintainer tooling).
 
-```bash
-# After live Release + homebrew-queria formula push — see queria-cli-homebrew.md
-brew install nandocoeg2/queria/queria-cli
-# private Release assets: export HOMEBREW_GITHUB_API_TOKEN=… first
-queria-cli index-here --help
-```
+**Default today — GitHub Release binaries (curl):**
 
-Tap process / generator: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). Workspace scaffold: `queria/homebrew-queria/` → GitHub repo `nandocoeg2/homebrew-queria`.
-
-**Fallback — GitHub Release binaries (curl):**
+Requires a published **`cli-v*`** GitHub Release with assets. Repo is private: unauthenticated downloads 404 — use a logged-in browser, `gh release download`, or tokenized curl. Operator must confirm assets in Actions/Releases UI (not from bare unauth API). See [`deployment.md`](./deployment.md) residual table.
 
 | Platform | Asset (latest `cli-v*` release) |
 |---|---|
@@ -98,8 +91,9 @@ Tap process / generator: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). W
 Releases: https://github.com/nandocoeg2/queria-backend/releases  
 
 ```bash
-# Example: macOS Apple Silicon (replace TAG with latest cli-v*)
+# Example: macOS Apple Silicon (replace TAG with a real published cli-v*)
 TAG=cli-v0.1.0
+# private repo: prefer `gh release download "$TAG" -p 'queria-cli-aarch64-apple-darwin.tar.gz'`
 curl -fsSL -o queria-cli.tar.gz \
   "https://github.com/nandocoeg2/queria-backend/releases/download/${TAG}/queria-cli-aarch64-apple-darwin.tar.gz"
 tar -xzf queria-cli.tar.gz
@@ -107,10 +101,22 @@ sudo install -m 755 queria-cli-aarch64-apple-darwin/queria-cli /usr/local/bin/qu
 queria-cli index-here --help
 ```
 
+**Homebrew — not installable until real formula SHAs exist:**
+
+Scaffold tap `queria/homebrew-queria/` uses a placeholder that **`odie`s** (fails loudly). Do **not** run `brew install nandocoeg2/queria/queria-cli` expecting success today. After a live Release + `./scripts/generate_homebrew_formula.sh cli-v…` + push of **real** SHAs to the tap:
+
+```bash
+# Only after formula has real url/sha256 (not the odie placeholder)
+brew install nandocoeg2/queria/queria-cli
+# private Release assets: export HOMEBREW_GITHUB_API_TOKEN=… first
+```
+
+Full process: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
+
 **Maintainers (do not forget):**
 
-1. Push **`main` does not publish CLI binaries.** Tag **`cli-v*`** (or Actions → **Release queria-cli**) via [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml).  
-2. After Release assets are live: `./scripts/generate_homebrew_formula.sh cli-vX.Y.Z` → commit/push **homebrew-queria**.  
+1. Push **`main` does not publish CLI binaries** and does **not** update Homebrew. Tag **`cli-v*`** (or Actions → **Release queria-cli**) via [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml).  
+2. After Release assets are live (UI/token verify): `./scripts/generate_homebrew_formula.sh cli-vX.Y.Z` → commit/push **homebrew-queria** with real SHAs only.  
 3. Host deploy Path A is separate ([`deployment.md`](./deployment.md)).
 
 Dev alternative: `cargo build -p queria-cli --release` in this repo.

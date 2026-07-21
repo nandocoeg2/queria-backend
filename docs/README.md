@@ -1,7 +1,7 @@
 # Queria Backend Documentation
 
 > Status: CURRENT
-> Last verified: 2026-07-20
+> Last verified: 2026-07-21
 > Canonical repository: `https://github.com/nandocoeg2/queria-backend`
 
 **Start here:** [`HANDOFF.md`](./HANDOFF.md) is the only source of truth for what is implemented.
@@ -27,11 +27,11 @@
 | [`IMPROVEMENTS.md`](./IMPROVEMENTS.md) | `REFERENCE` | Improvement backlog: dual-lane scratch + enowx quality/DX (not runtime truth) |
 | [`DOCS_POLICY.md`](./DOCS_POLICY.md) | `CURRENT` | Doc ownership and archive rules |
 | [`runbooks/local-development.md`](./runbooks/local-development.md) | `CURRENT` | Local infrastructure and commands |
-| [`runbooks/onboarding.md`](./runbooks/onboarding.md) | `CURRENT` | **Default 3-step Daily path**; optional Admin Git / index-here; **queria-cli** install (Brew or Releases) |
-| [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md) | `CURRENT` | Homebrew tap `nandocoeg2/queria`; formula generator after live `cli-v*` assets |
+| [`runbooks/onboarding.md`](./runbooks/onboarding.md) | `CURRENT` | **Default 3-step Daily path** (no CLI/Brew required); optional Admin Git / index-here; **queria-cli** via Releases today, Brew only after real formula SHAs |
+| [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md) | `CURRENT` | Homebrew tap process; scaffold **odie** placeholder — installable only after generator writes real SHAs from live `cli-v*` assets |
 | [`runbooks/agent-onboard-prompt.md`](./runbooks/agent-onboard-prompt.md) | `CURRENT` | One-paste client MCP after Daily mint; dialogs for missing fields (direnv optional) |
 | [`runbooks/hybrid-retrieval.md`](./runbooks/hybrid-retrieval.md) | `PARTIAL` | Hybrid retrieval ops |
-| [`runbooks/deployment.md`](./runbooks/deployment.md) | `CURRENT` | Production deploy (Path A/B); **CLI release is tag `cli-v*` only, not push main** |
+| [`runbooks/deployment.md`](./runbooks/deployment.md) | `CURRENT` | Production deploy (Path A/B); **CLI release is tag `cli-v*` only** (not push main; no auto-Brew); residual CLI/cache/Brew/Daily table |
 | [`runbooks/rollback.md`](./runbooks/rollback.md) | `CURRENT` | Rollback |
 | [`runbooks/backup-restore.md`](./runbooks/backup-restore.md) | `CURRENT` | Backup and restore |
 

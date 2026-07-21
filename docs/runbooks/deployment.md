@@ -148,7 +148,17 @@ curl -fsI -H "Authorization: Bearer ${GH_TOKEN}" \
 **Runner note:** never pin `macos-13` — GitHub retired that image (jobs stay **Waiting for a runner…** indefinitely). Darwin x86_64 and aarch64 both build on **`macos-14`**.
 
 Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.  
-**Homebrew:** only after step 3 — full formula/tap checklist: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
+**Homebrew:** only after step 3 **and** real formula SHAs written by the generator — full formula/tap checklist: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). Scaffold formula **odies** (not installable). Do not treat Brew as live on `main` alone.
+
+### Residual accuracy (operator — CLI / Brew / cache / Daily)
+
+| Residual | Truth |
+|---|---|
+| **CLI Release assets** | Not proven green from unauthenticated API (private repo → 404). Confirm in **Actions / Releases UI** or with token. |
+| **Push `main`** | Host image deploy only. **No** CLI Release, **no** Homebrew auto-update. |
+| **First arm64 deploy** | Seeds GHCR `:buildcache` (full compile once after native-arm + cache work landed; see § Build speed / cache). |
+| **Homebrew** | After downloadable `cli-v*` assets → generate real SHAs → push tap. Placeholder is NOT READY. |
+| **Daily agent onboard** | Independent — mint/connect/retrieve without CLI or Brew ([`onboarding.md`](./onboarding.md)). |
 
 ---
 
@@ -178,7 +188,7 @@ Path B (rsync + host `compose build`) does **not** use GHA/registry buildcache u
 
 Notes:
 
-- First green run after this change still pays a full compile to seed `buildcache`.
+- **First green arm64 deploy after native-runner + cache work (`bf76180` era) still pays a full compile to seed `buildcache`** on GHCR (`backend:buildcache` / `admin:buildcache`). Later pushes with unchanged deps should hit the registry cache — do not expect warm times on that first seed run.
 - `GITHUB_TOKEN` packages:write must allow push of `:buildcache` tags (same as `:latest`).
 - If `ubuntu-24.04-arm` is unavailable on the org, fall back temporarily to `ubuntu-latest` + QEMU (slow again).
 
