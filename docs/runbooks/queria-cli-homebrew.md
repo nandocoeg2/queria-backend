@@ -50,19 +50,21 @@ If the backend repo is **private**, downloads need auth (see below). Live privat
 
 ## One-time: create the tap on GitHub
 
+Workspace scaffold: `queria/homebrew-queria/` (sibling of `queria/backend`; **not** in the backend git remote). Full maintainer flow lives in that repo’s **README**. Summary:
+
 ```bash
 # After reviewing workspace scaffold:
 cd queria/homebrew-queria   # sibling of queria/backend in the monorepo workspace
-git init
-git add README.md Formula
-git commit -m "chore: initial queria-cli homebrew tap"
-# create empty repo nandocoeg2/homebrew-queria on GitHub, then:
+git init                    # if not already a repo; local only is fine
+git add README.md Formula .gitignore
+git commit -m "chore: initial queria-cli homebrew tap scaffold"
+# create empty repo nandocoeg2/homebrew-queria on GitHub (do not force without credentials), then:
 git branch -M main
 git remote add origin git@github.com:nandocoeg2/homebrew-queria.git
 git push -u origin main
 ```
 
-Do **not** put this under `queria-backend` as the only copy long-term: Homebrew expects repo name `homebrew-queria`.
+Scaffold `Formula/queria-cli.rb` is a **NOT READY** placeholder: every platform branch calls Homebrew `odie` so `brew install` fails loudly until the generator rewrites real `url`/`sha256`. Do **not** put this under `queria-backend` as the only copy long-term: Homebrew expects repo name `homebrew-queria`.
 
 ## After every CLI release (operator checklist)
 
@@ -113,7 +115,9 @@ queria-cli index-here --help
 
 ## User install
 
-### Recommended (when formula SHAs real)
+### Recommended (when formula SHAs real — not while scaffold placeholder remains)
+
+Scaffold / zero-sha formulas are **not** installable. After generator + tap push:
 
 ```bash
 brew install nandocoeg2/queria/queria-cli
@@ -125,6 +129,8 @@ Private backend Releases:
 export HOMEBREW_GITHUB_API_TOKEN='ghp_…'  # read access to queria-backend
 brew install nandocoeg2/queria/queria-cli
 ```
+
+Parent install overview points here only: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.
 
 ### Fallback (no Brew)
 
