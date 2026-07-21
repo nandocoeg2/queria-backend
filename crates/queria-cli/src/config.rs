@@ -1,6 +1,6 @@
 //! User config file (~/.config/queria/config.toml). Edit only via TUI (`queria-cli config`).
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,8 +32,8 @@ impl UserConfig {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("read config {}", path.display()))?;
+        let raw =
+            fs::read_to_string(path).with_context(|| format!("read config {}", path.display()))?;
         toml::from_str(&raw).with_context(|| format!("parse config {}", path.display()))
     }
 
@@ -70,9 +70,7 @@ impl UserConfig {
 pub fn validate_profile_name(name: &str) -> Result<()> {
     let b = name.as_bytes();
     if b.is_empty() || b.len() > 64 || !b[0].is_ascii_alphanumeric() {
-        bail!(
-            "invalid profile name {name:?}: 1–64 chars, start alphanumeric, then [A-Za-z0-9_-]"
-        );
+        bail!("invalid profile name {name:?}: 1–64 chars, start alphanumeric, then [A-Za-z0-9_-]");
     }
     if !b
         .iter()
@@ -140,8 +138,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("queria-cfg-{}", uuid::Uuid::now_v7()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
-        let mut cfg = UserConfig::default();
-        cfg.active_profile = Some("work".into());
+        let mut cfg = UserConfig {
+            active_profile: Some("work".into()),
+            ..Default::default()
+        };
         cfg.profile_mut("work").agent_token = Some("qria_secret".into());
         cfg.save(&path).unwrap();
         let loaded = UserConfig::load_or_default(&path).unwrap();

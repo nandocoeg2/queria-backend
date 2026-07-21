@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn index_local_serializes_as_snake_case() {
-        let json = serde_json::to_string(&AgentToolPermission::IndexLocal)
-            .expect("serialize IndexLocal");
+        let json =
+            serde_json::to_string(&AgentToolPermission::IndexLocal).expect("serialize IndexLocal");
         assert_eq!(json, "\"index_local\"");
         let back: AgentToolPermission =
             serde_json::from_str("\"index_local\"").expect("deserialize index_local");
@@ -133,8 +133,8 @@ mod tests {
         let json = serde_json::to_string(&AgentToolPermission::ManageNeedsReview)
             .expect("serialize ManageNeedsReview");
         assert_eq!(json, "\"manage_needs_review\"");
-        let back: AgentToolPermission =
-            serde_json::from_str("\"manage_needs_review\"").expect("deserialize manage_needs_review");
+        let back: AgentToolPermission = serde_json::from_str("\"manage_needs_review\"")
+            .expect("deserialize manage_needs_review");
         assert_eq!(back, AgentToolPermission::ManageNeedsReview);
     }
 

@@ -1,7 +1,7 @@
 //! Resolve edge/token/slug from flags, env, and user config profiles.
 
 use crate::config::{self, UserConfig};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 pub const DEFAULT_EDGE_URL: &str = "http://127.0.0.1:17674";
 
@@ -45,9 +45,7 @@ pub fn resolve(opts: ResolveOpts) -> Result<ResolvedCredentials> {
         })
         .or_else(|| cfg.active_profile.clone());
 
-    let file_profile = profile_name
-        .as_ref()
-        .and_then(|n| cfg.profile(n).cloned());
+    let file_profile = profile_name.as_ref().and_then(|n| cfg.profile(n).cloned());
 
     // Token: named env (if any), then QUERIA_AGENT_TOKEN, then profile file.
     let agent_token = opts
@@ -149,7 +147,7 @@ pub fn resolve(opts: ResolveOpts) -> Result<ResolvedCredentials> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{UserConfig, Profile};
+    use crate::config::{Profile, UserConfig};
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -160,8 +158,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("queria-cred-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
-        let mut cfg = UserConfig::default();
-        cfg.active_profile = Some("work".into());
+        let mut cfg = UserConfig {
+            active_profile: Some("work".into()),
+            ..Default::default()
+        };
         cfg.profiles.insert(
             "work".into(),
             Profile {

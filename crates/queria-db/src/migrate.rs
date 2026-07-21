@@ -387,7 +387,10 @@ mod tests {
             "org_member",
         ] {
             assert!(
-                migration.sql.to_lowercase().contains(&required.to_lowercase())
+                migration
+                    .sql
+                    .to_lowercase()
+                    .contains(&required.to_lowercase())
                     || migration.sql.contains(required),
                 "multi-org migration is missing {required}"
             );

@@ -91,19 +91,19 @@ pub async fn run_retention(
             Ok(objects) => {
                 for obj in objects {
                     // Parse date from the key path: org/type/YYYY-MM-DD/file
-                    if let Some(date_str) = extract_date_from_key(&obj.key) {
-                        if let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                            let obj_date = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-                            if obj_date < cutoff {
-                                if let Err(error) = store.delete_object(&obj.key).await {
-                                    tracing::warn!(
-                                        key = %obj.key,
-                                        error = %error,
-                                        "failed to delete expired S3 object"
-                                    );
-                                } else {
-                                    report.s3_objects_deleted += 1;
-                                }
+                    if let Some(date_str) = extract_date_from_key(&obj.key)
+                        && let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+                    {
+                        let obj_date = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+                        if obj_date < cutoff {
+                            if let Err(error) = store.delete_object(&obj.key).await {
+                                tracing::warn!(
+                                    key = %obj.key,
+                                    error = %error,
+                                    "failed to delete expired S3 object"
+                                );
+                            } else {
+                                report.s3_objects_deleted += 1;
                             }
                         }
                     }

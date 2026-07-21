@@ -89,10 +89,7 @@ mod tests {
     #[test]
     fn knowledge_status_includes_needs_review_variant() {
         assert_eq!(KnowledgeStatus::NeedsReview.as_str(), "needs_review");
-        assert_eq!(
-            KnowledgeStatus::NeedsReview.display_label(),
-            "Needs review"
-        );
+        assert_eq!(KnowledgeStatus::NeedsReview.display_label(), "Needs review");
         assert!(!KnowledgeStatus::NeedsReview.is_scratch_lane());
         assert!(!KnowledgeStatus::NeedsReview.is_trusted_lane());
     }

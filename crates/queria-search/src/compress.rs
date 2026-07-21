@@ -50,8 +50,7 @@ pub fn compress_items(items: Vec<RetrievedContextItem>, enabled: bool) -> Compre
 
         if let Some(&idx) = seen.get(&key) {
             // Lower preference_rank wins (trusted=0, scratch=1, needs_review=2).
-            let prefer_incoming =
-                item.lane.preference_rank() < out[idx].lane.preference_rank();
+            let prefer_incoming = item.lane.preference_rank() < out[idx].lane.preference_rank();
             if prefer_incoming {
                 out[idx] = item;
             }

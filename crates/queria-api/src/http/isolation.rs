@@ -43,9 +43,7 @@ mod tests {
         .await
         .expect("org");
 
-        let password_hash = PasswordHasher
-            .hash_password(password)
-            .expect("hash");
+        let password_hash = PasswordHasher.hash_password(password).expect("hash");
         let user_id: Uuid = sqlx::query_scalar(
             "insert into user_account(
                organization_id, email, password_hash, role, is_platform_super_admin
@@ -82,18 +80,15 @@ mod tests {
     ) -> (Uuid, Uuid) {
         // Needs a dummy organization_id FK (NOT NULL) but no membership row.
         let slug = format!("sa-park-{}", Uuid::now_v7().simple());
-        let org_id: Uuid = sqlx::query_scalar(
-            "insert into organization(slug, name) values ($1, $2) returning id",
-        )
-        .bind(&slug)
-        .bind("SA parking org")
-        .fetch_one(pool)
-        .await
-        .expect("park org");
+        let org_id: Uuid =
+            sqlx::query_scalar("insert into organization(slug, name) values ($1, $2) returning id")
+                .bind(&slug)
+                .bind("SA parking org")
+                .fetch_one(pool)
+                .await
+                .expect("park org");
 
-        let password_hash = PasswordHasher
-            .hash_password(password)
-            .expect("hash");
+        let password_hash = PasswordHasher.hash_password(password).expect("hash");
         let user_id: Uuid = sqlx::query_scalar(
             "insert into user_account(
                organization_id, email, password_hash, role, is_platform_super_admin
@@ -159,12 +154,10 @@ mod tests {
 
     async fn cleanup_org_cascade(pool: &PgPool, org_id: Uuid) {
         // Order matters for FKs that lack cascade from organization in some tables.
-        let _ = sqlx::query(
-            "delete from agent_token where organization_id = $1",
-        )
-        .bind(org_id)
-        .execute(pool)
-        .await;
+        let _ = sqlx::query("delete from agent_token where organization_id = $1")
+            .bind(org_id)
+            .execute(pool)
+            .await;
         let _ = sqlx::query(
             "delete from approval where knowledge_item_id in (
                select id from knowledge_item where organization_id = $1
@@ -173,9 +166,11 @@ mod tests {
         .bind(org_id)
         .execute(pool)
         .await;
-        let _ = sqlx::query("delete from chunk where knowledge_item_id in (
+        let _ = sqlx::query(
+            "delete from chunk where knowledge_item_id in (
                select id from knowledge_item where organization_id = $1
-             )")
+             )",
+        )
         .bind(org_id)
         .execute(pool)
         .await;
@@ -223,11 +218,7 @@ mod tests {
             .await;
     }
 
-    async fn login_cookie(
-        app: axum::Router,
-        email: &str,
-        password: &str,
-    ) -> (String, Value) {
+    async fn login_cookie(app: axum::Router, email: &str, password: &str) -> (String, Value) {
         let response = app
             .oneshot(
                 Request::builder()
@@ -241,7 +232,11 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(response.status(), HttpStatus::OK, "login failed for {email}");
+        assert_eq!(
+            response.status(),
+            HttpStatus::OK,
+            "login failed for {email}"
+        );
         let cookie = response
             .headers()
             .get(header::SET_COOKIE)
@@ -312,13 +307,11 @@ mod tests {
             seed_member(&pool, &email_a, password, &slug_a, "Iso Team A", false).await;
         let (user_b, org_b) =
             seed_member(&pool, &email_b, password, &slug_b, "Iso Team B", false).await;
-        let (user_sa, park_org) =
-            seed_super_admin_no_membership(&pool, &email_sa, password).await;
+        let (user_sa, park_org) = seed_super_admin_no_membership(&pool, &email_sa, password).await;
 
         let project_a_slug = format!("proj-a-{tag}");
         let project_b_slug = format!("proj-b-{tag}");
-        let project_a_id =
-            create_project_row(&pool, org_a, &project_a_slug, "Project A").await;
+        let project_a_id = create_project_row(&pool, org_a, &project_a_slug, "Project A").await;
         let project_b_id =
             create_project_row(&pool, org_b, &project_b_slug, "Project B Secret Name").await;
 
@@ -390,15 +383,26 @@ mod tests {
             me_a["active_organization_id"].as_str(),
             Some(org_a.to_string().as_str())
         );
-        assert_eq!(me_a["active_organization_slug"].as_str(), Some(slug_a.as_str()));
+        assert_eq!(
+            me_a["active_organization_slug"].as_str(),
+            Some(slug_a.as_str())
+        );
         assert!(login_sa["active_organization_id"].is_null());
-        assert!(login_b["active_organization_id"]
-            .as_str()
-            .is_some_and(|id| id == org_b.to_string()));
+        assert!(
+            login_b["active_organization_id"]
+                .as_str()
+                .is_some_and(|id| id == org_b.to_string())
+        );
 
         // VAL-ISOL-001 list projects A only
-        let (status, list_a) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_a), None).await;
+        let (status, list_a) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_a),
+            None,
+        )
+        .await;
         assert_eq!(status, HttpStatus::OK, "list A: {list_a}");
         let a_slugs: Vec<&str> = list_a
             .as_array()
@@ -407,10 +411,19 @@ mod tests {
             .filter_map(|p| p["slug"].as_str())
             .collect();
         assert!(a_slugs.contains(&project_a_slug.as_str()), "{list_a}");
-        assert!(!a_slugs.contains(&project_b_slug.as_str()), "A must not list B: {list_a}");
+        assert!(
+            !a_slugs.contains(&project_b_slug.as_str()),
+            "A must not list B: {list_a}"
+        );
 
-        let (status, list_b) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_b), None).await;
+        let (status, list_b) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_b),
+            None,
+        )
+        .await;
         assert_eq!(status, HttpStatus::OK);
         let b_slugs: Vec<&str> = list_b
             .as_array()
@@ -447,14 +460,18 @@ mod tests {
             "POST",
             "/api/v1/projects",
             Some(&cookie_a),
-            Some(&format!(
-                r#"{{"slug":"{new_slug}","name":"Created By A"}}"#
-            )),
+            Some(&format!(r#"{{"slug":"{new_slug}","name":"Created By A"}}"#)),
         )
         .await;
         assert_eq!(status, HttpStatus::OK, "create: {created}");
-        let (status, list_b2) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_b), None).await;
+        let (status, list_b2) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_b),
+            None,
+        )
+        .await;
         assert_eq!(status, HttpStatus::OK);
         assert!(
             !list_b2.to_string().contains(&new_slug),
@@ -477,7 +494,8 @@ mod tests {
         assert!(!ki_str.contains(&global_b_title));
         assert!(!ki_str.contains(&scratch_b_title));
         assert!(
-            ki_str.contains(&knowledge_a_id.to_string()) || ki_str.contains(&format!("a-title-{tag}")),
+            ki_str.contains(&knowledge_a_id.to_string())
+                || ki_str.contains(&format!("a-title-{tag}")),
             "A should see own knowledge: {ki_a}"
         );
 
@@ -597,8 +615,14 @@ mod tests {
         assert!(tokens_b.to_string().contains(&token_b_id));
 
         // VAL-ISOL-015/016/017 super-admin without membership
-        let (status, sa_projects) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_sa), None).await;
+        let (status, sa_projects) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_sa),
+            None,
+        )
+        .await;
         assert_eq!(
             status,
             HttpStatus::FORBIDDEN,
@@ -641,11 +665,7 @@ mod tests {
             )),
         )
         .await;
-        assert_eq!(
-            status,
-            HttpStatus::FORBIDDEN,
-            "SA retrieve: {sa_retrieve}"
-        );
+        assert_eq!(status, HttpStatus::FORBIDDEN, "SA retrieve: {sa_retrieve}");
 
         // Orgs APIs still work for SA
         let (status, sa_orgs) =
@@ -675,14 +695,8 @@ mod tests {
         );
 
         // VAL-ISOL-034 agent-setup public
-        let (status, setup) = json_request(
-            app.clone(),
-            "GET",
-            "/api/v1/docs/agent-setup",
-            None,
-            None,
-        )
-        .await;
+        let (status, setup) =
+            json_request(app.clone(), "GET", "/api/v1/docs/agent-setup", None, None).await;
         assert_eq!(status, HttpStatus::OK, "agent-setup public: {setup}");
 
         // VAL-ISOL-007 / 008 retrieval: A probe on B slug denied
@@ -758,7 +772,14 @@ mod tests {
         }
 
         // Silence unused
-        let _ = (user_a, user_b, user_sa, raw_token_a, raw_token_b, project_a_id);
+        let _ = (
+            user_a,
+            user_b,
+            user_sa,
+            raw_token_a,
+            raw_token_b,
+            project_a_id,
+        );
 
         cleanup_org_cascade(&pool, org_a).await;
         cleanup_org_cascade(&pool, org_b).await;
@@ -780,11 +801,17 @@ mod tests {
         let admin_a_email = format!("e2e-admin-a-{tag}@iso.test");
         let admin_b_email = format!("e2e-admin-b-{tag}@iso.test");
 
-        let (sa_user, park) =
-            seed_super_admin_no_membership(&pool, &sa_email, password).await;
+        let (sa_user, park) = seed_super_admin_no_membership(&pool, &sa_email, password).await;
         // Pre-seed team A member for second-org conflict
-        let (user_a, org_a) =
-            seed_member(&pool, &admin_a_email, password, &team_a_slug, "E2E A", false).await;
+        let (user_a, org_a) = seed_member(
+            &pool,
+            &admin_a_email,
+            password,
+            &team_a_slug,
+            "E2E A",
+            false,
+        )
+        .await;
         let proj_a = format!("e2e-proj-a-{tag}");
         let _ = create_project_row(&pool, org_a, &proj_a, "E2E Project A").await;
 
@@ -843,23 +870,33 @@ mod tests {
             "POST",
             "/api/v1/projects",
             Some(&cookie_b),
-            Some(&format!(
-                r#"{{"slug":"{proj_b}","name":"E2E Project B"}}"#
-            )),
+            Some(&format!(r#"{{"slug":"{proj_b}","name":"E2E Project B"}}"#)),
         )
         .await;
         assert_eq!(status, HttpStatus::OK, "create proj B: {created_proj}");
 
-        let (status, list_b) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_b), None).await;
+        let (status, list_b) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_b),
+            None,
+        )
+        .await;
         assert_eq!(status, HttpStatus::OK);
         assert!(list_b.to_string().contains(&proj_b));
         assert!(!list_b.to_string().contains(&proj_a));
 
         // A still only A
         let (cookie_a, _) = login_cookie(app.clone(), &admin_a_email, password).await;
-        let (status, list_a) =
-            json_request(app.clone(), "GET", "/api/v1/projects", Some(&cookie_a), None).await;
+        let (status, list_a) = json_request(
+            app.clone(),
+            "GET",
+            "/api/v1/projects",
+            Some(&cookie_a),
+            None,
+        )
+        .await;
         assert_eq!(status, HttpStatus::OK);
         assert!(list_a.to_string().contains(&proj_a));
         assert!(!list_a.to_string().contains(&proj_b));
@@ -870,7 +907,9 @@ mod tests {
             "POST",
             &format!("/api/v1/orgs/{team_b_slug}/invites"),
             Some(&cookie_sa),
-            Some(&format!(r#"{{"email":"{admin_a_email}","role":"org_member"}}"#)),
+            Some(&format!(
+                r#"{{"email":"{admin_a_email}","role":"org_member"}}"#
+            )),
         )
         .await;
         assert_eq!(status, HttpStatus::OK, "second invite: {inv2}");

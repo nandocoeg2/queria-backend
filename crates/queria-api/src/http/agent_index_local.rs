@@ -11,15 +11,15 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     routing::post,
 };
+use queria_core::QueriaError;
 use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
-use queria_core::QueriaError;
 use queria_db::repositories::{
     AuthenticatedAgentToken, IndexLocalFileParams, PgProjectRepository, ProjectRecord,
 };
 use queria_ingestion::local_index_gates::{
-    content_hash, content_is_indexable, normalize_project_slug_from_origin, should_index_local_file,
-    MAX_LOCAL_FILE_BYTES,
+    MAX_LOCAL_FILE_BYTES, content_hash, content_is_indexable, normalize_project_slug_from_origin,
+    should_index_local_file,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -115,8 +115,7 @@ async fn agent_index_local(
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty());
-        let mut slug =
-            normalize_project_slug_from_origin(origin, &basename);
+        let mut slug = normalize_project_slug_from_origin(origin, &basename);
         slug = ensure_db_slug(&slug);
 
         let project = resolve_or_create_project(
@@ -129,7 +128,12 @@ async fn agent_index_local(
         .await?;
 
         // Attach to token allowlist so list_projects/retrieve work after auto-create.
-        if !agent.permissions.project_slugs.iter().any(|s| s == &project.slug) {
+        if !agent
+            .permissions
+            .project_slugs
+            .iter()
+            .any(|s| s == &project.slug)
+        {
             repository
                 .attach_project_slug_to_agent_token(agent.id, &project.slug)
                 .await
@@ -343,9 +347,7 @@ fn project_repository(
     })
 }
 
-fn require_raw_bearer(
-    headers: &HeaderMap,
-) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
+fn require_raw_bearer(headers: &HeaderMap) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
     bearer_token(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
 }
 

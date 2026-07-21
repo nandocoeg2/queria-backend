@@ -226,10 +226,7 @@ impl PgOrgRepository {
         .map_err(to_infrastructure_error)
     }
 
-    pub async fn list_members(
-        &self,
-        organization_id: Uuid,
-    ) -> QueriaResult<Vec<OrgMemberRecord>> {
+    pub async fn list_members(&self, organization_id: Uuid) -> QueriaResult<Vec<OrgMemberRecord>> {
         sqlx::query(
             "select m.user_id, u.email, m.role, m.created_at
              from org_membership m
@@ -321,7 +318,9 @@ impl PgOrgRepository {
             email: invite_row
                 .try_get("email")
                 .map_err(to_infrastructure_error)?,
-            role: invite_row.try_get("role").map_err(to_infrastructure_error)?,
+            role: invite_row
+                .try_get("role")
+                .map_err(to_infrastructure_error)?,
             expires_at: invite_row
                 .try_get("expires_at")
                 .map_err(to_infrastructure_error)?,
@@ -359,13 +358,12 @@ impl PgOrgRepository {
         .map_err(to_infrastructure_error)?;
 
         let (user_id, created_user) = if let Some(user_id) = existing_user_id {
-            let membership_org: Option<Uuid> = sqlx::query_scalar(
-                "select organization_id from org_membership where user_id = $1",
-            )
-            .bind(user_id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .map_err(to_infrastructure_error)?;
+            let membership_org: Option<Uuid> =
+                sqlx::query_scalar("select organization_id from org_membership where user_id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&mut *transaction)
+                    .await
+                    .map_err(to_infrastructure_error)?;
 
             if let Some(existing_org) = membership_org {
                 if existing_org != invite.organization_id {
@@ -491,13 +489,11 @@ impl PgOrgRepository {
     /// Whether any invite for this org still stores the given raw-token-looking value
     /// (used in tests only via hash lookup helpers).
     pub async fn invite_token_hash_exists(&self, token_hash: &str) -> QueriaResult<bool> {
-        sqlx::query_scalar(
-            "select exists(select 1 from org_invite where token_hash = $1)",
-        )
-        .bind(token_hash)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(to_infrastructure_error)
+        sqlx::query_scalar("select exists(select 1 from org_invite where token_hash = $1)")
+            .bind(token_hash)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_infrastructure_error)
     }
 
     pub async fn invite_stores_raw_token(
@@ -549,19 +545,20 @@ fn invite_from_row(row: sqlx::postgres::PgRow) -> QueriaResult<OrgInviteRecord> 
             .try_get("token_prefix")
             .map_err(to_infrastructure_error)?,
         expires_at: row.try_get("expires_at").map_err(to_infrastructure_error)?,
-        accepted_at: row.try_get("accepted_at").map_err(to_infrastructure_error)?,
+        accepted_at: row
+            .try_get("accepted_at")
+            .map_err(to_infrastructure_error)?,
         revoked_at: row.try_get("revoked_at").map_err(to_infrastructure_error)?,
         created_at: row.try_get("created_at").map_err(to_infrastructure_error)?,
     })
 }
 
 fn map_membership_insert_error(error: sqlx::Error) -> QueriaError {
-    if let sqlx::Error::Database(db) = &error {
-        if db.constraint() == Some("idx_org_membership_one_org_per_user")
-            || db.code().as_deref() == Some("23505")
-        {
-            return QueriaError::Validation("already_member_of_other_org".to_owned());
-        }
+    if let sqlx::Error::Database(db) = &error
+        && (db.constraint() == Some("idx_org_membership_one_org_per_user")
+            || db.code().as_deref() == Some("23505"))
+    {
+        return QueriaError::Validation("already_member_of_other_org".to_owned());
     }
     to_infrastructure_error(error)
 }

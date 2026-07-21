@@ -78,10 +78,8 @@ async fn login(
         return login_error(StatusCode::UNAUTHORIZED, headers, "invalid_credentials");
     }
 
-    let active_organization_id = resolve_active_organization_id(
-        user.membership_organization_id,
-        user.organization_id,
-    );
+    let active_organization_id =
+        resolve_active_organization_id(user.membership_organization_id, user.organization_id);
     let is_platform_super_admin = effective_platform_super_admin(
         user.is_platform_super_admin,
         &user.email,
@@ -356,14 +354,13 @@ mod tests {
         is_platform_super_admin: bool,
     ) -> (Uuid, Uuid) {
         let slug = format!("org-{}", Uuid::now_v7().simple());
-        let org_id: Uuid = sqlx::query_scalar(
-            "insert into organization(slug, name) values ($1, $2) returning id",
-        )
-        .bind(&slug)
-        .bind(format!("Org {slug}"))
-        .fetch_one(pool)
-        .await
-        .expect("insert org");
+        let org_id: Uuid =
+            sqlx::query_scalar("insert into organization(slug, name) values ($1, $2) returning id")
+                .bind(&slug)
+                .bind(format!("Org {slug}"))
+                .fetch_one(pool)
+                .await
+                .expect("insert org");
 
         let password_hash = PasswordHasher
             .hash_password(password)
@@ -588,13 +585,12 @@ mod tests {
         let password = "correct horse battery staple";
         let (user_id, org_id) = seed_user(&pool, &email, password, true, false).await;
 
-        let before: i64 = sqlx::query_scalar(
-            "select count(*) from user_session where user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .expect("count");
+        let before: i64 =
+            sqlx::query_scalar("select count(*) from user_session where user_id = $1")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .expect("count");
 
         let app = build_app_with_pool(AppConfig::default_local(), pool.clone());
         let response = app
@@ -611,20 +607,13 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), HttpStatus::UNAUTHORIZED);
-        assert!(
-            response
-                .headers()
-                .get(header::SET_COOKIE)
-                .is_none()
-        );
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
 
-        let after: i64 = sqlx::query_scalar(
-            "select count(*) from user_session where user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .expect("count");
+        let after: i64 = sqlx::query_scalar("select count(*) from user_session where user_id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
         assert_eq!(before, after);
 
         cleanup_user(&pool, user_id, org_id).await;
@@ -692,14 +681,13 @@ mod tests {
         let (user_id, legacy_org) = seed_user(&pool, &email, password, true, false).await;
 
         let other_slug = format!("other-{}", Uuid::now_v7().simple());
-        let other_org: Uuid = sqlx::query_scalar(
-            "insert into organization(slug, name) values ($1, $2) returning id",
-        )
-        .bind(&other_slug)
-        .bind("Other")
-        .fetch_one(&pool)
-        .await
-        .expect("other org");
+        let other_org: Uuid =
+            sqlx::query_scalar("insert into organization(slug, name) values ($1, $2) returning id")
+                .bind(&other_slug)
+                .bind("Other")
+                .fetch_one(&pool)
+                .await
+                .expect("other org");
 
         // Pathological: move membership to other_org while leaving legacy column.
         sqlx::query("delete from org_membership where user_id = $1")
@@ -726,10 +714,7 @@ mod tests {
         assert_eq!(user.organization_id, legacy_org);
         assert_eq!(user.membership_organization_id, Some(other_org));
         assert_eq!(
-            resolve_active_organization_id(
-                user.membership_organization_id,
-                user.organization_id
-            ),
+            resolve_active_organization_id(user.membership_organization_id, user.organization_id),
             Some(other_org)
         );
 
@@ -751,11 +736,8 @@ mod tests {
             .expect("load")
             .expect("session present");
         assert_eq!(session.active_organization_id, Some(other_org));
-        session.is_platform_super_admin = effective_platform_super_admin(
-            session.is_platform_super_admin,
-            &session.email,
-            &[],
-        );
+        session.is_platform_super_admin =
+            effective_platform_super_admin(session.is_platform_super_admin, &session.email, &[]);
         assert!(!session.is_platform_super_admin);
 
         let _ = sqlx::query("delete from organization where id = $1")

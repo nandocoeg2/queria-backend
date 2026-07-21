@@ -423,12 +423,10 @@ mod tests {
         assert_eq!(KnowledgeLane::Trusted.as_str(), "trusted");
         assert_eq!(KnowledgeLane::NeedsReview.as_str(), "needs_review");
         assert!(
-            KnowledgeLane::Trusted.preference_rank()
-                < KnowledgeLane::Scratch.preference_rank()
+            KnowledgeLane::Trusted.preference_rank() < KnowledgeLane::Scratch.preference_rank()
         );
         assert!(
-            KnowledgeLane::Scratch.preference_rank()
-                < KnowledgeLane::NeedsReview.preference_rank()
+            KnowledgeLane::Scratch.preference_rank() < KnowledgeLane::NeedsReview.preference_rank()
         );
     }
 

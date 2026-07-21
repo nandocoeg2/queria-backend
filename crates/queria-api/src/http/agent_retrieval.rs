@@ -13,11 +13,11 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     routing::{get, post},
 };
+use queria_core::QueriaError;
 use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
 use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
 use queria_core::ids::ProjectId;
-use queria_core::QueriaError;
 use queria_db::repositories::{AuthenticatedAgentToken, PgProjectRepository, ProjectRecord};
 use queria_search::retrieval::RetrievalPrincipal;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,9 @@ async fn agent_list_projects(
     let agent = authenticate_raw(&repository, raw).await?;
     // Listing projects does not require RetrieveContext; ListProjects permission if present,
     // else allow any authenticated non-revoked token (hooks need bootstrap).
-    if !agent.permissions.can_call(&AgentToolPermission::ListProjects)
+    if !agent
+        .permissions
+        .can_call(&AgentToolPermission::ListProjects)
         && !agent
             .permissions
             .can_call(&AgentToolPermission::RetrieveContext)
@@ -199,9 +201,7 @@ fn project_repository(
     })
 }
 
-fn require_raw_bearer(
-    headers: &HeaderMap,
-) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
+fn require_raw_bearer(headers: &HeaderMap) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
     bearer_token(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
 }
 
@@ -379,9 +379,7 @@ mod tests {
                     .method("POST")
                     .uri("/api/v1/agent/retrieve-context")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"project_slug":"fjulian-me","query":"x"}"#,
-                    ))
+                    .body(Body::from(r#"{"project_slug":"fjulian-me","query":"x"}"#))
                     .unwrap(),
             )
             .await
@@ -417,14 +415,11 @@ mod tests {
                     .uri("/api/v1/agent/retrieve-context")
                     .header("content-type", "application/json")
                     .header("authorization", "Bearer not_a_queria_token")
-                    .body(Body::from(
-                        r#"{"project_slug":"fjulian-me","query":"x"}"#,
-                    ))
+                    .body(Body::from(r#"{"project_slug":"fjulian-me","query":"x"}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
-
 }
