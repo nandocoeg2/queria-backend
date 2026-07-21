@@ -153,18 +153,20 @@ async fn main() -> anyhow::Result<()> {
         Command::Doctor {
             command: DoctorCommand::Mcp { url },
         } => {
+            let creds = credentials::resolve(credentials::ResolveOpts {
+                profile: profile.clone(),
+                require_token: true,
+                ..Default::default()
+            })?;
             let url = match url {
                 Some(u) if !u.trim().is_empty() => u,
-                _ => {
-                    let creds = credentials::resolve(credentials::ResolveOpts {
-                        profile: profile.clone(),
-                        require_token: false,
-                        ..Default::default()
-                    })?;
-                    creds.mcp_url
-                }
+                _ => creds.mcp_url.clone(),
             };
-            doctor_mcp::run(&url).await
+            let token = creds
+                .agent_token
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("agent token required for doctor mcp"))?;
+            doctor_mcp::run(&url, token).await
         }
         Command::Bootstrap => bootstrap::run().await,
         Command::Database {
