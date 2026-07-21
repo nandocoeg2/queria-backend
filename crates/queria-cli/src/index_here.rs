@@ -108,13 +108,13 @@ pub async fn run(
     print_discovery_summary(&plans);
 
     if dry_run {
-        println!("dry-run: no upload");
+        println!("Dry-run only — nothing uploaded.");
         return Ok(());
     }
 
     if plans.len() > 1 && !yes {
         bail!(
-            "pass --yes to index {} roots (or --dry-run to list only)",
+            "{} repos found. Confirm with: queria-cli index-here --yes",
             plans.len()
         );
     }
@@ -139,22 +139,24 @@ pub async fn run(
     upload_plans(&endpoint, &token, &plans).await
 }
 fn print_discovery_summary(plans: &[RootFilePlan]) {
-    println!("discovered {} git root(s):", plans.len());
+    let total_accept: usize = plans.iter().map(|p| p.accepted.len()).sum();
+    let total_skip: u32 = plans.iter().map(|p| p.skipped).sum();
+    println!(
+        "Found {} repo(s) · will index {} file(s) · skip {}",
+        plans.len(),
+        total_accept,
+        total_skip
+    );
     for plan in plans {
-        let origin = plan.root.origin_url.as_deref().unwrap_or("(no origin)");
-        let branch = plan.root.branch.as_deref().unwrap_or("?");
-        let sha = plan
+        let name = plan
             .root
-            .commit_sha
-            .as_deref()
-            .map(|s| if s.len() > 12 { &s[..12] } else { s })
-            .unwrap_or("?");
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(".");
+        let branch = plan.root.branch.as_deref().unwrap_or("?");
         println!(
-            "  {}  origin={}  branch={}  HEAD={}  accept={} skip={}",
-            plan.root.path.display(),
-            origin,
-            branch,
-            sha,
+            "  • {name} ({branch})  +{}  −{}",
             plan.accepted.len(),
             plan.skipped
         );
@@ -465,10 +467,20 @@ async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Re
             .unwrap_or_else(|_| String::from("<unreadable body>"));
 
         if !status.is_success() {
-            let snippet: String = text.chars().take(500).collect();
-            eprintln!("index-local failed: HTTP {status}");
-            eprintln!("{snippet}");
-            bail!("index-local HTTP {status}");
+            if status.as_u16() == 403
+                || text.contains("permission_denied")
+                || text.contains("\"error\":\"permission_denied\"")
+            {
+                bail!(
+                    "Permission denied. Token needs Custom permission index_local \
+(Admin → Tokens). Daily tokens cannot index local repos."
+                );
+            }
+            if status.as_u16() == 401 || text.contains("agent_token") {
+                bail!("Auth failed. Run: queria-cli config  (set a valid agent token)");
+            }
+            let snippet: String = text.chars().take(200).collect();
+            bail!("Upload failed ({status}): {snippet}");
         }
 
         let parsed: IndexLocalResponse = serde_json::from_str(&text)
@@ -854,7 +866,7 @@ mod tests {
     fn multi_root_without_yes_message_format() {
         // Document exit contract used by run(): multi root needs --yes.
         let msg = format!(
-            "pass --yes to index {} roots (or --dry-run to list only)",
+            "{} repos found. Confirm with: queria-cli index-here --yes",
             3
         );
         assert!(msg.contains("--yes"));
