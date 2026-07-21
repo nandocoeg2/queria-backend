@@ -84,29 +84,90 @@ elif [[ -n "${HOMEBREW_GITHUB_API_TOKEN:-}" ]]; then
   TOKEN="$HOMEBREW_GITHUB_API_TOKEN"
 fi
 
-AUTH=()
 if [[ -n "$TOKEN" ]]; then
-  AUTH=(-H "Authorization: Bearer ${TOKEN}" -H "Accept: application/octet-stream")
-  echo "auth: using GitHub token for private/public asset download" >&2
+  echo "auth: using GitHub token (API asset download for private releases)" >&2
 else
-  echo "auth: no GH_TOKEN/GITHUB_TOKEN/HOMEBREW_GITHUB_API_TOKEN — public downloads only" >&2
+  echo "auth: no GH_TOKEN/GITHUB_TOKEN/HOMEBREW_GITHUB_API_TOKEN — public browser downloads only" >&2
 fi
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
+# Private GitHub Releases: browser URLs under /releases/download/ return 404 even with
+# Authorization. Prefer the Releases API asset endpoint when a token is present.
+# API: GET /repos/{owner}/{repo}/releases/tags/{tag} → assets[].id
+# then GET /repos/{owner}/{repo}/releases/assets/{id} with Accept: application/octet-stream
+RELEASE_JSON=""
+resolve_asset_id() {
+  local asset="$1"
+  if [[ -z "$TOKEN" ]]; then
+    return 1
+  fi
+  if [[ -z "$RELEASE_JSON" ]]; then
+    local meta_code
+    set +e
+    RELEASE_JSON="$(curl -sS -L -w '\n%{http_code}' \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>"$tmpdir/release.meta.err")"
+    local meta_rc=$?
+    set -e
+    meta_code="$(printf '%s' "$RELEASE_JSON" | tail -n1)"
+    RELEASE_JSON="$(printf '%s' "$RELEASE_JSON" | sed '$d')"
+    if [[ $meta_rc -ne 0 || "$meta_code" != "200" || -z "$RELEASE_JSON" ]]; then
+      echo "FAIL: cannot load release metadata for ${TAG} (HTTP ${meta_code:-?} curl_rc=${meta_rc})" >&2
+      if [[ -s "$tmpdir/release.meta.err" ]]; then
+        echo "curl: $(cat "$tmpdir/release.meta.err")" >&2
+      fi
+      RELEASE_JSON=""
+      return 1
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    ASSET_NAME="$asset" python3 -c 'import json,os,sys; name=os.environ["ASSET_NAME"]; data=json.load(sys.stdin); ids=[a["id"] for a in data.get("assets",[]) if a.get("name")==name]; print(ids[0] if ids else "")' <<<"$RELEASE_JSON"
+  elif command -v jq >/dev/null 2>&1; then
+    jq -r --arg n "$asset" '.assets[]? | select(.name==$n) | .id' <<<"$RELEASE_JSON" | head -n1
+  else
+    echo "FAIL: need python3 or jq to parse GitHub release metadata" >&2
+    return 1
+  fi
+}
+
 # Download asset and print sha256 of the **tarball**. Never invent hashes.
 # Returns 0 and prints hash on stdout; errors go to stderr.
 fetch_sha() {
   local asset="$1"
-  local url="https://github.com/${REPO}/releases/download/${TAG}/${asset}"
   local dest="$tmpdir/$asset"
-  local http_code
-  echo "fetch $url" >&2
+  local http_code=""
+  local curl_rc=0
+  local url=""
   # Capture body to file and HTTP status; do not fail the whole script on curl error alone.
   set +e
-  http_code="$(curl -sS -L -w '%{http_code}' -o "$dest" "${AUTH[@]+"${AUTH[@]}"}" "$url" 2>"$tmpdir/${asset}.curl.err")"
-  local curl_rc=$?
+  if [[ -n "$TOKEN" ]]; then
+    local asset_id
+    asset_id="$(resolve_asset_id "$asset")"
+    curl_rc=$?
+    if [[ $curl_rc -eq 0 && -n "$asset_id" ]]; then
+      url="https://api.github.com/repos/${REPO}/releases/assets/${asset_id}"
+      echo "fetch $url ($asset)" >&2
+      http_code="$(curl -sS -L -w '%{http_code}' -o "$dest" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Accept: application/octet-stream" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "$url" 2>"$tmpdir/${asset}.curl.err")"
+      curl_rc=$?
+    else
+      http_code="404"
+      curl_rc=1
+      echo "fetch api metadata miss for $asset" >&2
+    fi
+  else
+    url="https://github.com/${REPO}/releases/download/${TAG}/${asset}"
+    echo "fetch $url" >&2
+    http_code="$(curl -sS -L -w '%{http_code}' -o "$dest" "$url" 2>"$tmpdir/${asset}.curl.err")"
+    curl_rc=$?
+  fi
   set -e
   if [[ $curl_rc -ne 0 || ! -s "$dest" || "$http_code" != "200" ]]; then
     local hint="is the Release published with this asset?"
