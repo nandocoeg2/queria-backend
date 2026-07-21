@@ -80,10 +80,10 @@ Use this sequence to cut, unstick, or verify CLI assets. Do **not** run Homebrew
 
 | Asset | Required? |
 |---|---|
-| `queria-cli-aarch64-apple-darwin.tar.gz` | **Yes** |
-| `queria-cli-x86_64-unknown-linux-gnu.tar.gz` | **Yes** |
-| `queria-cli-x86_64-apple-darwin.tar.gz` | Expected (macOS Intel) |
-| `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Optional (arm Linux) |
+| `queria-cli-aarch64-apple-darwin.tar.gz` | **Yes** (generator hard-required) |
+| `queria-cli-x86_64-unknown-linux-gnu.tar.gz` | **Yes** (generator hard-required) |
+| `queria-cli-x86_64-apple-darwin.tar.gz` | **Yes** (generator hard-required; full macOS Intel) |
+| `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Optional (arm Linux; formula `odie` if missing) |
 
 **Archive layout (formula contract):** each tarball expands to a single top-level dir containing the binary **`queria-cli`** (plus `VERSION`):
 

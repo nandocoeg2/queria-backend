@@ -76,7 +76,7 @@ cd queria/backend
 # export HOMEBREW_GITHUB_API_TOKEN=ghp_…
 
 ./scripts/generate_homebrew_formula.sh cli-v0.1.0
-# default writes sibling: ../homebrew-queria/Formula/queria-cli.rb
+# default OUT: first existing homebrew-queria (main: ../ ; worktree under .worktrees: ../../../ ), else ../homebrew-queria/…; override with --out
 # custom path:
 # ./scripts/generate_homebrew_formula.sh cli-v0.1.0 --out /tmp/queria-cli.rb
 
@@ -97,7 +97,7 @@ git push origin main
 | Tag not `cli-v*` | Exit 2 usage error |
 | `--out` without path | Exit 2 usage error |
 
-Ship-gate required downloads (hard fail): `queria-cli-aarch64-apple-darwin.tar.gz`, `queria-cli-x86_64-unknown-linux-gnu.tar.gz`. Also required by the generator for full macOS coverage: `queria-cli-x86_64-apple-darwin.tar.gz` (workflow builds it non-optional).
+Ship-gate / generator hard-required downloads (all three **Exit 1** if missing): `queria-cli-aarch64-apple-darwin.tar.gz`, `queria-cli-x86_64-apple-darwin.tar.gz`, `queria-cli-x86_64-unknown-linux-gnu.tar.gz` (workflow builds Darwin x86_64 non-optional). Linux aarch64 optional.
 
 **Do not** re-run with inventing zeros if download fails — fix the Release/token, then re-run.
 

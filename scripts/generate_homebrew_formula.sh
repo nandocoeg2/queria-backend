@@ -55,7 +55,23 @@ fi
 
 VERSION="${TAG#cli-v}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEFAULT_OUT="$(cd "$ROOT/.." && pwd)/homebrew-queria/Formula/queria-cli.rb"
+# Resolve homebrew-queria next to backend (queria/homebrew-queria):
+#   main clone ROOT=…/backend → ../homebrew-queria
+#   worktree ROOT=…/backend/.worktrees/<name> → ../../../homebrew-queria
+# Prefer first existing tap dir; else default create path ROOT/../homebrew-queria.
+DEFAULT_OUT=""
+for candidate in \
+  "$ROOT/../homebrew-queria" \
+  "$ROOT/../../../homebrew-queria"
+do
+  if [[ -d "$candidate" ]]; then
+    DEFAULT_OUT="$(cd "$candidate" && pwd)/Formula/queria-cli.rb"
+    break
+  fi
+done
+if [[ -z "$DEFAULT_OUT" ]]; then
+  DEFAULT_OUT="$(cd "$ROOT/.." && pwd)/homebrew-queria/Formula/queria-cli.rb"
+fi
 OUT="${OUT:-$DEFAULT_OUT}"
 
 # Token precedence: GH_TOKEN → GITHUB_TOKEN → HOMEBREW_GITHUB_API_TOKEN
