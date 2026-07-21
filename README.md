@@ -125,11 +125,10 @@ Laptop bulk index without building from source.
 
 ```bash
 # after install + Custom token with index_local:
-export QUERIA_AGENT_TOKEN='qria_…'
-export QUERIA_EDGE_URL='https://queria.fjulian.id'
+queria-cli config                    # TUI: token + edge (or export QUERIA_*)
 cd /path/to/git/project
 queria-cli index-here --dry-run
-queria-cli index-here   # add --yes if multiple nested git roots
+queria-cli index-here                # --yes if multiple nested git roots
 ```
 
 ## Git ingestion
