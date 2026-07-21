@@ -73,7 +73,20 @@ Knowledge is **not** part of the Daily 3-step connect path. Choose one (or both 
 
 ### Install `queria-cli` (laptop)
 
-Users should **not** need a Rust toolchain for `index-here`. Prefer GitHub Release binaries.
+Users should **not** need a Rust toolchain for `index-here`.
+
+**Preferred (when Homebrew formula is published):**
+
+```bash
+# After live Release + homebrew-queria formula push — see queria-cli-homebrew.md
+brew install nandocoeg2/queria/queria-cli
+# private Release assets: export HOMEBREW_GITHUB_API_TOKEN=… first
+queria-cli index-here --help
+```
+
+Tap process / generator: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). Workspace scaffold: `queria/homebrew-queria/` → GitHub repo `nandocoeg2/homebrew-queria`.
+
+**Fallback — GitHub Release binaries (curl):**
 
 | Platform | Asset (latest `cli-v*` release) |
 |---|---|
@@ -94,7 +107,12 @@ sudo install -m 755 queria-cli-aarch64-apple-darwin/queria-cli /usr/local/bin/qu
 queria-cli index-here --help
 ```
 
-**Maintainers (do not forget):** push to **`main` does not publish CLI binaries.** Only a tag matching **`cli-v*`** (e.g. `cli-v0.1.1`) or Actions → **Release queria-cli** (`workflow_dispatch` with tag) runs [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml). Host deploy Path A is separate ([`deployment.md`](./deployment.md)).  
+**Maintainers (do not forget):**
+
+1. Push **`main` does not publish CLI binaries.** Tag **`cli-v*`** (or Actions → **Release queria-cli**) via [`.github/workflows/release-cli.yml`](../../.github/workflows/release-cli.yml).  
+2. After Release assets are live: `./scripts/generate_homebrew_formula.sh cli-vX.Y.Z` → commit/push **homebrew-queria**.  
+3. Host deploy Path A is separate ([`deployment.md`](./deployment.md)).
+
 Dev alternative: `cargo build -p queria-cli --release` in this repo.
 
 ### Fast first knowledge (laptop)

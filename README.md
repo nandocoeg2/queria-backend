@@ -110,11 +110,18 @@ Connect works with empty retrieve; useful answers need ready chunks. Do **not** 
 
 ## queria-cli (index-here)
 
-Laptop bulk index without building from source: download **GitHub Release** assets for your OS (`cli-v*` tags).
+Laptop bulk index without building from source.
+
+| Path | When |
+|---|---|
+| **Homebrew** | After formula published: `brew install nandocoeg2/queria/queria-cli` |
+| **GitHub Release** | curl tar.gz for your OS (`cli-v*` tags) |
+| **cargo** | Dev only |
 
 - Releases: https://github.com/nandocoeg2/queria-backend/releases  
-- Workflow: [`.github/workflows/release-cli.yml`](.github/workflows/release-cli.yml) — trigger **tag `cli-v*`** only (**not** push `main`)  
-- Ops: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) § Install `queria-cli`; [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md) § What push main does not do
+- Workflow: [`.github/workflows/release-cli.yml`](.github/workflows/release-cli.yml) — **tag `cli-v*`** only (**not** push `main`)  
+- Homebrew: [`docs/runbooks/queria-cli-homebrew.md`](docs/runbooks/queria-cli-homebrew.md) · `scripts/generate_homebrew_formula.sh` · tap scaffold `../homebrew-queria/`  
+- Ops: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) § Install `queria-cli`
 
 ```bash
 # after install + Custom token with index_local:

@@ -86,7 +86,8 @@ Linux arm64 build is **optional** (`continue-on-error`); macOS Apple Silicon + L
 
 If a release run is stuck on `macos-13`, **cancel** that Actions run, ship a new `cli-v*` tag (or retag) that includes the fixed workflow on `main`.
 
-Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.
+Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.  
+**Homebrew:** after assets are live, run `scripts/generate_homebrew_formula.sh cli-v…` and push tap `homebrew-queria` — full checklist: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
 
 ---
 
