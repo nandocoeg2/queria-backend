@@ -15,7 +15,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
-use std::io::{self, stdout};
+use std::io::stdout;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +36,7 @@ enum EditField {
 
 pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
     if !config::is_tty() {
-        bail!("not a TTY; use: config list|show|set|use|env|mcp …");
+        bail!("queria-cli config needs a TTY (interactive only)");
     }
 
     enable_raw_mode()?;
@@ -62,7 +62,7 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
     }
 
     let mut status = String::from(
-        "↑↓ select · e edit · n new · u use · d delete · m mcp · p print env · q quit",
+        "↑↓ select · e edit · n new · u use · d delete · m mcp install · q quit",
     );
     let mut edit_name = String::new();
     let mut edit_field = EditField::Edge;
@@ -272,10 +272,6 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                     KeyCode::Char('m') => {
                         mcp_idx = 0;
                         screen = Screen::McpPick;
-                    }
-                    KeyCode::Char('p') => {
-                        status = "use: queria-cli config env  (after quit) to print exports"
-                            .into();
                     }
                     _ => {}
                 },

@@ -52,11 +52,8 @@ enum Command {
         #[command(subcommand)]
         command: BackupCommand,
     },
-    /// Multi-profile user config (TUI if bare; subcommands for scripts).
-    Config {
-        #[command(subcommand)]
-        command: Option<ConfigSubcommand>,
-    },
+    /// Interactive TUI: profiles / token / edge / MCP install (~/.config/queria/config.toml).
+    Config,
     /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
     IndexHere {
         /// Env var name holding the raw agent token (never print the token).
@@ -77,52 +74,6 @@ enum Command {
     },
 }
 
-#[derive(Debug, Subcommand)]
-enum ConfigSubcommand {
-    /// Print resolved config file path.
-    Path,
-    /// List profiles (* = active).
-    List,
-    /// Show profile fields (token redacted).
-    Show {
-        name: Option<String>,
-    },
-    /// Set active_profile.
-    Use {
-        name: String,
-    },
-    /// Set a key: edge-url | token | mcp-url | project-slug.
-    Set {
-        key: String,
-        value: String,
-        #[arg(long)]
-        profile: Option<String>,
-    },
-    Unset {
-        key: String,
-        #[arg(long)]
-        profile: Option<String>,
-    },
-    Delete {
-        name: String,
-    },
-    /// Print export lines (includes token).
-    Env {
-        #[arg(long)]
-        profile: Option<String>,
-    },
-    /// Fetch edge MCP snippet and apply (droid|claude|cursor|codex).
-    Mcp {
-        #[arg(long)]
-        client: String,
-        #[arg(long)]
-        profile: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        yes: bool,
-    },
-}
 #[derive(Debug, Subcommand)]
 enum DoctorCommand {
     Mcp {
@@ -240,68 +191,10 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
         }
-        Command::Config { command: None } => {
+        Command::Config => {
             config_tui::run_tui(profile.as_deref())?;
             Ok(())
         }
-        Command::Config {
-            command: Some(sub),
-        } => match sub {
-            ConfigSubcommand::Path => {
-                config::run_noninteractive(config::ConfigCommand::Path, profile.as_deref())
-            }
-            ConfigSubcommand::List => {
-                config::run_noninteractive(config::ConfigCommand::List, profile.as_deref())
-            }
-            ConfigSubcommand::Show { name } => config::run_noninteractive(
-                config::ConfigCommand::Show { name },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Use { name } => config::run_noninteractive(
-                config::ConfigCommand::Use { name },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Set {
-                key,
-                value,
-                profile: p,
-            } => config::run_noninteractive(
-                config::ConfigCommand::Set {
-                    key,
-                    value,
-                    profile: p,
-                },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Unset {
-                key,
-                profile: p,
-            } => config::run_noninteractive(
-                config::ConfigCommand::Unset { key, profile: p },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Delete { name } => config::run_noninteractive(
-                config::ConfigCommand::Delete { name },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Env { profile: p } => config::run_noninteractive(
-                config::ConfigCommand::Env { profile: p },
-                profile.as_deref(),
-            ),
-            ConfigSubcommand::Mcp {
-                client,
-                profile: p,
-                dry_run,
-                yes,
-            } => {
-                let creds = credentials::resolve(credentials::ResolveOpts {
-                    profile: p.or(profile),
-                    require_token: false,
-                    ..Default::default()
-                })?;
-                mcp_install::install(&creds, &client, dry_run, yes).await
-            }
-        },
         Command::IndexHere {
             token_env,
             edge_url_env,

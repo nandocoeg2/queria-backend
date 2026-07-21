@@ -12,10 +12,10 @@ Laptop users must `export QUERIA_AGENT_TOKEN` / `QUERIA_EDGE_URL` every shell. M
 ## Goals
 
 1. Multi-profile user config on disk (token + edge + optional slug/mcp).
-2. Human UX: **ratatui TUI** via bare `queria-cli config`.
-3. Automation: thin non-interactive subcommands.
+2. Human UX: **ratatui TUI only** — `queria-cli config` (no set/list subcommands).
+3. Scripts/CI: env `QUERIA_*` or hand-edit TOML (not CLI flags).
 4. `index-here` resolves credentials without required export.
-5. MCP install for **droid, claude, cursor, codex** via live  
+5. MCP install from TUI for **droid, claude, cursor, codex** via live  
    `GET {edge}/api/v1/setup/mcp-snippet?client=`.
 
 ## Non-goals (v1)
@@ -33,7 +33,7 @@ Laptop users must `export QUERIA_AGENT_TOKEN` / `QUERIA_EDGE_URL` every shell. M
 | Storage | `~/.config/queria/config.toml` named profiles |
 | Active | `active_profile` + `config use` + `--profile` / `QUERIA_PROFILE` |
 | Code | Modules inside `queria-cli` only |
-| Human UX | TUI on bare `config` + subcommands |
+| Human UX | TUI only (`queria-cli config`) |
 | MCP | Always fetch edge; no offline templates |
 | Clients | droid, claude, cursor, codex |
 
@@ -65,13 +65,11 @@ Profile name: `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`.
 ## CLI surface
 
 ```text
-queria-cli [--profile NAME] config              # TUI if TTY
-queria-cli config path|list|show|use|set|unset|delete|env|mcp …
+queria-cli [--profile NAME] config       # TUI only (TTY required)
 queria-cli [--profile NAME] index-here …
 ```
 
-Bare `config` without TTY → exit 2.
-
+`config` without TTY → error. No non-interactive config subcommands.
 ## Modules
 
 | Module | Role |

@@ -121,19 +121,14 @@ Full process: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
 
 Dev alternative: `cargo build -p queria-cli --release` in this repo.
 
-**CLI config (profiles; no daily `export` for index-here):**
+**CLI config (TUI only):**
 
 ```bash
-queria-cli config                          # TUI: profiles, token, edge, MCP install
-# scripts / CI:
-queria-cli config set edge-url https://queria.fjulian.id
-queria-cli config set token 'qria_…'
-queria-cli config use work
-queria-cli config mcp --client droid --yes   # live GET …/setup/mcp-snippet
-queria-cli index-here                        # reads ~/.config/queria/config.toml
+queria-cli config       # interactive: profiles, token, edge, MCP install
+queria-cli index-here   # uses ~/.config/queria/config.toml (env still overrides)
 ```
 
-Env still overrides file. Design: [`../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md).
+No `config set|list|…` subcommands. CI/scripts: `export QUERIA_*` or edit TOML. Design: [`../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md).
 
 ### Fast first knowledge (laptop)
 
