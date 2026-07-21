@@ -80,7 +80,11 @@ git tag -a cli-v0.1.0 -m "queria-cli 0.1.0"
 git push origin cli-v0.1.0
 ```
 
-Linux arm64 build is **optional** (`continue-on-error`); macOS + Linux x86_64 are required for a green release.
+Linux arm64 build is **optional** (`continue-on-error`); macOS Apple Silicon + Linux x86_64 archives are **required** for publish.
+
+**Runner note:** never pin `macos-13` — GitHub retired that image (jobs stay **Waiting for a runner…** indefinitely). Darwin x86_64 and aarch64 both build on **`macos-14`**.
+
+If a release run is stuck on `macos-13`, **cancel** that Actions run, ship a new `cli-v*` tag (or retag) that includes the fixed workflow on `main`.
 
 Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.
 

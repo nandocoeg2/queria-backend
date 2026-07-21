@@ -1,5 +1,8 @@
 # Build queria-cli binaries and publish to GitHub Releases.
 # Trigger: push tag cli-v* (e.g. cli-v0.1.0) or workflow_dispatch.
+#
+# Note: do NOT use macos-13 — GitHub retired that runner image (jobs queue forever).
+# x86_64 macOS builds on macos-14 via Rust target (Apple Silicon host).
 name: Release queria-cli
 
 on:
@@ -36,10 +39,11 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             optional: true
+          # macos-14 is Apple Silicon; both Darwin targets build here (no macos-13).
           - os: macos-14
             target: aarch64-apple-darwin
             optional: false
-          - os: macos-13
+          - os: macos-14
             target: x86_64-apple-darwin
             optional: false
 
@@ -58,7 +62,6 @@ jobs:
           workspaces: "."
 
       - name: Build release binary
-        # Host OS matches target (native build). Do not cross-link.
         run: cargo build -p queria-cli --release --target ${{ matrix.target }}
 
       - name: Stage artifact
@@ -101,22 +104,24 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     # Tag push always; dispatch only when tag input is set.
+    # Use always() so a failed optional matrix leg does not block publish when required legs OK.
     if: >-
-      startsWith(github.ref, 'refs/tags/cli-v') ||
-      (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+      always() &&
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/cli-v') ||
+       (github.event_name == 'workflow_dispatch' && inputs.tag != ''))
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-          # optional linux-arm may be missing
           pattern: queria-cli-*
 
       - name: List dist
         run: find dist -type f | sort
 
-      - name: Resolve tag
+      - name: Resolve tag and require core assets
         id: meta
         shell: bash
         run: |
@@ -130,13 +135,23 @@ jobs:
             echo "No tag for release" >&2
             exit 1
           fi
-          # Require at least one archive (mac + linux x86_64 expected).
           shopt -s nullglob
           archives=(dist/queria-cli-*.tar.gz)
           if [[ ${#archives[@]} -lt 1 ]]; then
             echo "No queria-cli archives downloaded" >&2
             exit 1
           fi
+          # Required for users / prod docs examples
+          for need in \
+            queria-cli-aarch64-apple-darwin.tar.gz \
+            queria-cli-x86_64-unknown-linux-gnu.tar.gz
+          do
+            if [[ ! -f "dist/${need}" ]]; then
+              echo "Missing required asset: ${need}" >&2
+              ls -la dist/ || true
+              exit 1
+            fi
+          done
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#cli-}" >> "$GITHUB_OUTPUT"
 
@@ -172,6 +187,7 @@ jobs:
             Requires a **Custom** agent token with `index_local` for `index-here`. See `docs/runbooks/onboarding.md` (Optional knowledge ingest).
 
             **Note:** push to `main` does **not** publish this CLI; only tags `cli-v*` (or this workflow with a tag input).
+            Do not use `macos-13` runners (retired by GitHub).
           files: |
             dist/queria-cli-*.tar.gz
             dist/queria-cli-*.tar.gz.sha256
