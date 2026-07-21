@@ -62,32 +62,103 @@ sequenceDiagram
 | **Build & Deploy** ([`deploy.yml`](../../.github/workflows/deploy.yml)) | Push **`main`** (or `workflow_dispatch`) | Host **container** images (`backend` / `admin` on GHCR) + SSH pull/up |
 | **Release queria-cli** ([`release-cli.yml`](../../.github/workflows/release-cli.yml)) | Tag **`cli-v*`** only (or Actions → this workflow + optional tag input) | **GitHub Release** assets: multi-arch `queria-cli-*.tar.gz` |
 
-**Do not expect** a new `queria-cli` binary/release from a normal docs or app push to `main`. Cut a client binary only when you deliberately ship CLI:
+**Do not expect** a new `queria-cli` binary/release from a normal docs or app push to `main`.
+
+### queria-cli Release — operator checklist (one page)
+
+Use this sequence to cut, unstick, or verify CLI assets. Do **not** run Homebrew formula generation until step 4 succeeds.
+
+| Step | Action | Done when |
+|---|---|---|
+| **0. Preconditions** | Workflow on the commit you tag includes current [`release-cli.yml`](../../.github/workflows/release-cli.yml): **no `macos-13`**, both Darwin targets on **`macos-14`**, Linux arm **optional** (`continue-on-error`). | Matrix matches that (fixed on `main` after retired-runner incident). |
+| **1. Cancel stuck run** | Actions → **Release queria-cli** → open hanging run (e.g. **Waiting for a runner…** on `macos-13`) → **Cancel workflow**. | Run shows Cancelled; no zombie jobs. |
+| **2. Ship or re-trigger** | Prefer a **new** tag, or retag, or **workflow_dispatch** with tag input (see below). | New Actions run started for that tag. |
+| **3. Wait for assets** | Run green (optional Linux arm may fail without blocking). Release page lists archives. | Required assets present (see table). |
+| **4. Then formula** | Only after assets are downloadable: `./scripts/generate_homebrew_formula.sh cli-v…` → push tap. | See [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). |
+
+**Required Release assets (publish will fail without them):**
+
+| Asset | Required? |
+|---|---|
+| `queria-cli-aarch64-apple-darwin.tar.gz` | **Yes** (generator hard-required) |
+| `queria-cli-x86_64-unknown-linux-gnu.tar.gz` | **Yes** (generator hard-required) |
+| `queria-cli-x86_64-apple-darwin.tar.gz` | **Yes** (generator hard-required; full macOS Intel) |
+| `queria-cli-aarch64-unknown-linux-gnu.tar.gz` | Optional (arm Linux; formula `odie` if missing) |
+
+**Archive layout (formula contract):** each tarball expands to a single top-level dir containing the binary **`queria-cli`** (plus `VERSION`):
+
+```text
+queria-cli-aarch64-apple-darwin/
+  queria-cli
+  VERSION
+```
+
+#### Cut a new CLI release (happy path)
 
 ```bash
 # from queria/backend, on the commit you want frozen in the release
 git tag -a cli-v0.1.1 -m "queria-cli 0.1.1"
 git push origin cli-v0.1.1
-# watch: Actions → "Release queria-cli" → https://github.com/nandocoeg2/queria-backend/releases
+# watch: Actions → "Release queria-cli"
+# assets: https://github.com/nandocoeg2/queria-backend/releases
 ```
 
-If a tag already exists but no Release assets (failed/cancelled run), either re-run the workflow from the Actions UI on that tag, or move the tag:
+#### Unstick: tag exists but no usable assets
+
+1. **Cancel** any stuck/failed **Release queria-cli** run for that tag (UI).
+2. Re-trigger with one of:
+
+**A — workflow_dispatch (preferred if tag already points at good workflow commit):**
+
+- Actions → **Release queria-cli** → **Run workflow**
+- Input `tag`: `cli-v0.1.0` (must be non-empty to publish a GitHub Release)
+- Confirm run completes; Release updated with assets
+
+**B — move the tag to a commit that has fixed `release-cli.yml`:**
 
 ```bash
 git tag -d cli-v0.1.0
 git push origin :refs/tags/cli-v0.1.0
+# ensure HEAD (or chosen commit) has macos-14 matrix, not macos-13
 git tag -a cli-v0.1.0 -m "queria-cli 0.1.0"
 git push origin cli-v0.1.0
 ```
 
-Linux arm64 build is **optional** (`continue-on-error`); macOS Apple Silicon + Linux x86_64 archives are **required** for publish.
+**C — new patch tag** (safest if history is confusing): `cli-v0.1.1` on fixed commit → push → wait.
+
+#### Verify assets (public vs private repo)
+
+```bash
+TAG=cli-v0.1.0
+# Public (or after release is public): expect HTTP 200
+curl -fsI "https://github.com/nandocoeg2/queria-backend/releases/download/${TAG}/queria-cli-aarch64-apple-darwin.tar.gz"
+
+# Private repo: unauthenticated curl returns 404 — not a missing-asset proof.
+# Use a token with repo read (do not commit the token):
+#   export GH_TOKEN=ghp_…
+curl -fsI -H "Authorization: Bearer ${GH_TOKEN}" \
+  -H "Accept: application/octet-stream" \
+  "https://api.github.com/repos/nandocoeg2/queria-backend/releases/assets/<ASSET_ID>"
+# Or: gh release view "$TAG" --repo nandocoeg2/queria-backend
+# Or: open Releases UI while logged in
+```
+
+**BLOCKED without operator credentials:** live private-asset verification and re-running Actions cannot be proven green from a local agent without `GH_TOKEN` / UI access. Treat missing token + 404 as “verify in UI / with token,” not as “assets absent.”
 
 **Runner note:** never pin `macos-13` — GitHub retired that image (jobs stay **Waiting for a runner…** indefinitely). Darwin x86_64 and aarch64 both build on **`macos-14`**.
 
-If a release run is stuck on `macos-13`, **cancel** that Actions run, ship a new `cli-v*` tag (or retag) that includes the fixed workflow on `main`.
-
 Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-cli`.  
-**Homebrew:** after assets are live, run `scripts/generate_homebrew_formula.sh cli-v…` and push tap `homebrew-queria` — full checklist: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
+**Homebrew:** only after step 3 **and** real formula SHAs written by the generator — full formula/tap checklist: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). Scaffold formula **odies** (not installable). Do not treat Brew as live on `main` alone.
+
+### Residual accuracy (operator — CLI / Brew / cache / Daily)
+
+| Residual | Truth |
+|---|---|
+| **CLI Release assets** | Not proven green from unauthenticated API (private repo → 404). Confirm in **Actions / Releases UI** or with token. |
+| **Push `main`** | Host image deploy only. **No** CLI Release, **no** Homebrew auto-update. |
+| **First arm64 deploy** | Seeds GHCR `:buildcache` (full compile once after native-arm + cache work landed; see § Build speed / cache). |
+| **Homebrew** | After downloadable `cli-v*` assets → generate real SHAs → push tap. Placeholder is NOT READY. |
+| **Daily agent onboard** | Independent — mint/connect/retrieve without CLI or Brew ([`onboarding.md`](./onboarding.md)). |
 
 ---
 
@@ -117,7 +188,7 @@ Path B (rsync + host `compose build`) does **not** use GHA/registry buildcache u
 
 Notes:
 
-- First green run after this change still pays a full compile to seed `buildcache`.
+- **First green arm64 deploy after native-runner + cache work (`bf76180` era) still pays a full compile to seed `buildcache`** on GHCR (`backend:buildcache` / `admin:buildcache`). Later pushes with unchanged deps should hit the registry cache — do not expect warm times on that first seed run.
 - `GITHUB_TOKEN` packages:write must allow push of `:buildcache` tags (same as `:latest`).
 - If `ubuntu-24.04-arm` is unavailable on the org, fall back temporarily to `ubuntu-latest` + QEMU (slow again).
 

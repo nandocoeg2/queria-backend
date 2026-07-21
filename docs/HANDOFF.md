@@ -1,6 +1,6 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-20 (index-here on main: nested ls-files filter + e2e smoke script; host redeploy/migrate residual; subdomain HTTPS live; GHCR Path A residual)
+> Last verified: 2026-07-21 (CLI/Homebrew residual accuracy: no Brew oversell; Daily independent of CLI; Release verify via UI/token; first arm64 seeds buildcache)
 > Branch: `main`
 > **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
 > **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
@@ -581,9 +581,11 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 ### Runtime / config notes
 
 - Onboarding friction pack **code shipped on `main`**: Admin Daily mint + connect panel; dashboard “Get ready for agents”; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec (historical): [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). **Docs** lead with Daily **3-step** default (mint → env+MCP → retrieve); Admin Git / index-here optional; direnv not required for Daily. Live copy: `GET …/docs/agent-setup`. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Ops residual: confirm host image has Daily UI + `QUERIA_PUBLIC_BASE_URL` set (not a re-open of UI implementation).
-- **queria-cli GitHub Releases:** workflow [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds multi-arch binaries **only** on tag `cli-v*` (or workflow_dispatch with tag). **Push `main` does not create a CLI release** (main push → host image deploy only). Users install from Releases (curl) or Homebrew tap after formula publish. Ops: [`runbooks/deployment.md`](./runbooks/deployment.md) § What push main does not do; [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md).
-- **Homebrew tap (scaffold):** workspace `queria/homebrew-queria/` → intended remote `nandocoeg2/homebrew-queria` (`brew tap nandocoeg2/queria`). Formula SHAs are **placeholder until** `cli-v*` Release assets return HTTP 200; then run `scripts/generate_homebrew_formula.sh` and push the tap. Not part of backend GHCR deploy.
-- **GHCR image build speed:** deploy workflow builds `linux/arm64` on **`ubuntu-24.04-arm`** (native; no QEMU). Docker layer + cargo **BuildKit cache mounts** + registry tags `backend:buildcache` / `admin:buildcache`. Details: [`runbooks/deployment.md`](./runbooks/deployment.md) § Build speed / cache.
+- **CLI / Homebrew / deploy residual (one list — do not oversell):**
+  1. **CLI Release not verified from unauth API** — `queria-backend` is private; unauthenticated curl/API on Release assets returns **404** (not proof assets are missing). Operator confirms in Actions UI / Releases UI (logged in) or `GH_TOKEN` / `gh release view`. Workflow [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds **only** on tag `cli-v*` (or `workflow_dispatch` with tag). **Push `main` does not create a CLI release** and never auto-updates Homebrew.
+  2. **First arm64 GHCR deploy seeds `buildcache`** — deploy workflow uses native `ubuntu-24.04-arm` + BuildKit mounts + registry tags `backend:buildcache` / `admin:buildcache` (since `bf76180`). First green run after that change still pays a full compile to seed cache; later warm rebuilds expected faster. Details: [`runbooks/deployment.md`](./runbooks/deployment.md) § Build speed / cache.
+  3. **Homebrew only after real formula SHAs** — workspace scaffold `queria/homebrew-queria/` (placeholder formula **`odie`s**; not installable). Do **not** advertise `brew install nandocoeg2/queria/queria-cli` as working today. After a live `cli-v*` Release with downloadable assets: `scripts/generate_homebrew_formula.sh` → push tap. Runbook: [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md).
+  4. **Daily onboard is independent of CLI/Brew** — Default Daily path (mint token → env + MCP → `retrieve_context`) needs **no** `queria-cli` and **no** Homebrew. CLI install is only for optional laptop `index-here` (or maintainers).
 
 | Gap | Priority | Notes |
 |---|---|---|
