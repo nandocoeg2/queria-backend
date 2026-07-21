@@ -22,7 +22,6 @@ const MAX_FILES_PER_REQUEST: usize = 500;
 /// Stay under ~4 MiB JSON body before request overhead.
 const MAX_BATCH_BYTES: usize = 4 * 1024 * 1024;
 
-const DEFAULT_EDGE_URL: &str = "http://127.0.0.1:17674";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredRoot {
@@ -93,6 +92,7 @@ pub async fn run(
     depth: u32,
     yes: bool,
     dry_run: bool,
+    profile: Option<&str>,
 ) -> Result<()> {
     let cwd = std::env::current_dir().context("resolve current working directory")?;
     let roots = discover_git_roots(&cwd, depth)?;
@@ -120,8 +120,18 @@ pub async fn run(
         );
     }
 
-    let token = read_token(token_env)?;
-    let edge_base = edge_base_url(edge_url_env);
+    let creds = crate::credentials::resolve(crate::credentials::ResolveOpts {
+        profile: profile.map(|s| s.to_owned()),
+        token_env: Some(token_env.to_owned()),
+        edge_url_env: Some(edge_url_env.to_owned()),
+        require_token: true,
+    })?;
+    let token = creds
+        .agent_token
+        .clone()
+        .context("missing agent token after resolve")?;
+    // Prefer env-named edge when set; resolve already applied defaults/file.
+    let edge_base = creds.edge_url;
     let endpoint = format!(
         "{}/api/v1/agent/index-local",
         edge_base.trim_end_matches('/')
@@ -129,26 +139,6 @@ pub async fn run(
 
     upload_plans(&endpoint, &token, &plans).await
 }
-
-fn read_token(token_env: &str) -> Result<String> {
-    let token = std::env::var(token_env).with_context(|| {
-        format!("missing agent token: set env var {token_env} (use --token-env to change name)")
-    })?;
-    let token = token.trim().to_owned();
-    if token.is_empty() {
-        bail!("env var {token_env} is empty");
-    }
-    Ok(token)
-}
-
-fn edge_base_url(edge_url_env: &str) -> String {
-    std::env::var(edge_url_env)
-        .ok()
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_EDGE_URL.to_owned())
-}
-
 fn print_discovery_summary(plans: &[RootFilePlan]) {
     println!("discovered {} git root(s):", plans.len());
     for plan in plans {

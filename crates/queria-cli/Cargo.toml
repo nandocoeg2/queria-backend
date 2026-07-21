@@ -10,15 +10,18 @@ rust-version.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
+crossterm.workspace = true
 queria-core = { path = "../queria-core" }
 queria-backup = { path = "../queria-backup" }
 queria-db = { path = "../queria-db" }
 queria-ingestion = { path = "../queria-ingestion" }
 queria-search = { path = "../queria-search" }
+ratatui.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
+toml.workspace = true
 tracing.workspace = true
 uuid.workspace = true

@@ -1,10 +1,14 @@
 mod backup;
 mod bootstrap;
+mod config;
+mod config_tui;
+mod credentials;
 mod database;
 mod doctor_mcp;
 mod embeddings;
 mod evaluation;
 mod index_here;
+mod mcp_install;
 mod restore_drill;
 mod retrieval;
 
@@ -14,6 +18,9 @@ use clap::{Parser, Subcommand};
 #[command(name = "queria-cli")]
 #[command(about = "Queria operational CLI")]
 struct Cli {
+    /// Profile from ~/.config/queria/config.toml (overrides active_profile).
+    #[arg(long, global = true, env = "QUERIA_PROFILE")]
+    profile: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -45,6 +52,8 @@ enum Command {
         #[command(subcommand)]
         command: BackupCommand,
     },
+    /// Interactive TUI: profiles / token / edge / MCP install (~/.config/queria/config.toml).
+    Config,
     /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
     IndexHere {
         /// Env var name holding the raw agent token (never print the token).
@@ -135,6 +144,7 @@ enum BackupCommand {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let profile = cli.profile.clone();
 
     match cli.command {
         Command::Doctor {
@@ -181,16 +191,29 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
         }
+        Command::Config => {
+            config_tui::run_tui(profile.as_deref())?;
+            Ok(())
+        }
         Command::IndexHere {
             token_env,
             edge_url_env,
             depth,
             yes,
             dry_run,
-        } => index_here::run(&token_env, &edge_url_env, depth, yes, dry_run).await,
+        } => {
+            index_here::run(
+                &token_env,
+                &edge_url_env,
+                depth,
+                yes,
+                dry_run,
+                profile.as_deref(),
+            )
+            .await
+        }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
