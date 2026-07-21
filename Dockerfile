@@ -1,5 +1,6 @@
 # Multi-binary backend image (GHCR name: backend).
-# Workspace: rust-version 1.85, edition 2024. Binaries: queria-api, queria-mcp, queria-worker, queria-cli.
+# Workspace: rust-version 1.88, edition 2024. Binaries: queria-api, queria-mcp, queria-worker, queria-cli.
+# (rust-s3 → sysinfo 0.37 needs rustc ≥ 1.88; keep Docker image and workspace MSRV aligned.)
 # Ports: API 17671, MCP 17672, worker health 17673. Public edge is Caddy on :17674.
 #
 # Cache notes (CI BuildKit):
@@ -8,7 +9,7 @@
 # - layer: copy manifests first, cook dummy build, then real sources (cargo-chef-free).
 
 # ---- build ----
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:1.88-slim-bookworm AS builder
 WORKDIR /usr/src/queria
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
