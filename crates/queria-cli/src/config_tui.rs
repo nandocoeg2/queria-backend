@@ -333,14 +333,11 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                     }
                     KeyCode::Enter => {
                         let client = clients[mcp_idx];
-                        // must leave raw mode for async + http, then show result
+                        // Leave raw mode for HTTP install, then re-enter TUI.
                         drop(terminal);
                         disable_raw_mode()?;
                         stdout().execute(LeaveAlternateScreen)?;
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()?;
-                        let res = rt.block_on(async {
+                        let res = block_on_compat(async {
                             let creds = credentials::resolve(ResolveOpts {
                                 profile: cfg.active_profile.clone(),
                                 require_token: false,
@@ -377,6 +374,24 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
 fn nonempty(s: String) -> Option<String> {
     let s = s.trim().to_owned();
     if s.is_empty() { None } else { Some(s) }
+}
+
+/// Run an async install from the sync TUI without nesting a second Tokio runtime.
+/// `main` already runs under `#[tokio::main]`; creating another runtime panics.
+fn block_on_compat<F, T>(fut: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut)),
+        Err(_) => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime for config TUI");
+            rt.block_on(fut)
+        }
+    }
 }
 
 fn active_edit_buf<'a>(
