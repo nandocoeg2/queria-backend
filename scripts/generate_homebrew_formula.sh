@@ -136,7 +136,7 @@ resolve_asset_id() {
 
 # Download asset and print sha256 of the **tarball**. Never invent hashes.
 # Returns 0 and prints hash on stdout; errors go to stderr.
-# Side effect when TOKEN present: sets ASSET_ID_<sanitized_name> for formula URL generation.
+# Also writes asset id to $tmpdir/asset_id.<key> (survives command-substitution subshells).
 fetch_sha() {
   local asset="$1"
   local dest="$tmpdir/$asset"
@@ -152,8 +152,8 @@ fetch_sha() {
     asset_id="$(resolve_asset_id "$asset")"
     curl_rc=$?
     if [[ $curl_rc -eq 0 && -n "$asset_id" ]]; then
-      # Record API asset id so formula can use private-repo-safe API URLs.
-      eval "ASSET_ID_${key}=\"${asset_id}\""
+      # Persist API asset id for formula_url_block (not env: fetch_sha runs in $() subshell).
+      printf '%s' "$asset_id" >"$tmpdir/asset_id.${key}"
       url="https://api.github.com/repos/${REPO}/releases/assets/${asset_id}"
       echo "fetch $url ($asset)" >&2
       http_code="$(curl -sS -L -w '%{http_code}' -o "$dest" \
@@ -208,7 +208,10 @@ formula_url_block() {
   local pad key asset_id
   pad="$(printf "%${indent}s" "")"
   key="$(printf '%s' "$asset" | tr '.-' '__')"
-  asset_id="$(eval "printf '%s' \"\${ASSET_ID_${key}:-}\"")"
+  asset_id=""
+  if [[ -f "$tmpdir/asset_id.${key}" ]]; then
+    asset_id="$(cat "$tmpdir/asset_id.${key}")"
+  fi
   if [[ -n "$asset_id" ]]; then
     # Use headers: (array). `header:` expects a single String and breaks if passed Array.
     cat <<EOF
@@ -311,7 +314,7 @@ URL_DARWIN_INTEL="$(formula_url_block queria-cli-x86_64-apple-darwin.tar.gz "$SH
 URL_LINUX_INTEL="$(formula_url_block queria-cli-x86_64-unknown-linux-gnu.tar.gz "$SHA_LINUX_INTEL" 6)"
 
 PRIVATE_NOTE=""
-if [[ -n "${ASSET_ID_queria_cli_aarch64_apple_darwin_tar_gz:-}" ]]; then
+if [[ -f "$tmpdir/asset_id.queria_cli_aarch64_apple_darwin_tar_gz" ]]; then
   PRIVATE_NOTE="# Private queria-backend: urls are Releases API asset endpoints.
 # brew requires: export HOMEBREW_GITHUB_API_TOKEN=ghp_… (repo read)
 # (plain github.com/.../releases/download/ URLs return 404 for private repos).
