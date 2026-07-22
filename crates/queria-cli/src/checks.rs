@@ -366,4 +366,45 @@ mod tests {
             .iter()
             .any(|i| i.id == "urls" && matches!(i.level, CheckLevel::Warn)));
     }
+
+    #[test]
+    fn assemble_index_local_pass_when_permissions_list_has_grant() {
+        let perms = vec![
+            "index_local".to_string(),
+            "list_projects".to_string(),
+            "retrieve_context".to_string(),
+        ];
+        let snap = assemble_doctor_snapshot(
+            "0.2.7",
+            Some("default"),
+            "https://queria.fjulian.id",
+            "https://queria.fjulian.id/mcp",
+            Some("qria_testtoken"),
+            Ok((200, "ok".into())),
+            Ok((200, r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into())),
+            Some(perms.as_slice()),
+        );
+        assert!(snap.items.iter().any(|i| {
+            i.id == "index_local" && matches!(i.level, CheckLevel::Pass) && i.detail.contains("index_local")
+        }));
+    }
+
+    #[test]
+    fn assemble_index_local_warns_when_permissions_list_lacks_grant() {
+        let perms = vec!["list_projects".to_string(), "retrieve_context".to_string()];
+        let snap = assemble_doctor_snapshot(
+            "0.2.7",
+            Some("default"),
+            "https://queria.fjulian.id",
+            "https://queria.fjulian.id/mcp",
+            Some("qria_testtoken"),
+            Ok((200, "ok".into())),
+            Ok((200, r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into())),
+            Some(perms.as_slice()),
+        );
+        assert!(snap
+            .items
+            .iter()
+            .any(|i| i.id == "index_local" && matches!(i.level, CheckLevel::Warn)));
+    }
 }

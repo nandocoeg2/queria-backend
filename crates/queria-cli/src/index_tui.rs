@@ -2,6 +2,7 @@
 
 use crate::config;
 use crate::credentials::{self, ResolveOpts};
+use crate::edge_agent;
 use crate::index_here::{
     self, DEFAULT_DEPTH, RootFilePlan, filter_plans_by_paths, upload_selected_plans,
 };
@@ -72,6 +73,7 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
         let mut status =
             String::from("↑↓/jk move · Space toggle · Enter next · Esc cancel");
         let mut result_message = String::new();
+        let mut preflight = PreflightState::Unknown;
 
         loop {
             terminal.draw(|f| {
@@ -105,7 +107,7 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                         f.render_stateful_widget(list, chunks[1], &mut list_state);
                     }
                     Screen::Preflight => {
-                        let body = Paragraph::new(preflight_text())
+                        let body = Paragraph::new(preflight_text(&preflight))
                             .block(Block::default().borders(Borders::ALL).title("Preflight"))
                             .wrap(Wrap { trim: false });
                         f.render_widget(body, chunks[1]);
@@ -183,8 +185,13 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                             status = "select at least one repo (Space)".into();
                             continue;
                         }
+                        preflight = check_index_local_preflight(profile);
                         screen = Screen::Preflight;
-                        status = "Enter continue · Esc cancel".into();
+                        status = if preflight.blocks_upload() {
+                            "Esc/q back (upload blocked)".into()
+                        } else {
+                            "Enter continue · Esc cancel".into()
+                        };
                     }
                     _ => {}
                 },
@@ -195,6 +202,11 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                             "↑↓/jk move · Space toggle · Enter next · Esc cancel".into();
                     }
                     KeyCode::Enter => {
+                        if preflight.blocks_upload() {
+                            status =
+                                "blocked: need Custom token with index_local · Esc back".into();
+                            continue;
+                        }
                         screen = Screen::DryRun;
                         status = "u or Enter upload · Esc back".into();
                     }
@@ -203,9 +215,20 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                 Screen::DryRun => match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => {
                         screen = Screen::Preflight;
-                        status = "Enter continue · Esc cancel".into();
+                        status = if preflight.blocks_upload() {
+                            "Esc/q back (upload blocked)".into()
+                        } else {
+                            "Enter continue · Esc cancel".into()
+                        };
                     }
                     KeyCode::Enter | KeyCode::Char('u') => {
+                        if preflight.blocks_upload() {
+                            // Should be unreachable if Preflight gate works; re-check.
+                            screen = Screen::Preflight;
+                            status =
+                                "blocked: need Custom token with index_local · Esc back".into();
+                            continue;
+                        }
                         screen = Screen::Uploading;
                         status = "uploading…".into();
                     }
@@ -279,17 +302,99 @@ fn format_success(job_ids: &[String]) -> String {
     )
 }
 
-fn preflight_text() -> String {
-    String::from(
-        "IndexLocal permission preflight\n\
-         \n\
-         Daily agent tokens cannot upload local repos.\n\
-         Use a Custom token with index_local (Admin → Tokens).\n\
-         \n\
-         (Permissions API not checked yet — upload will hard-fail on 403.)\n\
-         \n\
-         Press Enter to continue · Esc cancel",
-    )
+/// Outcome of IndexLocal permission preflight via projects-status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PreflightState {
+    /// Status not checked yet (or credentials incomplete). Soft Daily warn; allow attempt.
+    Unknown,
+    /// Token has `index_local`.
+    Allowed,
+    /// Permissions list present and missing `index_local` — hard-block upload.
+    BlockedMissingIndexLocal,
+    /// projects-status 404 (old edge) — soft Daily warn; allow attempt (403 still handled).
+    StatusNotFound,
+    /// Fetch failed for a non-404 reason — soft warn; allow attempt.
+    FetchFailed(String),
+}
+
+impl PreflightState {
+    pub fn blocks_upload(&self) -> bool {
+        matches!(self, PreflightState::BlockedMissingIndexLocal)
+    }
+}
+
+/// Fetch projects-status and classify IndexLocal readiness for the wizard preflight.
+pub fn check_index_local_preflight(profile: Option<&str>) -> PreflightState {
+    let Ok(creds) = credentials::resolve(ResolveOpts {
+        profile: profile.map(|s| s.to_owned()),
+        require_token: false,
+        ..Default::default()
+    }) else {
+        return PreflightState::Unknown;
+    };
+    let Some(token) = creds.agent_token.as_deref().filter(|t| !t.is_empty()) else {
+        return PreflightState::Unknown;
+    };
+    match block_on_compat(edge_agent::fetch_projects_status(&creds.edge_url, token)) {
+        Ok((_status, body)) => {
+            if body.permissions.iter().any(|p| p == "index_local") {
+                PreflightState::Allowed
+            } else {
+                PreflightState::BlockedMissingIndexLocal
+            }
+        }
+        Err(e) if edge_agent::is_projects_status_404(&e) => PreflightState::StatusNotFound,
+        Err(e) => PreflightState::FetchFailed(e.to_string()),
+    }
+}
+
+fn preflight_text(state: &PreflightState) -> String {
+    // Always surface Daily vs Custom IndexLocal copy first.
+    let header = "IndexLocal permission preflight\n\
+                  \n\
+                  Daily agent tokens cannot upload local repos.\n\
+                  Use a Custom token with index_local (Admin → Tokens).\n";
+    let tail = match state {
+        PreflightState::Allowed => {
+            "\n\
+             Permissions check: PASS — token has index_local.\n\
+             \n\
+             Press Enter to continue · Esc cancel"
+        }
+        PreflightState::BlockedMissingIndexLocal => {
+            "\n\
+             Permissions check: BLOCKED — token lacks index_local.\n\
+             Mint a Custom agent token with index_local (Admin → Tokens).\n\
+             Upload is not allowed with this token.\n\
+             \n\
+             Esc/q back"
+        }
+        PreflightState::StatusNotFound => {
+            "\n\
+             Permissions API unavailable (HTTP 404 — older edge).\n\
+             Soft warn only — upload will still attempt; 403 means mint Custom index_local.\n\
+             Redeploy edge/API for live permission checks.\n\
+             \n\
+             Press Enter to continue · Esc cancel"
+        }
+        PreflightState::FetchFailed(detail) => {
+            return format!(
+                "{header}\n\
+                 Permissions check skipped ({detail}).\n\
+                 Soft warn only — upload will still attempt; 403 means mint Custom index_local.\n\
+                 \n\
+                 Press Enter to continue · Esc cancel"
+            );
+        }
+        PreflightState::Unknown => {
+            "\n\
+             (Permissions not checked — no token/credentials.)\n\
+             Upload will hard-fail on 403 if the token lacks index_local.\n\
+             \n\
+             Press Enter to continue · Esc cancel"
+        }
+    };
+    format!("{header}{tail}")
 }
 
 fn dry_run_text(plans: &[RootFilePlan]) -> String {
@@ -484,5 +589,25 @@ mod tests {
         assert!(msg.contains("job-1"));
         assert!(msg.contains("job-2"));
         assert!(msg.contains("Admin → Needs review → Promote"));
+    }
+
+    #[test]
+    fn preflight_blocked_copy_mentions_custom_token() {
+        let text = preflight_text(&PreflightState::BlockedMissingIndexLocal);
+        assert!(text.contains("BLOCKED"));
+        assert!(text.contains("index_local"));
+        assert!(text.contains("Custom"));
+        assert!(PreflightState::BlockedMissingIndexLocal.blocks_upload());
+        assert!(!PreflightState::Allowed.blocks_upload());
+        assert!(!PreflightState::StatusNotFound.blocks_upload());
+        assert!(!PreflightState::Unknown.blocks_upload());
+    }
+
+    #[test]
+    fn preflight_404_allows_attempt() {
+        let text = preflight_text(&PreflightState::StatusNotFound);
+        assert!(text.contains("404"));
+        assert!(text.contains("continue"));
+        assert!(!PreflightState::StatusNotFound.blocks_upload());
     }
 }

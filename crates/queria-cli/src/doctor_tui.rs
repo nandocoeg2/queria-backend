@@ -31,6 +31,15 @@ pub async fn collect_doctor_snapshot(
             .map_err(|e| e.to_string()),
         _ => Err("no token".into()),
     };
+    // Best-effort status fetch for IndexLocal permission (not MCP tools/list).
+    let permissions: Option<Vec<String>> = match creds.agent_token.as_deref() {
+        Some(t) if !t.is_empty() => match edge_agent::fetch_projects_status(&creds.edge_url, t).await
+        {
+            Ok((_status, body)) => Some(body.permissions),
+            Err(_) => None,
+        },
+        _ => None,
+    };
     Ok(checks::assemble_doctor_snapshot(
         env!("CARGO_PKG_VERSION"),
         creds.profile.as_deref(),
@@ -39,7 +48,7 @@ pub async fn collect_doctor_snapshot(
         creds.agent_token.as_deref(),
         health,
         mcp,
-        None, // permissions from status API: P2
+        permissions.as_deref(),
     ))
 }
 

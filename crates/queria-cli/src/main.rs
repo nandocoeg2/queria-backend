@@ -13,6 +13,7 @@ mod evaluation;
 mod index_here;
 mod index_tui;
 mod mcp_install;
+mod status_tui;
 mod restore_drill;
 mod retrieval;
 mod tui_hub;
