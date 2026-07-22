@@ -4,7 +4,8 @@
 
 use anyhow::{Context, Result, bail};
 use queria_ingestion::local_index_gates::{
-    MAX_LOCAL_FILE_BYTES, content_hash, content_is_indexable, should_index_local_file,
+    MAX_LOCAL_FILE_BYTES, content_hash, content_is_indexable,
+    should_index_local_file_with_extensions,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -99,10 +100,12 @@ pub async fn run(
         bail!("no git roots found under {} (depth={depth})", cwd.display());
     }
 
+    let allow_owned = load_index_extensions_from_config();
+    let allow_refs: Vec<&str> = allow_owned.iter().map(String::as_str).collect();
     let all_paths: Vec<PathBuf> = roots.iter().map(|r| r.path.clone()).collect();
     let plans: Vec<RootFilePlan> = roots
         .into_iter()
-        .map(|root| plan_root_files(root, &all_paths))
+        .map(|root| plan_root_files_with_extensions(root, &all_paths, &allow_refs))
         .collect::<Result<Vec<_>>>()?;
 
     print_discovery_summary(&plans);
@@ -337,7 +340,12 @@ pub fn path_under_nested_prefixes(rel: &str, prefixes: &[String]) -> bool {
 ///
 /// `all_roots` is the full discover set for this run: paths under nested git
 /// roots are skipped for the parent so they are only planned for the nested root.
-pub fn plan_root_files(root: DiscoveredRoot, all_roots: &[PathBuf]) -> Result<RootFilePlan> {
+/// Empty `allowed_extensions` uses the built-in default.
+pub fn plan_root_files_with_extensions(
+    root: DiscoveredRoot,
+    all_roots: &[PathBuf],
+    allowed_extensions: &[&str],
+) -> Result<RootFilePlan> {
     let nested = nested_path_prefixes(&root.path, all_roots);
     let tracked = git_ls_files(&root.path)?;
     let mut accepted = Vec::new();
@@ -348,7 +356,7 @@ pub fn plan_root_files(root: DiscoveredRoot, all_roots: &[PathBuf]) -> Result<Ro
             skipped += 1;
             continue;
         }
-        match process_tracked_file(&root.path, &rel) {
+        match process_tracked_file_with_extensions(&root.path, &rel, allowed_extensions) {
             Some(file) => accepted.push(file),
             None => skipped += 1,
         }
@@ -384,9 +392,29 @@ fn git_ls_files(root: &Path) -> Result<Vec<String>> {
     Ok(paths)
 }
 
+/// Load laptop index extension allowlist from user config (default if unset).
+fn load_index_extensions_from_config() -> Vec<String> {
+    let path = match crate::config::config_path() {
+        Ok(p) => p,
+        Err(_) => {
+            return queria_ingestion::local_index_gates::DEFAULT_ALLOWED_EXTENSIONS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect();
+        }
+    };
+    let cfg = crate::config::UserConfig::load_or_default(&path).unwrap_or_default();
+    crate::config::effective_index_extensions(&cfg)
+}
+
 /// Process one repo-relative tracked path: size gate, read utf-8, content gate, hash.
+/// Empty `allowed_extensions` uses the library default.
 /// Returns None if skipped (count as skip).
-pub fn process_tracked_file(root: &Path, rel_path: &str) -> Option<IndexableFile> {
+pub fn process_tracked_file_with_extensions(
+    root: &Path,
+    rel_path: &str,
+    allowed_extensions: &[&str],
+) -> Option<IndexableFile> {
     if rel_path.is_empty() {
         return None;
     }
@@ -399,7 +427,7 @@ pub fn process_tracked_file(root: &Path, rel_path: &str) -> Option<IndexableFile
     if size > MAX_LOCAL_FILE_BYTES {
         return None;
     }
-    if !should_index_local_file(rel_path, size) {
+    if !should_index_local_file_with_extensions(rel_path, size, allowed_extensions) {
         return None;
     }
     let content = fs::read_to_string(&abs).ok()?;
@@ -410,7 +438,8 @@ pub fn process_tracked_file(root: &Path, rel_path: &str) -> Option<IndexableFile
     if (content.len() as u64) > MAX_LOCAL_FILE_BYTES {
         return None;
     }
-    if !should_index_local_file(rel_path, content.len() as u64) {
+    if !should_index_local_file_with_extensions(rel_path, content.len() as u64, allowed_extensions)
+    {
         return None;
     }
     let hash = content_hash(&content);
@@ -427,7 +456,7 @@ pub fn count_gate_outcomes(files: &[(&str, u64, &str)]) -> (u32, u32) {
     let mut accept = 0_u32;
     let mut skip = 0_u32;
     for (path, size, content) in files {
-        if should_index_local_file(path, *size)
+        if should_index_local_file_with_extensions(path, *size, &[])
             && content_is_indexable(content)
             && (content.len() as u64) <= MAX_LOCAL_FILE_BYTES
         {
@@ -762,7 +791,7 @@ mod tests {
 
         let root_path = repo.canonicalize().unwrap();
         let root = inspect_root(root_path.clone()).expect("inspect");
-        let plan = plan_root_files(root, &[root_path]).expect("plan");
+        let plan = plan_root_files_with_extensions(root, &[root_path], &[]).expect("plan");
         assert_eq!(plan.accepted.len(), 1);
         assert_eq!(plan.accepted[0].path, "docs/ok.md");
         assert!(plan.skipped >= 2);
@@ -804,7 +833,8 @@ mod tests {
         assert!(!path_under_nested_prefixes("docs/parent.md", &prefixes));
 
         let parent_root = inspect_root(parent_c.clone()).expect("inspect parent");
-        let parent_plan = plan_root_files(parent_root, &all).expect("plan parent");
+        let parent_plan =
+            plan_root_files_with_extensions(parent_root, &all, &[]).expect("plan parent");
         assert!(
             parent_plan
                 .accepted
@@ -826,7 +856,8 @@ mod tests {
         );
 
         let nested_root = inspect_root(nested_c.clone()).expect("inspect nested");
-        let nested_plan = plan_root_files(nested_root, &all).expect("plan nested");
+        let nested_plan =
+            plan_root_files_with_extensions(nested_root, &all, &[]).expect("plan nested");
         assert!(
             nested_plan
                 .accepted
@@ -858,7 +889,8 @@ mod tests {
         let bc = b.canonicalize().unwrap();
         let all = vec![ac.clone(), bc.clone()];
         assert!(nested_path_prefixes(&ac, &all).is_empty());
-        let plan_a = plan_root_files(inspect_root(ac).unwrap(), &all).unwrap();
+        let plan_a =
+            plan_root_files_with_extensions(inspect_root(ac).unwrap(), &all, &[]).unwrap();
         assert_eq!(plan_a.accepted.len(), 1);
         assert_eq!(plan_a.accepted[0].path, "a.md");
     }

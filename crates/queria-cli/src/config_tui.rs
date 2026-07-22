@@ -31,7 +31,31 @@ enum EditField {
     Edge,
     Token,
     Mcp,
-    Slug,
+    EdgeSlug,
+    /// Global (not per-profile) index-here extension allowlist CSV.
+    Extensions,
+}
+
+impl EditField {
+    fn next(self) -> Self {
+        match self {
+            Self::Edge => Self::Token,
+            Self::Token => Self::Mcp,
+            Self::Mcp => Self::EdgeSlug,
+            Self::EdgeSlug => Self::Extensions,
+            Self::Extensions => Self::Edge,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            Self::Edge => Self::Extensions,
+            Self::Token => Self::Edge,
+            Self::Mcp => Self::Token,
+            Self::EdgeSlug => Self::Mcp,
+            Self::Extensions => Self::EdgeSlug,
+        }
+    }
 }
 
 pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
@@ -69,6 +93,7 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
     let mut token = String::new();
     let mut mcp = String::new();
     let mut slug = String::new();
+    let mut extensions = config::default_index_extensions_csv();
     let mut message = String::new();
     let mut mcp_idx = 0usize;
     let clients = ["droid", "claude", "cursor", "codex"];
@@ -153,13 +178,24 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                             ),
                             format!(
                                 "{} project_slug: {slug}",
-                                if edit_field == EditField::Slug {
+                                if edit_field == EditField::EdgeSlug {
+                                    ">"
+                                } else {
+                                    " "
+                                }
+                            ),
+                            format!(
+                                "{} index_ext: {extensions}",
+                                if edit_field == EditField::Extensions {
                                     ">"
                                 } else {
                                     " "
                                 }
                             ),
                             String::from(""),
+                            String::from(
+                                "index_ext = global allowlist (comma/space; empty = default)",
+                            ),
                             String::from("Tab field · type · Enter save · Esc cancel"),
                         ];
                         let p = Paragraph::new(lines.join("\n"))
@@ -222,6 +258,12 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         token.clear();
                         mcp.clear();
                         slug.clear();
+                        extensions = config::default_index_extensions_csv();
+                        if let Some(list) = &cfg.index_allowed_extensions
+                            && !list.is_empty()
+                        {
+                            extensions = list.join(",");
+                        }
                         edit_field = EditField::Edge;
                         screen = Screen::Edit;
                     }
@@ -234,6 +276,10 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                             token = p.agent_token.unwrap_or_default();
                             mcp = p.mcp_url.unwrap_or_default();
                             slug = p.project_slug.unwrap_or_default();
+                            extensions = match &cfg.index_allowed_extensions {
+                                Some(list) if !list.is_empty() => list.join(","),
+                                _ => config::default_index_extensions_csv(),
+                            };
                             edit_field = EditField::Edge;
                             screen = Screen::Edit;
                         }
@@ -275,20 +321,10 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         status = "edit cancelled".into();
                     }
                     KeyCode::Tab | KeyCode::Down => {
-                        edit_field = match edit_field {
-                            EditField::Edge => EditField::Token,
-                            EditField::Token => EditField::Mcp,
-                            EditField::Mcp => EditField::Slug,
-                            EditField::Slug => EditField::Edge,
-                        };
+                        edit_field = edit_field.next();
                     }
                     KeyCode::BackTab | KeyCode::Up => {
-                        edit_field = match edit_field {
-                            EditField::Edge => EditField::Slug,
-                            EditField::Token => EditField::Edge,
-                            EditField::Mcp => EditField::Token,
-                            EditField::Slug => EditField::Mcp,
-                        };
+                        edit_field = edit_field.prev();
                     }
                     KeyCode::Enter => {
                         if let Err(e) = config::validate_profile_name(&edit_name) {
@@ -300,6 +336,18 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         p.agent_token = nonempty(token.clone());
                         p.mcp_url = nonempty(mcp.clone());
                         p.project_slug = nonempty(slug.clone());
+                        let parsed = config::parse_extensions_csv(&extensions);
+                        let default_list: Vec<String> =
+                            queria_ingestion::local_index_gates::DEFAULT_ALLOWED_EXTENSIONS
+                                .iter()
+                                .map(|s| (*s).to_owned())
+                                .collect();
+                        cfg.index_allowed_extensions = if parsed.is_empty() || parsed == default_list
+                        {
+                            None
+                        } else {
+                            Some(parsed)
+                        };
                         if cfg.active_profile.is_none() {
                             cfg.active_profile = Some(edit_name.clone());
                         }
@@ -312,13 +360,25 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                         }
                     }
                     KeyCode::Backspace => {
-                        let t =
-                            active_edit_buf(edit_field, &mut edge, &mut token, &mut mcp, &mut slug);
+                        let t = active_edit_buf(
+                            edit_field,
+                            &mut edge,
+                            &mut token,
+                            &mut mcp,
+                            &mut slug,
+                            &mut extensions,
+                        );
                         t.pop();
                     }
                     KeyCode::Char(c) => {
-                        let t =
-                            active_edit_buf(edit_field, &mut edge, &mut token, &mut mcp, &mut slug);
+                        let t = active_edit_buf(
+                            edit_field,
+                            &mut edge,
+                            &mut token,
+                            &mut mcp,
+                            &mut slug,
+                            &mut extensions,
+                        );
                         t.push(c);
                     }
                     _ => {}
@@ -400,11 +460,13 @@ fn active_edit_buf<'a>(
     token: &'a mut String,
     mcp: &'a mut String,
     slug: &'a mut String,
+    extensions: &'a mut String,
 ) -> &'a mut String {
     match field {
         EditField::Edge => edge,
         EditField::Token => token,
         EditField::Mcp => mcp,
-        EditField::Slug => slug,
+        EditField::EdgeSlug => slug,
+        EditField::Extensions => extensions,
     }
 }

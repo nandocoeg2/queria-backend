@@ -7,7 +7,8 @@ use std::path::{Component, Path};
 /// Max file size for local index-here ingest (1 MiB).
 pub const MAX_LOCAL_FILE_BYTES: u64 = 1_000_000;
 
-const ALLOWED_EXTENSIONS: &[&str] = &[
+/// Built-in allowlist (CLI/API default). Laptop can override via config TUI.
+pub const DEFAULT_ALLOWED_EXTENSIONS: &[&str] = &[
     "md", "mdx", "astro", "ts", "tsx", "js", "jsx", "json", "yaml", "yml", "toml", "rs",
 ];
 
@@ -44,9 +45,22 @@ pub fn normalize_project_slug_from_origin(origin: Option<&str>, basename: &str) 
     sanitize_slug(&raw)
 }
 
-/// Whether a repository-relative path + size should be considered for local index-here.
+/// Whether a repository-relative path + size should be considered for local index-here
+/// using [`DEFAULT_ALLOWED_EXTENSIONS`].
 #[must_use]
 pub fn should_index_local_file(path: &str, size: u64) -> bool {
+    should_index_local_file_with_extensions(path, size, DEFAULT_ALLOWED_EXTENSIONS)
+}
+
+/// Same as [`should_index_local_file`] with an explicit extension allowlist.
+/// Extensions are compared case-insensitively without a leading dot.
+/// Empty `allowed_extensions` falls back to the default list.
+#[must_use]
+pub fn should_index_local_file_with_extensions(
+    path: &str,
+    size: u64,
+    allowed_extensions: &[&str],
+) -> bool {
     if path.is_empty() || size > MAX_LOCAL_FILE_BYTES {
         return false;
     }
@@ -90,9 +104,14 @@ pub fn should_index_local_file(path: &str, size: u64) -> bool {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    ALLOWED_EXTENSIONS
+    let allow = if allowed_extensions.is_empty() {
+        DEFAULT_ALLOWED_EXTENSIONS
+    } else {
+        allowed_extensions
+    };
+    allow
         .iter()
-        .any(|allowed| extension == *allowed)
+        .any(|allowed| extension.eq_ignore_ascii_case(allowed.trim_start_matches('.')))
 }
 
 /// Drop empty / whitespace-only document bodies.
@@ -255,6 +274,27 @@ mod tests {
         }
         // target/ still denied even for .rs
         assert!(!should_index_local_file("target/debug/build.rs", 10));
+    }
+
+    #[test]
+    fn gate_respects_custom_extension_allowlist() {
+        assert!(!should_index_local_file_with_extensions(
+            "src/lib.rs",
+            100,
+            &["md", "toml"]
+        ));
+        assert!(should_index_local_file_with_extensions(
+            "src/lib.rs",
+            100,
+            &["rs"]
+        ));
+        assert!(should_index_local_file_with_extensions(
+            "docs/a.md",
+            100,
+            &[".MD"]
+        ));
+        // empty → default list includes rs after product default
+        assert!(should_index_local_file_with_extensions("src/a.rs", 100, &[]));
     }
 
     #[test]

@@ -13,6 +13,10 @@ pub struct UserConfig {
     pub active_profile: Option<String>,
     #[serde(default)]
     pub profiles: BTreeMap<String, Profile>,
+    /// Optional index-here extension allowlist (no dots), e.g. `["md","rs","toml"]`.
+    /// Empty / missing → built-in default from `queria_ingestion::local_index_gates`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_allowed_extensions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,6 +29,43 @@ pub struct Profile {
     pub mcp_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_slug: Option<String>,
+}
+
+/// Default extensions string for TUI (comma-separated, matches library default).
+#[must_use]
+pub fn default_index_extensions_csv() -> String {
+    queria_ingestion::local_index_gates::DEFAULT_ALLOWED_EXTENSIONS.join(",")
+}
+
+/// Parse `"md, rs, toml"` / `"md rs toml"` into normalized extension list (no dots, lowercased).
+#[must_use]
+pub fn parse_extensions_csv(raw: &str) -> Vec<String> {
+    raw.split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim_start_matches('.').to_ascii_lowercase())
+        .filter(|s| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-')
+        })
+        .collect()
+}
+
+/// Effective allowlist for index-here planning from user config (owned Strings).
+#[must_use]
+pub fn effective_index_extensions(cfg: &UserConfig) -> Vec<String> {
+    match &cfg.index_allowed_extensions {
+        Some(list) if !list.is_empty() => list
+            .iter()
+            .map(|s| s.trim().trim_start_matches('.').to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => queria_ingestion::local_index_gates::DEFAULT_ALLOWED_EXTENSIONS
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect(),
+    }
 }
 
 impl UserConfig {
@@ -131,6 +172,27 @@ mod tests {
     #[test]
     fn redact_hides_tail() {
         assert_eq!(redact_token("qria_abcdefghij"), "qria_abc…****");
+    }
+
+    #[test]
+    fn parse_extensions_csv_splits_and_normalizes() {
+        assert_eq!(
+            parse_extensions_csv("md, .RS toml\njson"),
+            vec!["md", "rs", "toml", "json"]
+        );
+        assert!(parse_extensions_csv("").is_empty());
+    }
+
+    #[test]
+    fn effective_index_extensions_default_and_override() {
+        let def = effective_index_extensions(&UserConfig::default());
+        assert!(def.iter().any(|e| e == "md"));
+        assert!(def.iter().any(|e| e == "rs"));
+        let cfg = UserConfig {
+            index_allowed_extensions: Some(vec!["md".into(), "SQL".into()]),
+            ..Default::default()
+        };
+        assert_eq!(effective_index_extensions(&cfg), vec!["md", "sql"]);
     }
 
     #[test]

@@ -256,10 +256,19 @@ fn discover_and_plan() -> Result<Vec<RootFilePlan>> {
     if roots.is_empty() {
         return Ok(Vec::new());
     }
+    let allow_owned = {
+        let path = config::config_path().ok();
+        let cfg = path
+            .as_ref()
+            .and_then(|p| config::UserConfig::load_or_default(p).ok())
+            .unwrap_or_default();
+        config::effective_index_extensions(&cfg)
+    };
+    let allow_refs: Vec<&str> = allow_owned.iter().map(String::as_str).collect();
     let all_paths: Vec<PathBuf> = roots.iter().map(|r| r.path.clone()).collect();
     roots
         .into_iter()
-        .map(|root| index_here::plan_root_files(root, &all_paths))
+        .map(|root| index_here::plan_root_files_with_extensions(root, &all_paths, &allow_refs))
         .collect()
 }
 
