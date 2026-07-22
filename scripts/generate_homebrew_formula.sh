@@ -210,9 +210,10 @@ formula_url_block() {
   key="$(printf '%s' "$asset" | tr '.-' '__')"
   asset_id="$(eval "printf '%s' \"\${ASSET_ID_${key}:-}\"")"
   if [[ -n "$asset_id" ]]; then
+    # Use headers: (array). `header:` expects a single String and breaks if passed Array.
     cat <<EOF
 ${pad}url "https://api.github.com/repos/${REPO}/releases/assets/${asset_id}",
-${pad}    header: [
+${pad}    headers: [
 ${pad}      "Accept: application/octet-stream",
 ${pad}      "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", ENV.fetch("GH_TOKEN", ENV.fetch("GITHUB_TOKEN", "")))}",
 ${pad}    ]
