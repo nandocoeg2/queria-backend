@@ -1,0 +1,18 @@
+{
+  "name": "queria-cli-tui-tests",
+  "private": true,
+  "type": "module",
+  "description": "PTY smoke tests for queria-cli hub TUI via @factory/tui-test (https://github.com/Factory-AI/tui-test)",
+  "scripts": {
+    "pretest": "cargo build -p queria-cli --manifest-path ../../../Cargo.toml",
+    "test": "QUERIA_CLI_BIN=\"$(cd ../../../ && pwd)/target/debug/queria-cli\" tui-test",
+    "test:trace": "QUERIA_CLI_BIN=\"$(cd ../../../ && pwd)/target/debug/queria-cli\" tui-test --trace"
+  },
+  "engines": {
+    "node": ">=18 <25"
+  },
+  "devDependencies": {
+    "@factory/tui-test": "github:Factory-AI/tui-test",
+    "typescript": "^5.9.0"
+  }
+}
