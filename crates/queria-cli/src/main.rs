@@ -1,5 +1,6 @@
 mod backup;
 mod bootstrap;
+mod checks;
 mod config;
 mod config_tui;
 mod credentials;
