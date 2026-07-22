@@ -1,5 +1,9 @@
-# Build queria-cli binaries and publish to GitHub Releases.
+# Stage 2 of queria-cli release chain:
+#   Stage 1: .github/workflows/cli-detect-and-tag.yml (main version → tag cli-v*)
+#   Stage 2: this workflow (tag push → multi-arch build → GitHub Release)
+#   Stage 3: .github/workflows/cli-homebrew-formula.yml (release published → formula)
 # Trigger: push tag cli-v* (e.g. cli-v0.1.0) or workflow_dispatch.
+# Manual tag push still works without Stage 1.
 #
 # Note: do NOT use macos-13 — GitHub retired that runner image (jobs queue forever).
 # x86_64 macOS builds on macos-14 via Rust target (Apple Silicon host).
