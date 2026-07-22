@@ -8,7 +8,7 @@ use std::path::{Component, Path};
 pub const MAX_LOCAL_FILE_BYTES: u64 = 1_000_000;
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
-    "md", "mdx", "astro", "ts", "tsx", "js", "jsx", "json", "yaml", "yml", "toml",
+    "md", "mdx", "astro", "ts", "tsx", "js", "jsx", "json", "yaml", "yml", "toml", "rs",
 ];
 
 const DENIED_PATH_COMPONENTS: &[&str] = &[
@@ -248,9 +248,13 @@ mod tests {
             "config.yaml",
             "config.yml",
             "Cargo.toml",
+            "src/lib.rs",
+            "crates/foo/src/main.rs",
         ] {
             assert!(should_index_local_file(path, 100), "expected allow: {path}");
         }
+        // target/ still denied even for .rs
+        assert!(!should_index_local_file("target/debug/build.rs", 10));
     }
 
     #[test]
