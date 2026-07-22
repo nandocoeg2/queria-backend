@@ -126,6 +126,8 @@ where status = 'running'
   and locked_at < now() - make_interval(secs => $1)";
 
 /// Project-scoped embed status counts (approved + needs_review only; no global).
+/// Profile-version mismatch is only applied to `ready` rows so failed/pending/processing
+/// stay in their own buckets (no double-count when API folds stale into pending).
 pub const STATUS_COUNTS_FOR_PROJECT_ITEMS_SQL: &str = "
 select
   count(*) filter (where c.embedding_status = 'pending') as pending,
@@ -137,7 +139,10 @@ select
   count(*) filter (where c.embedding_status = 'failed') as failed,
   count(*) filter (
     where c.embedding_status = 'stale'
-       or c.embedding_profile_version <> $2
+       or (
+         c.embedding_status = 'ready'
+         and c.embedding_profile_version <> $2
+       )
   ) as stale
 from chunk c
 join knowledge_item k on k.id = c.knowledge_item_id
@@ -467,7 +472,10 @@ impl PgEmbeddingRepository {
                count(*) filter (where c.embedding_status = 'failed') as failed,
                count(*) filter (
                  where c.embedding_status = 'stale'
-                    or c.embedding_profile_version <> $2
+                    or (
+                      c.embedding_status = 'ready'
+                      and c.embedding_profile_version <> $2
+                    )
                ) as stale
              from chunk c
              join knowledge_item k on k.id = c.knowledge_item_id
@@ -679,6 +687,12 @@ mod tests {
         assert!(sql.contains("embedding_status = 'failed'"));
         assert!(sql.contains("embedding_status = 'stale'"));
         assert!(sql.contains("embedding_profile_version = $2"));
+        // Profile mismatch only for ready rows (exclusive with failed/pending/processing).
+        assert!(sql.contains("embedding_profile_version <> $2"));
+        assert!(
+            !sql.contains("or c.embedding_profile_version <> $2"),
+            "stale profile-mismatch arm must be gated on embedding_status = 'ready'"
+        );
     }
 
     #[test]

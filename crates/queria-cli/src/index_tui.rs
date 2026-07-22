@@ -40,7 +40,14 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout());
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = match Terminal::new(backend) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = disable_raw_mode();
+            let _ = stdout().execute(LeaveAlternateScreen);
+            return Err(e.into());
+        }
+    };
 
     let result = (|| -> Result<()> {
         // Draw scanning frame before blocking discovery/plan work.

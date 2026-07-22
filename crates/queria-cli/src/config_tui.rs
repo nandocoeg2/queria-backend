@@ -66,7 +66,14 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout());
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = match Terminal::new(backend) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = disable_raw_mode();
+            let _ = stdout().execute(LeaveAlternateScreen);
+            return Err(e.into());
+        }
+    };
 
     let path = config::config_path()?;
     let mut cfg = UserConfig::load_or_default(&path)?;

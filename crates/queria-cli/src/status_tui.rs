@@ -132,7 +132,7 @@ pub fn run<B: Backend>(
                 StatusView::Ok { body, .. } => {
                     let mut items: Vec<ListItem> = Vec::new();
                     items.push(ListItem::new(format!(
-                        "profile={} · perms={}",
+                        "embed_profile={} · perms={}",
                         body.embedding_profile_version,
                         if body.permissions.is_empty() {
                             "(none)".to_string()

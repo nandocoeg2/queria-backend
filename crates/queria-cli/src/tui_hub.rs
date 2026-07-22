@@ -31,7 +31,14 @@ pub fn run_hub(profile: Option<&str>) -> Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout());
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = match Terminal::new(backend) {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = disable_raw_mode();
+            let _ = stdout().execute(LeaveAlternateScreen);
+            return Err(e.into());
+        }
+    };
 
     let mut list_state = ListState::default();
     list_state.select(Some(0));
