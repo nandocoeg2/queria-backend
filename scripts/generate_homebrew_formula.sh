@@ -136,12 +136,15 @@ resolve_asset_id() {
 
 # Download asset and print sha256 of the **tarball**. Never invent hashes.
 # Returns 0 and prints hash on stdout; errors go to stderr.
+# Side effect when TOKEN present: sets ASSET_ID_<sanitized_name> for formula URL generation.
 fetch_sha() {
   local asset="$1"
   local dest="$tmpdir/$asset"
   local http_code=""
   local curl_rc=0
   local url=""
+  local key
+  key="$(printf '%s' "$asset" | tr '.-' '__')"
   # Capture body to file and HTTP status; do not fail the whole script on curl error alone.
   set +e
   if [[ -n "$TOKEN" ]]; then
@@ -149,6 +152,8 @@ fetch_sha() {
     asset_id="$(resolve_asset_id "$asset")"
     curl_rc=$?
     if [[ $curl_rc -eq 0 && -n "$asset_id" ]]; then
+      # Record API asset id so formula can use private-repo-safe API URLs.
+      eval "ASSET_ID_${key}=\"${asset_id}\""
       url="https://api.github.com/repos/${REPO}/releases/assets/${asset_id}"
       echo "fetch $url ($asset)" >&2
       http_code="$(curl -sS -L -w '%{http_code}' -o "$dest" \
@@ -190,6 +195,34 @@ fetch_sha() {
     shasum -a 256 "$dest" | awk '{print $1}'
   else
     sha256sum "$dest" | awk '{print $1}'
+  fi
+}
+
+# Formula url+headers block for one platform asset.
+# Private backend: API asset URL + Authorization from HOMEBREW_GITHUB_API_TOKEN
+# (browser /releases/download URLs always 404 when the repo is private).
+formula_url_block() {
+  local asset="$1"
+  local sha="$2"
+  local indent="${3:-6}"
+  local pad key asset_id
+  pad="$(printf "%${indent}s" "")"
+  key="$(printf '%s' "$asset" | tr '.-' '__')"
+  asset_id="$(eval "printf '%s' \"\${ASSET_ID_${key}:-}\"")"
+  if [[ -n "$asset_id" ]]; then
+    cat <<EOF
+${pad}url "https://api.github.com/repos/${REPO}/releases/assets/${asset_id}",
+${pad}    header: [
+${pad}      "Accept: application/octet-stream",
+${pad}      "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", ENV.fetch("GH_TOKEN", ENV.fetch("GITHUB_TOKEN", "")))}",
+${pad}    ]
+${pad}sha256 "${sha}"
+EOF
+  else
+    cat <<EOF
+${pad}url "https://github.com/${REPO}/releases/download/${TAG}/${asset}"
+${pad}sha256 "${sha}"
+EOF
   fi
 }
 
@@ -255,10 +288,10 @@ set -e
 if [[ $rc_arm -eq 0 ]] && is_sha256 "$sha_arm"; then
   SHA_LINUX_ARM="$sha_arm"
   echo "ok  $optional_asset  $sha_arm" >&2
+  LINUX_ARM_INNER="$(formula_url_block "$optional_asset" "$SHA_LINUX_ARM" 6)"
   LINUX_ARM_BLOCK=$(cat <<EOF
     on_arm do
-      url "https://github.com/${REPO}/releases/download/${TAG}/queria-cli-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "${SHA_LINUX_ARM}"
+${LINUX_ARM_INNER}
     end
 EOF
 )
@@ -272,6 +305,18 @@ EOF
 )
 fi
 
+URL_DARWIN_ARM="$(formula_url_block queria-cli-aarch64-apple-darwin.tar.gz "$SHA_DARWIN_ARM" 6)"
+URL_DARWIN_INTEL="$(formula_url_block queria-cli-x86_64-apple-darwin.tar.gz "$SHA_DARWIN_INTEL" 6)"
+URL_LINUX_INTEL="$(formula_url_block queria-cli-x86_64-unknown-linux-gnu.tar.gz "$SHA_LINUX_INTEL" 6)"
+
+PRIVATE_NOTE=""
+if [[ -n "${ASSET_ID_queria_cli_aarch64_apple_darwin_tar_gz:-}" ]]; then
+  PRIVATE_NOTE="# Private queria-backend: urls are Releases API asset endpoints.
+# brew requires: export HOMEBREW_GITHUB_API_TOKEN=ghp_… (repo read)
+# (plain github.com/.../releases/download/ URLs return 404 for private repos).
+"
+fi
+
 mkdir -p "$(dirname "$OUT")"
 cat >"$OUT" <<EOF
 # frozen_string_literal: true
@@ -281,29 +326,26 @@ cat >"$OUT" <<EOF
 # Do not hand-edit sha256; re-run the script after each CLI release.
 # Archive layout: queria-cli-<triple>/queria-cli — brew chdirs into the single
 # top-level dir, so install is bin.install "queria-cli" (not a nested path).
-
+${PRIVATE_NOTE}
 class QueriaCli < Formula
-  desc "QuerIa CLI for laptop index-here (Needs review ingest)"
+  desc "QuerIa CLI for laptop index-here + hub TUI (doctor/index/status)"
   homepage "https://github.com/${REPO}"
   version "${VERSION}"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/${REPO}/releases/download/${TAG}/queria-cli-aarch64-apple-darwin.tar.gz"
-      sha256 "${SHA_DARWIN_ARM}"
+${URL_DARWIN_ARM}
     end
     on_intel do
-      url "https://github.com/${REPO}/releases/download/${TAG}/queria-cli-x86_64-apple-darwin.tar.gz"
-      sha256 "${SHA_DARWIN_INTEL}"
+${URL_DARWIN_INTEL}
     end
   end
 
   on_linux do
 ${LINUX_ARM_BLOCK}
     on_intel do
-      url "https://github.com/${REPO}/releases/download/${TAG}/queria-cli-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "${SHA_LINUX_INTEL}"
+${URL_LINUX_INTEL}
     end
   end
 
@@ -318,4 +360,10 @@ end
 EOF
 
 echo "wrote $OUT" >&2
-echo "next: commit+push homebrew-queria, then: brew update && brew reinstall nandocoeg2/queria/queria-cli" >&2
+if [[ -n "$PRIVATE_NOTE" ]]; then
+  echo "next: commit+push homebrew-queria, then:" >&2
+  echo "  export HOMEBREW_GITHUB_API_TOKEN=ghp_…   # read access to ${REPO}" >&2
+  echo "  brew update && brew reinstall nandocoeg2/queria/queria-cli" >&2
+else
+  echo "next: commit+push homebrew-queria, then: brew update && brew reinstall nandocoeg2/queria/queria-cli" >&2
+fi
