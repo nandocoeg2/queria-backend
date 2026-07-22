@@ -112,6 +112,7 @@ fn short_body(body: &str) -> String {
 ///
 /// `permissions` is the optional agent permissions list (P2+ projects-status).
 /// Pre-P2 callers pass `None`; IndexLocal is never inferred from MCP tool names.
+#[allow(clippy::too_many_arguments)]
 pub fn assemble_doctor_snapshot(
     version: &str,
     profile: Option<&str>,
