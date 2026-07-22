@@ -4,6 +4,7 @@ use crate::http::{
     retrieval, setup, sources, tokens,
 };
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use queria_core::AppConfig;
 use queria_db::admin_queries::PgAdminQueriesRepository;
 use queria_db::ingestion::PgIngestionRepository;
@@ -108,6 +109,8 @@ fn build_app_with_state(state: ApiState) -> Router {
         .nest("/api/v1/audit-logs", audit_logs::router())
         .nest("/api/v1", retrieval::router())
         .nest("/api/v1/agent-tokens", tokens::router())
+        // index-here CLI batches ~4 MiB; axum default is 2 MiB (oversized body → connection drop → edge 502).
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
