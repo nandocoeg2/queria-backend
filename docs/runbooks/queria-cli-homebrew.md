@@ -1,7 +1,7 @@
 # queria-cli Homebrew tap
 
 > Status: CURRENT (process); formula SHAs only valid after a live `cli-v*` Release  
-> Last verified: 2026-07-21  
+> Last verified: 2026-07-23  
 > Runtime: [`../HANDOFF.md`](../HANDOFF.md)  
 > CLI install overview: [`onboarding.md`](./onboarding.md) § Install `queria-cli`  
 > Deploy / release triggers: [`deployment.md`](./deployment.md)
@@ -28,18 +28,29 @@ homebrew-queria (separate GitHub repo)
 
 | Repo | Role |
 |---|---|
-| `nandocoeg2/queria-backend` | Builds binaries; **does not** auto-update Brew |
+| `nandocoeg2/queria-backend` | Builds binaries; Stage 3 may auto-push formula |
 | `nandocoeg2/homebrew-queria` | Homebrew tap (`brew tap nandocoeg2/queria`) |
 | Workspace path (scaffold) | `queria/homebrew-queria/` (publish as that GitHub repo) |
 
-Push **`queria-backend` `main` never** updates Homebrew. Only:
+## Automation
 
-1. CLI Release assets exist, then  
-2. Formula regenerated + pushed to **homebrew-queria**.
+After `cli-v*` GitHub Release is published, workflow **CLI Homebrew formula** regenerates
+`Formula/queria-cli.rb` and **direct-pushes** `nandocoeg2/homebrew-queria` `main`.
+
+Manual path (fallback if CI secret missing):
+
+```bash
+export GH_TOKEN=$(gh auth token)
+./scripts/generate_homebrew_formula.sh cli-vX.Y.Z
+cd ../homebrew-queria && git add Formula/queria-cli.rb && git commit -m "…" && git push
+```
+
+CI secret on **queria-backend**: `HOMEBREW_TAP_TOKEN` (write to tap only).
+Laptop private install still needs `HOMEBREW_GITHUB_API_TOKEN` for asset download at brew time.
 
 ## Preconditions
 
-Release first — do **not** generate a formula until assets exist. Full cut/unstick sequence (cancel stuck run → re-tag or `workflow_dispatch` → wait for assets → **then** this page): [`deployment.md`](./deployment.md) § *queria-cli Release — operator checklist*.
+Release first — do **not** generate a formula until assets exist. Full cut/unstick sequence: [`deployment.md`](./deployment.md) § *queria-cli Release — operator checklist*. Stage 3 usually runs after a published Release; use the manual path only if automation fails or `HOMEBREW_TAP_TOKEN` is unset.
 
 - [ ] Actions run **Release queria-cli** green for tag `cli-vX.Y.Z` (or green after dispatch with tag input)
 - [ ] Required assets present: Darwin aarch64 + Linux x86_64 (Darwin x86_64 expected; Linux arm optional)
@@ -66,7 +77,9 @@ git push -u origin main
 
 Scaffold `Formula/queria-cli.rb` is a **NOT READY** placeholder: every platform branch calls Homebrew `odie` so `brew install` fails loudly until the generator rewrites real `url`/`sha256`. Do **not** put this under `queria-backend` as the only copy long-term: Homebrew expects repo name `homebrew-queria`.
 
-## After every CLI release (operator checklist)
+## Manual formula update (fallback)
+
+When Stage 3 did not run or failed:
 
 ```bash
 cd queria/backend
@@ -153,13 +166,9 @@ Generator: [`../../scripts/generate_homebrew_formula.sh`](../../scripts/generate
 | Out | Why |
 |---|---|
 | homebrew-core PR | Heavy review; private binary path awkward |
-| Auto PR from queria-backend CI | Nice later; v1 is script + human push tap |
+| PR review on tap | Stage 3 **direct-pushes** tap `main` (no PR) |
 | `.dmg` / notarized Mac app | CLI only |
-| Publish on every backend `main` push | Only `cli-v*` + formula bump |
-
-## Automation later (optional)
-
-When stable: workflow_dispatch after CLI release that checks out both repos, runs `generate_homebrew_formula.sh`, opens PR on `homebrew-queria`. Not required for first ship.
+| Publish on every backend `main` push | Only version bump → `cli-v*` + formula |
 
 ## Troubleshooting
 

@@ -1,7 +1,7 @@
 # Production Deployment Runbook
 
 > Status: CURRENT  
-> Last verified: 2026-07-21  
+> Last verified: 2026-07-23  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)
 
 This runbook documents how Queria reaches production on the shared OCI host.
@@ -55,26 +55,28 @@ sequenceDiagram
 | **A — CI / GHCR (primary)** | Normal deploys: push `main` → Actions build arm64 → GHCR → SSH pull/up |
 | **B — rsync + host build (fallback)** | GHCR/Actions broken, first cold host without images, or emergency |
 
-### What push `main` does **not** do
+### What push `main` does
 
 | Workflow | Trigger | Output |
 |---|---|---|
 | **Build & Deploy** ([`deploy.yml`](../../.github/workflows/deploy.yml)) | Push **`main`** (or `workflow_dispatch`) | Host **container** images (`backend` / `admin` on GHCR) + SSH pull/up |
-| **Release queria-cli** ([`release-cli.yml`](../../.github/workflows/release-cli.yml)) | Tag **`cli-v*`** only (or Actions → this workflow + optional tag input) | **GitHub Release** assets: multi-arch `queria-cli-*.tar.gz` |
+| **CLI detect-and-tag** ([`cli-detect-and-tag.yml`](../../.github/workflows/cli-detect-and-tag.yml)) | Push **`main`** when `crates/queria-cli/Cargo.toml` version changes | Annotated tag **`cli-vX.Y.Z`** |
+| **Release queria-cli** ([`release-cli.yml`](../../.github/workflows/release-cli.yml)) | Tag **`cli-v*`** (or Actions + tag input); also still works with manual tag | **GitHub Release** assets: multi-arch `queria-cli-*.tar.gz` |
+| **CLI Homebrew formula** ([`cli-homebrew-formula.yml`](../../.github/workflows/cli-homebrew-formula.yml)) | After Release published (or dispatch) | Direct-push `Formula/queria-cli.rb` on `homebrew-queria` |
 
-**Do not expect** a new `queria-cli` binary/release from a normal docs or app push to `main`.
+**Do not expect** a new `queria-cli` release from a normal docs or app push to `main` **without** a version bump in `crates/queria-cli/Cargo.toml`.
 
 ### queria-cli Release — operator checklist (one page)
 
-Use this sequence to cut, unstick, or verify CLI assets. Do **not** run Homebrew formula generation until step 4 succeeds.
+Use this sequence to cut, unstick, or verify CLI assets. Prefer the automated happy path (version bump on `main`). Do **not** treat formula as ready until Stage 2 assets exist (Stage 3 usually runs automatically after).
 
 | Step | Action | Done when |
 |---|---|---|
-| **0. Preconditions** | Workflow on the commit you tag includes current [`release-cli.yml`](../../.github/workflows/release-cli.yml): **no `macos-13`**, both Darwin targets on **`macos-14`**, Linux arm **optional** (`continue-on-error`). | Matrix matches that (fixed on `main` after retired-runner incident). |
+| **0. Preconditions** | Workflow on the commit you tag includes current [`release-cli.yml`](../../.github/workflows/release-cli.yml): **no `macos-13`**, both Darwin targets on **`macos-14`**, Linux arm **optional** (`continue-on-error`). Stage 1 [`cli-detect-and-tag.yml`](../../.github/workflows/cli-detect-and-tag.yml) + Stage 3 [`cli-homebrew-formula.yml`](../../.github/workflows/cli-homebrew-formula.yml) on the same branch. | Matrix + chain workflows present. |
 | **1. Cancel stuck run** | Actions → **Release queria-cli** → open hanging run (e.g. **Waiting for a runner…** on `macos-13`) → **Cancel workflow**. | Run shows Cancelled; no zombie jobs. |
-| **2. Ship or re-trigger** | Prefer a **new** tag, or retag, or **workflow_dispatch** with tag input (see below). | New Actions run started for that tag. |
+| **2. Ship or re-trigger** | Prefer **version bump on `main`** (automated chain). Fallback: new tag, retag, or **workflow_dispatch** with tag input (see below). | New Actions run started for that tag. |
 | **3. Wait for assets** | Run green (optional Linux arm may fail without blocking). Release page lists archives. | Required assets present (see table). |
-| **4. Then formula** | Only after assets are downloadable: `./scripts/generate_homebrew_formula.sh cli-v…` → push tap. | See [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). |
+| **4. Then formula** | Stage 3 **CLI Homebrew formula** usually auto-pushes after Release. Manual: `./scripts/generate_homebrew_formula.sh cli-v…` → push tap. | See [`queria-cli-homebrew.md`](./queria-cli-homebrew.md). |
 
 **Required Release assets (publish will fail without them):**
 
@@ -93,15 +95,40 @@ queria-cli-aarch64-apple-darwin/
   VERSION
 ```
 
-#### Cut a new CLI release (happy path)
+#### Cut a new CLI release (automated happy path)
 
 ```bash
-# from queria/backend, on the commit you want frozen in the release
-git tag -a cli-v0.1.1 -m "queria-cli 0.1.1"
-git push origin cli-v0.1.1
-# watch: Actions → "Release queria-cli"
-# assets: https://github.com/nandocoeg2/queria-backend/releases
+# 1) Bump version only when ready to ship
+# edit crates/queria-cli/Cargo.toml version → X.Y.Z
+# cargo build -p queria-cli   # refresh Cargo.lock package version
+git add crates/queria-cli/Cargo.toml Cargo.lock
+git commit -m "chore(cli): bump queria-cli to X.Y.Z"
+git push origin main
+# 2) Actions chain:
+#    CLI detect-and-tag → tag cli-vX.Y.Z
+#    Release queria-cli → assets
+#    CLI Homebrew formula → homebrew-queria main
+# 3) Laptop install (still manual per machine; private backend):
+export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)
+brew update && brew reinstall nandocoeg2/queria/queria-cli
+queria-cli --version
 ```
+
+**Secrets (queria-backend Actions):**
+
+| Secret | Purpose |
+|--------|---------|
+| `GITHUB_TOKEN` (default) | Stage 1 tag push (if allowed); Stage 3 download Release assets |
+| `RELEASE_BOT_TOKEN` (optional) | Tag push if default token cannot create tags |
+| `HOMEBREW_TAP_TOKEN` | Stage 3 push to `nandocoeg2/homebrew-queria` |
+
+**Unstick:**
+
+| Symptom | Action |
+|---------|--------|
+| Version bump, no tag | Check **CLI detect-and-tag** logs; dispatch with dry_run=false; or manual `git tag -a cli-v…` on bump commit |
+| Tag, no assets | **Release queria-cli** dispatch with tag input (existing checklist) |
+| Assets, formula stale | **CLI Homebrew formula** dispatch with `tag=cli-v…` |
 
 #### Unstick: tag exists but no usable assets
 
@@ -155,9 +182,9 @@ Install steps for users: [`onboarding.md`](./onboarding.md) § Install `queria-c
 | Residual | Truth |
 |---|---|
 | **CLI Release assets** | Not proven green from unauthenticated API (private repo → 404). Confirm in **Actions / Releases UI** or with token. |
-| **Push `main`** | Host image deploy only. **No** CLI Release, **no** Homebrew auto-update. |
+| **Push `main` (host)** | Host image deploy via Build & Deploy. **CLI release** only if `crates/queria-cli/Cargo.toml` version changed (Stage 1 detect-and-tag → Stage 2 → Stage 3). |
 | **First arm64 deploy** | Seeds GHCR `:buildcache` (full compile once after native-arm + cache work landed; see § Build speed / cache). |
-| **Homebrew** | After downloadable `cli-v*` assets → generate real SHAs → push tap. Placeholder is NOT READY. |
+| **Homebrew** | Stage 3 auto-pushes formula when `HOMEBREW_TAP_TOKEN` set; else manual generator. Laptop still needs `HOMEBREW_GITHUB_API_TOKEN` for private assets. |
 | **Daily agent onboard** | Independent — mint/connect/retrieve without CLI or Brew ([`onboarding.md`](./onboarding.md)). |
 
 ---
