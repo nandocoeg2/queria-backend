@@ -136,7 +136,7 @@ pub async fn run(
         edge_base.trim_end_matches('/')
     );
 
-    let _job_ids = upload_plans(&endpoint, &token, &plans).await?;
+    let _job_ids = upload_plans(&endpoint, &token, &plans, false).await?;
     Ok(())
 }
 fn print_discovery_summary(plans: &[RootFilePlan]) {
@@ -462,20 +462,32 @@ pub fn filter_plans_by_paths(plans: &[RootFilePlan], selected_paths: &[PathBuf])
 
 /// Public upload entry for the TUI wizard (thin wrapper over private batch uploader).
 /// Returns collected `job_ids` from all successful batch responses.
+///
+/// When `quiet` is true, suppress stderr progress (required under alt-screen TUI).
 pub async fn upload_selected_plans(
     endpoint: &str,
     token: &str,
     plans: &[RootFilePlan],
+    quiet: bool,
 ) -> Result<Vec<String>> {
-    upload_plans(endpoint, token, plans).await
+    upload_plans(endpoint, token, plans, quiet).await
 }
 
 /// Upload plans in batches; returns all `job_ids` from successful responses.
-async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Result<Vec<String>> {
+///
+/// `quiet`: skip stderr progress lines (TUI alt-screen must not corrupt with eprint).
+async fn upload_plans(
+    endpoint: &str,
+    token: &str,
+    plans: &[RootFilePlan],
+    quiet: bool,
+) -> Result<Vec<String>> {
     let client = reqwest::Client::new();
     let batches = build_batches(plans);
     if batches.is_empty() {
-        eprintln!("no accepted files to upload");
+        if !quiet {
+            eprintln!("no accepted files to upload");
+        }
         return Ok(Vec::new());
     }
 
@@ -520,7 +532,9 @@ async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Re
         let parsed: IndexLocalResponse = serde_json::from_str(&text)
             .with_context(|| format!("parse index-local response: {}", truncate(&text, 200)))?;
 
-        eprint_progress(i + 1, total_batches, n_roots, n_files, &parsed);
+        if !quiet {
+            eprint_progress(i + 1, total_batches, n_roots, n_files, &parsed);
+        }
         all_job_ids.extend(parsed.job_ids);
     }
 

@@ -13,35 +13,46 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use std::time::Duration;
 
 /// Load credentials and fetch projects-status for the Status screen.
-async fn load_status(
-    profile: Option<&str>,
-) -> Result<StatusView> {
-    let creds = credentials::resolve(credentials::ResolveOpts {
+/// Credential/resolve/missing-token failures soft-degrade to `StatusView::Error`
+/// (same as network/404) so the hub TUI session is never ejected.
+async fn load_status(profile: Option<&str>) -> StatusView {
+    let creds = match credentials::resolve(credentials::ResolveOpts {
         profile: profile.map(|s| s.to_owned()),
-        require_token: true,
+        require_token: false,
         ..Default::default()
-    })?;
-    let token = creds
-        .agent_token
-        .as_deref()
-        .filter(|t| !t.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("no agent token — open Config"))?;
+    }) {
+        Ok(c) => c,
+        Err(e) => {
+            return StatusView::Error {
+                edge_url: credentials::DEFAULT_EDGE_URL.to_owned(),
+                profile: profile.map(|s| s.to_owned()),
+                detail: format!("credentials resolve failed: {e:#}"),
+            };
+        }
+    };
+    let Some(token) = creds.agent_token.as_deref().filter(|t| !t.is_empty()) else {
+        return StatusView::Error {
+            edge_url: creds.edge_url,
+            profile: creds.profile,
+            detail: "no agent token — open Config".into(),
+        };
+    };
     match edge_agent::fetch_projects_status(&creds.edge_url, token).await {
-        Ok((_status, body)) => Ok(StatusView::Ok {
+        Ok((_status, body)) => StatusView::Ok {
             edge_url: creds.edge_url,
             profile: creds.profile,
             body,
-        }),
-        Err(e) if edge_agent::is_projects_status_404(&e) => Ok(StatusView::NotFound {
+        },
+        Err(e) if edge_agent::is_projects_status_404(&e) => StatusView::NotFound {
             edge_url: creds.edge_url,
             profile: creds.profile,
             detail: e.to_string(),
-        }),
-        Err(e) => Ok(StatusView::Error {
+        },
+        Err(e) => StatusView::Error {
             edge_url: creds.edge_url,
             profile: creds.profile,
             detail: e.to_string(),
-        }),
+        },
     }
 }
 
@@ -88,7 +99,8 @@ pub fn run<B: Backend>(
     terminal: &mut Terminal<B>,
     profile: Option<&str>,
 ) -> Result<()> {
-    let mut view = block_on_compat(load_status(profile))?;
+    // Soft-degrade: credential errors become StatusView::Error, never eject hub.
+    let mut view = block_on_compat(load_status(profile));
     let mut status = String::from("r refresh · Esc/q back");
 
     loop {
@@ -193,15 +205,10 @@ pub fn run<B: Backend>(
         }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => break,
-            KeyCode::Char('r') => match block_on_compat(load_status(profile)) {
-                Ok(v) => {
-                    view = v;
-                    status = "refreshed".into();
-                }
-                Err(e) => {
-                    status = format!("refresh failed: {e:#}");
-                }
-            },
+            KeyCode::Char('r') => {
+                view = block_on_compat(load_status(profile));
+                status = "refreshed".into();
+            }
             _ => {}
         }
     }

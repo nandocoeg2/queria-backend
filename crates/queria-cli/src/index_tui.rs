@@ -286,7 +286,8 @@ fn do_upload(profile: Option<&str>, plans: &[RootFilePlan]) -> Result<Vec<String
         creds.edge_url.trim_end_matches('/')
     );
 
-    block_on_compat(async { upload_selected_plans(&endpoint, &token, plans).await })
+    // Quiet: suppress stderr progress under alt-screen so TUI is not corrupted.
+    block_on_compat(async { upload_selected_plans(&endpoint, &token, plans, true).await })
 }
 
 fn format_success(job_ids: &[String]) -> String {

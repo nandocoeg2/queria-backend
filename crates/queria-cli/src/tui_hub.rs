@@ -147,8 +147,12 @@ pub fn run_hub(profile: Option<&str>) -> Result<()> {
                     };
                 }
                 Some(2) => {
-                    status_tui::run(&mut terminal, profile)?;
-                    status = "returned from status".into();
+                    // Soft-fail: status credential/network errors stay on Status screen;
+                    // never eject the hub session.
+                    status = match status_tui::run(&mut terminal, profile) {
+                        Ok(()) => "returned from status".into(),
+                        Err(e) => format!("status error: {e:#}"),
+                    };
                 }
                 Some(3) => {
                     // Config owns its own alternate screen — leave hub first.
