@@ -22,7 +22,6 @@ use queria_ingestion::local_index_gates::{
     should_index_local_file,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::path::Path;
 
 /// Hard limits for v1 (CLI splits larger batches).
@@ -236,7 +235,7 @@ async fn resolve_or_create_project(
     origin: Option<&str>,
     local_path_hint: Option<&str>,
 ) -> Result<ProjectRecord, (StatusCode, Json<ErrorResponse>)> {
-    // Origin identity wins (re-run same remote → same project).
+    // 1) Same remote origin → same project (even if slug display differs).
     if let Some(origin_url) = origin {
         if let Some(project) = repository
             .find_project_by_origin_in_org(agent.organization_id, origin_url)
@@ -247,39 +246,39 @@ async fn resolve_or_create_project(
         }
     }
 
-    // No origin match: reuse free slug, or same-slug when no origin on request.
-    // If slug taken and we have a new origin, allocate slug-2… per plan.
+    // 2) Slug is derived from the remote repo name suffix
+    //    (e.g. git@host:group/ingestion-engine.git → "ingestion-engine").
+    //    Prefer the existing project with that slug so admin-created rows are
+    //    reused (no spurious slug-2 when the old project never stored origin).
     if let Some(project) = repository
         .find_project_by_slug_in_org(agent.organization_id, slug)
         .await
         .map_err(map_infra)?
     {
-        if origin.is_none() {
-            return Ok(project);
-        }
-        // Different origin identity than existing slug holder → slug-N.
-        let mut n = 2_u32;
-        loop {
-            let candidate = ensure_db_slug(&format!("{slug}-{n}"));
-            if repository
-                .find_project_by_slug_in_org(agent.organization_id, &candidate)
+        if let Some(origin_url) = origin {
+            // Only fork to slug-N when the existing slug already has a *different*
+            // local-git origin in metadata (true remote collision).
+            if let Some(existing_origin) = repository
+                .find_origin_for_project(project.id)
                 .await
                 .map_err(map_infra)?
-                .is_none()
             {
-                let name = display_name(local_path_hint, origin, &candidate);
-                return repository
-                    .create_project_for_agent(agent, &candidate, &name)
-                    .await
-                    .map_err(map_infra);
-            }
-            n += 1;
-            if n > 100 {
-                return Err(error(StatusCode::CONFLICT, "project_slug_exhausted"));
+                if !origins_equivalent(&existing_origin, origin_url) {
+                    return allocate_numbered_slug(
+                        repository,
+                        agent,
+                        slug,
+                        origin,
+                        local_path_hint,
+                    )
+                    .await;
+                }
             }
         }
+        return Ok(project);
     }
 
+    // 3) New project: slug stays the remote repo name (no path-based names).
     let name = display_name(local_path_hint, origin, slug);
     repository
         .create_project_for_agent(agent, slug, &name)
@@ -287,13 +286,66 @@ async fn resolve_or_create_project(
         .map_err(map_infra)
 }
 
+async fn allocate_numbered_slug(
+    repository: &PgProjectRepository,
+    agent: &AuthenticatedAgentToken,
+    slug: &str,
+    origin: Option<&str>,
+    local_path_hint: Option<&str>,
+) -> Result<ProjectRecord, (StatusCode, Json<ErrorResponse>)> {
+    let mut n = 2_u32;
+    loop {
+        let candidate = ensure_db_slug(&format!("{slug}-{n}"));
+        if repository
+            .find_project_by_slug_in_org(agent.organization_id, &candidate)
+            .await
+            .map_err(map_infra)?
+            .is_none()
+        {
+            let name = display_name(local_path_hint, origin, &candidate);
+            return repository
+                .create_project_for_agent(agent, &candidate, &name)
+                .await
+                .map_err(map_infra);
+        }
+        n += 1;
+        if n > 100 {
+            return Err(error(StatusCode::CONFLICT, "project_slug_exhausted"));
+        }
+    }
+}
+
+/// Prefer remote repo name (same as slug), then local folder basename, then slug.
 fn display_name(local_path_hint: Option<&str>, origin: Option<&str>, fallback: &str) -> String {
-    local_path_hint
+    let from_origin = origin
+        .map(|o| normalize_project_slug_from_origin(Some(o), ""))
+        .filter(|s| !s.is_empty() && s != "repo");
+    if let Some(repo) = from_origin {
+        return repo;
+    }
+    let from_path = local_path_hint
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .or(origin)
-        .unwrap_or(fallback)
-        .to_owned()
+        .map(|hint| basename_from_hint(Some(hint)))
+        .filter(|s| !s.is_empty() && s != "repo");
+    if let Some(base) = from_path {
+        return base;
+    }
+    fallback.to_owned()
+}
+
+/// Normalize and compare two git origin strings (strip trailing .git / slash noise).
+fn origins_equivalent(a: &str, b: &str) -> bool {
+    normalize_origin_key(a) == normalize_origin_key(b)
+}
+
+fn normalize_origin_key(origin: &str) -> String {
+    let t = origin.trim().trim_end_matches('/').to_ascii_lowercase();
+    if t.len() > 4 && t.ends_with(".git") {
+        t[..t.len() - 4].to_owned()
+    } else {
+        t
+    }
 }
 
 fn basename_from_hint(hint: Option<&str>) -> String {
@@ -404,6 +456,7 @@ mod tests {
     use axum::body::Body;
     use http::Request;
     use queria_core::AppConfig;
+    use serde_json::Value;
     use tower::ServiceExt;
 
     async fn body_string(response: axum::response::Response) -> String {
@@ -469,6 +522,30 @@ mod tests {
         assert_eq!(basename_from_hint(Some("services/api")), "api");
         assert_eq!(basename_from_hint(None), "repo");
         assert_eq!(basename_from_hint(Some("")), "repo");
+    }
+
+    #[test]
+    fn display_name_prefers_remote_repo_suffix() {
+        assert_eq!(
+            display_name(
+                Some("/Users/x/project/perso/ingestion-engine"),
+                Some("git@github.com:org/ingestion-engine.git"),
+                "fallback"
+            ),
+            "ingestion-engine"
+        );
+    }
+
+    #[test]
+    fn origins_equivalent_strips_git_suffix() {
+        assert!(origins_equivalent(
+            "git@host:group/app.git",
+            "git@host:group/app"
+        ));
+        assert!(!origins_equivalent(
+            "git@host:group/app.git",
+            "git@host:group/other.git"
+        ));
     }
 
     #[tokio::test]

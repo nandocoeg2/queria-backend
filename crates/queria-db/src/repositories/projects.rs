@@ -964,6 +964,32 @@ impl PgProjectRepository {
         .transpose()
     }
 
+    /// Earliest local-git origin_url recorded for a project, if any.
+    pub async fn find_origin_for_project(
+        &self,
+        project_id: Uuid,
+    ) -> QueriaResult<Option<String>> {
+        let row = sqlx::query(
+            "select sd.metadata->>'origin_url' as origin_url
+             from source_document sd
+             where sd.project_id = $1
+               and (sd.metadata->>'local_git_index')::boolean is true
+               and nullif(sd.metadata->>'origin_url', '') is not null
+             order by sd.created_at asc
+             limit 1",
+        )
+        .bind(project_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)?;
+
+        Ok(row
+            .and_then(|r| r.try_get::<Option<String>, _>("origin_url").ok())
+            .flatten()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()))
+    }
+
     /// Auto-create a project for agent IndexLocal (home org only).
     pub async fn create_project_for_agent(
         &self,
