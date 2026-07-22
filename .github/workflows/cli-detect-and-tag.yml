@@ -77,7 +77,6 @@ jobs:
           line="$(git ls-remote --tags origin "refs/tags/${TAG}" | head -n1 || true)"
           if [[ -n "$line" ]]; then
             remote_sha="$(printf '%s' "$line" | awk '{print $1}')"
-            # annotated tags may resolve to tag object; peel if possible
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
             echo "remote_sha=$remote_sha" >> "$GITHUB_OUTPUT"
             echo "Remote tag ${TAG} already exists ($remote_sha)"
