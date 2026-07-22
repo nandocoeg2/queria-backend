@@ -1,16 +1,22 @@
 mod backup;
 mod bootstrap;
+mod checks;
 mod config;
 mod config_tui;
 mod credentials;
 mod database;
 mod doctor_mcp;
+mod doctor_tui;
+mod edge_agent;
 mod embeddings;
 mod evaluation;
 mod index_here;
+mod index_tui;
 mod mcp_install;
+mod status_tui;
 mod restore_drill;
 mod retrieval;
+mod tui_hub;
 
 use clap::{Parser, Subcommand};
 
@@ -55,6 +61,8 @@ enum Command {
     },
     /// Interactive TUI: profiles / token / edge / MCP install (~/.config/queria/config.toml).
     Config,
+    /// Interactive hub TUI: doctor / index / status / config (TTY required).
+    Tui,
     /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
     IndexHere {
         /// Env var name holding the raw agent token (never print the token).
@@ -213,6 +221,10 @@ async fn main() -> anyhow::Result<()> {
             config_tui::run_tui(profile.as_deref())?;
             Ok(())
         }
+        Command::Tui => {
+            tui_hub::run_hub(profile.as_deref())?;
+            Ok(())
+        }
         Command::IndexHere {
             token_env,
             edge_url_env,
@@ -362,6 +374,12 @@ mod tests {
             }
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_tui_command() {
+        let cli = Cli::try_parse_from(["queria-cli", "tui"]).expect("tui should parse");
+        assert!(matches!(cli.command, Command::Tui));
     }
 
     #[test]

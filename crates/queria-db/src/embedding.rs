@@ -125,6 +125,25 @@ where status = 'running'
   and job_type in ('embedding_backfill', 'qdrant_delete')
   and locked_at < now() - make_interval(secs => $1)";
 
+/// Project-scoped embed status counts (approved + needs_review only; no global).
+pub const STATUS_COUNTS_FOR_PROJECT_ITEMS_SQL: &str = "
+select
+  count(*) filter (where c.embedding_status = 'pending') as pending,
+  count(*) filter (where c.embedding_status = 'processing') as processing,
+  count(*) filter (
+    where c.embedding_status = 'ready'
+      and c.embedding_profile_version = $2
+  ) as ready,
+  count(*) filter (where c.embedding_status = 'failed') as failed,
+  count(*) filter (
+    where c.embedding_status = 'stale'
+       or c.embedding_profile_version <> $2
+  ) as stale
+from chunk c
+join knowledge_item k on k.id = c.knowledge_item_id
+where k.project_id = $1
+  and k.status in ('approved', 'needs_review')";
+
 impl PgEmbeddingRepository {
     #[must_use]
     pub fn new(pool: PgPool) -> Self {
@@ -468,6 +487,30 @@ impl PgEmbeddingRepository {
             stale: row.try_get("stale").map_err(to_infrastructure_error)?,
         })
     }
+
+    /// Project-only embedding status counts for agent status surfaces.
+    ///
+    /// Includes knowledge with `status in ('approved', 'needs_review')` for the given
+    /// project. Deliberately excludes global-scope items (no global bleed).
+    pub async fn status_counts_for_project_items(
+        &self,
+        project_id: ProjectId,
+        profile_version: &str,
+    ) -> QueriaResult<EmbeddingStatusCounts> {
+        let row = sqlx::query(STATUS_COUNTS_FOR_PROJECT_ITEMS_SQL)
+            .bind(project_id.as_uuid())
+            .bind(profile_version)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(to_infrastructure_error)?;
+        Ok(EmbeddingStatusCounts {
+            pending: row.try_get("pending").map_err(to_infrastructure_error)?,
+            processing: row.try_get("processing").map_err(to_infrastructure_error)?,
+            ready: row.try_get("ready").map_err(to_infrastructure_error)?,
+            failed: row.try_get("failed").map_err(to_infrastructure_error)?,
+            stale: row.try_get("stale").map_err(to_infrastructure_error)?,
+        })
+    }
 }
 
 #[must_use]
@@ -620,6 +663,22 @@ mod tests {
         assert!(CLAIM_CHUNKS_SQL.contains("k.status in ('approved', 'needs_review')"));
         assert!(CLAIM_CHUNKS_SQL.contains("c.embedding_status"));
         assert!(CLAIM_CHUNKS_SQL.contains("c.embedding_attempts < 5"));
+    }
+
+    #[test]
+    fn status_counts_for_project_items_sql_is_project_only() {
+        let sql = STATUS_COUNTS_FOR_PROJECT_ITEMS_SQL.to_ascii_lowercase();
+        assert!(sql.contains("k.project_id = $1"));
+        assert!(sql.contains("k.status in ('approved', 'needs_review')"));
+        // No global bleed for agent status surfaces.
+        assert!(!sql.contains("k.scope = 'global'"));
+        assert!(!sql.contains("or k.scope"));
+        assert!(sql.contains("embedding_status = 'pending'"));
+        assert!(sql.contains("embedding_status = 'processing'"));
+        assert!(sql.contains("embedding_status = 'ready'"));
+        assert!(sql.contains("embedding_status = 'failed'"));
+        assert!(sql.contains("embedding_status = 'stale'"));
+        assert!(sql.contains("embedding_profile_version = $2"));
     }
 
     #[test]

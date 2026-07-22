@@ -18,6 +18,7 @@ use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
 use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
 use queria_core::ids::ProjectId;
+use queria_db::embedding::{EmbeddingStatusCounts, PgEmbeddingRepository};
 use queria_db::repositories::{AuthenticatedAgentToken, PgProjectRepository, ProjectRecord};
 use queria_search::retrieval::RetrievalPrincipal;
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,7 @@ pub fn router() -> Router<ApiState> {
     Router::new()
         .route("/agent/retrieve-context", post(agent_retrieve_context))
         .route("/agent/projects", get(agent_list_projects))
+        .route("/agent/projects-status", get(agent_projects_status))
 }
 
 async fn agent_list_projects(
@@ -84,6 +86,88 @@ async fn agent_list_projects(
     Ok(Json(json!({
         "projects": projects.into_iter().map(project_json).collect::<Vec<_>>()
     })))
+}
+
+/// Laptop CLI status: permissions + per-project embed / needs_review counts.
+async fn agent_projects_status(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+) -> ApiResult<Value> {
+    // Auth header first so missing bearer is 401 even without a configured pool.
+    let raw = require_raw_bearer(&headers)?;
+    let repository = project_repository(&state)?;
+    let agent = authenticate_raw(&repository, raw).await?;
+    if !agent
+        .permissions
+        .can_call(&AgentToolPermission::ListProjects)
+        && !agent
+            .permissions
+            .can_call(&AgentToolPermission::RetrieveContext)
+    {
+        return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
+    }
+
+    let pool = state.pool.clone().ok_or_else(|| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "knowledge_store_not_configured",
+        )
+    })?;
+    let embedding_repo = PgEmbeddingRepository::new(pool);
+    let profile_version = state.config.embedding.profile_version.clone();
+
+    let projects = repository
+        .list_projects_for_agent(&agent)
+        .await
+        .map_err(map_infra)?;
+
+    let mut project_rows = Vec::with_capacity(projects.len());
+    for project in projects {
+        let project_id = ProjectId::from_uuid(project.id);
+        let counts = embedding_repo
+            .status_counts_for_project_items(project_id, &profile_version)
+            .await
+            .map_err(map_infra)?;
+        let needs_review_count = repository
+            .count_needs_review_items(project_id)
+            .await
+            .map_err(map_infra)?;
+        let embed = fold_embed_counts(&counts);
+        project_rows.push(json!({
+            "id": project.id,
+            "slug": project.slug,
+            "name": project.name,
+            "embed": embed,
+            "needs_review_count": needs_review_count,
+        }));
+    }
+
+    let mut permissions: Vec<String> = agent
+        .permissions
+        .tools
+        .iter()
+        .filter_map(|tool| {
+            serde_json::to_value(tool)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+        })
+        .collect();
+    permissions.sort();
+
+    Ok(Json(json!({
+        "embedding_profile_version": profile_version,
+        "permissions": permissions,
+        "projects": project_rows,
+    })))
+}
+
+/// Fold processing + stale into pending for the three-counter laptop UX.
+fn fold_embed_counts(counts: &EmbeddingStatusCounts) -> Value {
+    json!({
+        "ready": counts.ready,
+        "pending": counts.pending + counts.processing + counts.stale,
+        "failed": counts.failed,
+    })
 }
 
 async fn agent_retrieve_context(
@@ -403,6 +487,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn agent_projects_status_requires_bearer() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/agent/projects-status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn fold_embed_counts_merges_processing_and_stale_into_pending() {
+        let folded = fold_embed_counts(&EmbeddingStatusCounts {
+            pending: 1,
+            processing: 2,
+            ready: 10,
+            failed: 3,
+            stale: 4,
+        });
+        assert_eq!(folded["ready"], 10);
+        assert_eq!(folded["pending"], 7); // 1+2+4
+        assert_eq!(folded["failed"], 3);
     }
 
     #[tokio::test]

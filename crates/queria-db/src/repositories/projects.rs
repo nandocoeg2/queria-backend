@@ -1641,6 +1641,23 @@ impl PgProjectRepository {
         Ok(Some(approval))
     }
 
+    /// Count knowledge items with status `needs_review` for one project.
+    ///
+    /// Project-scoped only (no org filter beyond the project row); intended for
+    /// agent status surfaces after the project has already been resolved in scope.
+    pub async fn count_needs_review_items(&self, project_id: ProjectId) -> QueriaResult<i64> {
+        sqlx::query_scalar(
+            "select count(*)::bigint
+             from knowledge_item
+             where project_id = $1
+               and status = 'needs_review'",
+        )
+        .bind(project_id.as_uuid())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(to_infrastructure_error)
+    }
+
     /// List knowledge items in `needs_review` for the admin session org (IMP-L4).
     pub async fn list_needs_review(
         &self,

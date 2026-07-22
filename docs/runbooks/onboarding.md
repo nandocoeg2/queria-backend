@@ -121,11 +121,27 @@ Full process: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
 
 Dev alternative: `cargo build -p queria-cli --release` in this repo.
 
-**CLI config (TUI only):**
+**CLI hub TUI (laptop path — no `SETUP_TOKEN`):**
 
 ```bash
-queria-cli config       # interactive: profiles, token, edge, MCP install
+queria-cli tui          # Doctor / Index / Status / Config
+queria-cli doctor mcp   # still valid non-TUI
+# embeddings status remains server/DB only for maintainers
+```
+
+| Menu | Purpose |
+|---|---|
+| **Doctor** | Friction checks (token, edge, MCP) from the laptop |
+| **Index** | Guided `index-here` wizard (Custom token with `index_local`) |
+| **Status** | Project embed / needs-review summary via agent `projects-status` |
+| **Config** | Interactive profiles, token, edge, MCP install |
+
+Standalone still valid:
+
+```bash
+queria-cli config       # same Config as hub (profiles, token, edge, MCP)
 queria-cli index-here   # uses ~/.config/queria/config.toml (env still overrides)
+queria-cli doctor mcp --url "$QUERIA_MCP_URL"
 ```
 
 No `config set|list|…` subcommands. CI/scripts: `export QUERIA_*` or edit TOML. Design: [`../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md).
@@ -137,16 +153,19 @@ For a laptop clone without Admin Git registration:
 1. Install `queria-cli` from GitHub Releases (above).
 2. Create project (Admin → Projects) if missing.
 3. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
-4. From the repo (or monorepo root):
+4. Configure once, then index from the hub TUI (or non-TUI equivalent):
 
    ```bash
    export QUERIA_AGENT_TOKEN='…'   # Custom token with index_local
    export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or local edge
-   queria-cli index-here --token-env QUERIA_AGENT_TOKEN
+   queria-cli tui                  # Config (save profile) → Index wizard
+   # non-TUI equivalent:
+   # queria-cli index-here --token-env QUERIA_AGENT_TOKEN
    ```
 
 5. Admin → Needs review → **Promote** (trusted path).
 6. Use a **Daily** token for normal retrieve + `index_memory` scratch (do not give Daily users `index_local`).
+7. Optional: `queria-cli tui` → **Status** for laptop project embed/needs-review summary (agent path). Maintainer `embeddings status` / DB backfill remains server-side only.
 
 Full contract: [Part E — Local multi-git `index-here`](#part-e--local-multi-git-index-here-needs-review). No demo corpus seed. Dual-lane (trusted vs Needs review) unchanged.
 
@@ -472,9 +491,12 @@ curl -sS -X POST "$QUERIA_MCP_URL" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
-CLI doctor (if available in your build):
+CLI doctor / hub (if available in your build):
 
 ```bash
+queria-cli tui                          # Doctor / Index / Status / Config
+queria-cli doctor mcp --url "$QUERIA_MCP_URL"   # still valid non-TUI
+# or from a workspace checkout:
 cargo run -p queria-cli -- doctor mcp --url "$QUERIA_MCP_URL"
 ```
 
@@ -629,17 +651,24 @@ export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or http://127.0.0.1:17674
 
 Never commit the token. Edge base only — path is `/api/v1/agent/index-local` under that host.
 
-### E2. One-command index
+### E2. Index from laptop (hub TUI or one-command)
 
 From the workspace root (nested git roots discovered up to depth 4):
 
 ```bash
 export QUERIA_AGENT_TOKEN=…
 export QUERIA_EDGE_URL=https://queria.fjulian.id   # or http://127.0.0.1:17674
-queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes
+
+# Preferred: hub TUI Index wizard (Doctor / Index / Status / Config)
+queria-cli tui
+
+# Non-TUI equivalent:
+queria-cli index-here --token-env QUERIA_AGENT_TOKEN
 ```
 
-Dry-run: `queria-cli index-here --token-env QUERIA_AGENT_TOKEN --dry-run --yes`. Expect `job_ids` + per-root accepted/skipped counts on real upload. Worker must be up so embed jobs leave `queued`. Nested git roots: parent does **not** upload paths that live under another discovered nested root (same run).
+Dry-run: `queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes` (or non-interactive flags as printed by `--help`). Expect `job_ids` + per-root accepted/skipped counts on real upload. Worker must be up so embed jobs leave `queued`. Nested git roots: parent does **not** upload paths that live under another discovered nested root (same run).
+
+**Laptop Status vs maintainer embeddings:** `queria-cli tui` → **Status** uses agent `GET /api/v1/agent/projects-status` (token-scoped project embed + needs-review counters). Full `embeddings status` / backfill remains **server/DB maintainer** tooling (`cargo run -p queria-cli -- embeddings status --project …` with admin/DB credentials) — not part of the laptop hub path.
 
 Edge smoke (optional): mint token with `index_local` (+ retrieve), then:
 

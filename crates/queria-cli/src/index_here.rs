@@ -136,7 +136,8 @@ pub async fn run(
         edge_base.trim_end_matches('/')
     );
 
-    upload_plans(&endpoint, &token, &plans).await
+    let _job_ids = upload_plans(&endpoint, &token, &plans, false).await?;
+    Ok(())
 }
 fn print_discovery_summary(plans: &[RootFilePlan]) {
     let total_accept: usize = plans.iter().map(|p| p.accepted.len()).sum();
@@ -438,15 +439,60 @@ pub fn count_gate_outcomes(files: &[(&str, u64, &str)]) -> (u32, u32) {
     (accept, skip)
 }
 
-async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Result<()> {
+/// Keep only plans whose `root.path` is in `selected_paths` (canonical-aware match).
+/// Used by the TUI wizard to upload a user-selected subset of discovered roots.
+pub fn filter_plans_by_paths(plans: &[RootFilePlan], selected_paths: &[PathBuf]) -> Vec<RootFilePlan> {
+    let selected: BTreeSet<PathBuf> = selected_paths
+        .iter()
+        .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
+        .collect();
+    plans
+        .iter()
+        .filter(|plan| {
+            let root = plan
+                .root
+                .path
+                .canonicalize()
+                .unwrap_or_else(|_| plan.root.path.clone());
+            selected.contains(&root) || selected_paths.iter().any(|s| s == &plan.root.path)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Public upload entry for the TUI wizard (thin wrapper over private batch uploader).
+/// Returns collected `job_ids` from all successful batch responses.
+///
+/// When `quiet` is true, suppress stderr progress (required under alt-screen TUI).
+pub async fn upload_selected_plans(
+    endpoint: &str,
+    token: &str,
+    plans: &[RootFilePlan],
+    quiet: bool,
+) -> Result<Vec<String>> {
+    upload_plans(endpoint, token, plans, quiet).await
+}
+
+/// Upload plans in batches; returns all `job_ids` from successful responses.
+///
+/// `quiet`: skip stderr progress lines (TUI alt-screen must not corrupt with eprint).
+async fn upload_plans(
+    endpoint: &str,
+    token: &str,
+    plans: &[RootFilePlan],
+    quiet: bool,
+) -> Result<Vec<String>> {
     let client = reqwest::Client::new();
     let batches = build_batches(plans);
     if batches.is_empty() {
-        eprintln!("no accepted files to upload");
-        return Ok(());
+        if !quiet {
+            eprintln!("no accepted files to upload");
+        }
+        return Ok(Vec::new());
     }
 
     let total_batches = batches.len();
+    let mut all_job_ids = Vec::new();
     for (i, batch) in batches.into_iter().enumerate() {
         let n_files: usize = batch.iter().map(|r| r.files.len()).sum();
         let n_roots = batch.len();
@@ -486,10 +532,13 @@ async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Re
         let parsed: IndexLocalResponse = serde_json::from_str(&text)
             .with_context(|| format!("parse index-local response: {}", truncate(&text, 200)))?;
 
-        eprint_progress(i + 1, total_batches, n_roots, n_files, &parsed);
+        if !quiet {
+            eprint_progress(i + 1, total_batches, n_roots, n_files, &parsed);
+        }
+        all_job_ids.extend(parsed.job_ids);
     }
 
-    Ok(())
+    Ok(all_job_ids)
 }
 
 fn eprint_progress(
@@ -871,6 +920,44 @@ mod tests {
         );
         assert!(msg.contains("--yes"));
         assert!(msg.contains("3"));
+    }
+
+    #[test]
+    fn filter_plans_by_paths_keeps_matching() {
+        let plan_a = RootFilePlan {
+            root: DiscoveredRoot {
+                path: PathBuf::from("/tmp/repo-a"),
+                origin_url: None,
+                commit_sha: Some("aaa".to_owned()),
+                branch: Some("main".to_owned()),
+            },
+            accepted: vec![IndexableFile {
+                path: "a.md".to_owned(),
+                content: "a".to_owned(),
+                content_hash: content_hash("a"),
+            }],
+            skipped: 0,
+        };
+        let plan_b = RootFilePlan {
+            root: DiscoveredRoot {
+                path: PathBuf::from("/tmp/repo-b"),
+                origin_url: None,
+                commit_sha: Some("bbb".to_owned()),
+                branch: Some("main".to_owned()),
+            },
+            accepted: vec![IndexableFile {
+                path: "b.md".to_owned(),
+                content: "b".to_owned(),
+                content_hash: content_hash("b"),
+            }],
+            skipped: 1,
+        };
+        let plans = vec![plan_a.clone(), plan_b];
+        let selected = vec![PathBuf::from("/tmp/repo-a")];
+        let filtered = filter_plans_by_paths(&plans, &selected);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].root.path, plan_a.root.path);
+        assert_eq!(filtered[0].accepted.len(), 1);
     }
 
     fn tempfile_dir(label: &str) -> PathBuf {
