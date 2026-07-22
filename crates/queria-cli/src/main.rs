@@ -6,6 +6,7 @@ mod config_tui;
 mod credentials;
 mod database;
 mod doctor_mcp;
+mod edge_agent;
 mod embeddings;
 mod evaluation;
 mod index_here;
