@@ -11,6 +11,7 @@ mod edge_agent;
 mod embeddings;
 mod evaluation;
 mod index_here;
+mod index_tui;
 mod mcp_install;
 mod restore_drill;
 mod retrieval;

@@ -136,7 +136,8 @@ pub async fn run(
         edge_base.trim_end_matches('/')
     );
 
-    upload_plans(&endpoint, &token, &plans).await
+    let _job_ids = upload_plans(&endpoint, &token, &plans).await?;
+    Ok(())
 }
 fn print_discovery_summary(plans: &[RootFilePlan]) {
     let total_accept: usize = plans.iter().map(|p| p.accepted.len()).sum();
@@ -460,24 +461,26 @@ pub fn filter_plans_by_paths(plans: &[RootFilePlan], selected_paths: &[PathBuf])
 }
 
 /// Public upload entry for the TUI wizard (thin wrapper over private batch uploader).
-#[allow(dead_code)] // exported for wizard; not called from CLI `run` yet
+/// Returns collected `job_ids` from all successful batch responses.
 pub async fn upload_selected_plans(
     endpoint: &str,
     token: &str,
     plans: &[RootFilePlan],
-) -> Result<()> {
+) -> Result<Vec<String>> {
     upload_plans(endpoint, token, plans).await
 }
 
-async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Result<()> {
+/// Upload plans in batches; returns all `job_ids` from successful responses.
+async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Result<Vec<String>> {
     let client = reqwest::Client::new();
     let batches = build_batches(plans);
     if batches.is_empty() {
         eprintln!("no accepted files to upload");
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let total_batches = batches.len();
+    let mut all_job_ids = Vec::new();
     for (i, batch) in batches.into_iter().enumerate() {
         let n_files: usize = batch.iter().map(|r| r.files.len()).sum();
         let n_roots = batch.len();
@@ -518,9 +521,10 @@ async fn upload_plans(endpoint: &str, token: &str, plans: &[RootFilePlan]) -> Re
             .with_context(|| format!("parse index-local response: {}", truncate(&text, 200)))?;
 
         eprint_progress(i + 1, total_batches, n_roots, n_files, &parsed);
+        all_job_ids.extend(parsed.job_ids);
     }
 
-    Ok(())
+    Ok(all_job_ids)
 }
 
 fn eprint_progress(

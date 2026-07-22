@@ -3,6 +3,7 @@
 use crate::config;
 use crate::config_tui;
 use crate::doctor_tui;
+use crate::index_tui;
 use anyhow::{Result, bail};
 use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -151,9 +152,18 @@ pub fn run_hub(profile: Option<&str>) -> Result<()> {
                             status = "returned from doctor".into();
                         }
                         Some(1) => {
-                            message = "Index wizard ships in P1".into();
-                            screen = Screen::Message;
-                            status = "Enter/Esc/q back".into();
+                            // Index wizard owns its own alternate screen — leave hub first.
+                            drop(terminal);
+                            disable_raw_mode()?;
+                            stdout().execute(LeaveAlternateScreen)?;
+                            let idx_res = index_tui::run_index_wizard(profile);
+                            enable_raw_mode()?;
+                            stdout().execute(EnterAlternateScreen)?;
+                            terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+                            status = match idx_res {
+                                Ok(()) => "returned from index wizard".into(),
+                                Err(e) => format!("index wizard error: {e:#}"),
+                            };
                         }
                         Some(2) => {
                             message = "Status ships in P2".into();
