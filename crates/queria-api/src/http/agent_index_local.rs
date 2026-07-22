@@ -168,16 +168,15 @@ async fn agent_index_local(
             }
         }
 
-        if accepted > 0 {
-            if let Some(job_id) = repository
+        if accepted > 0
+            && let Some(job_id) = repository
                 .enqueue_embedding_backfill_for_agent(&agent, project.id, &profile_version)
                 .await
                 .map_err(map_infra)?
-            {
-                let id = job_id.to_string();
-                if !job_ids.contains(&id) {
-                    job_ids.push(id);
-                }
+        {
+            let id = job_id.to_string();
+            if !job_ids.contains(&id) {
+                job_ids.push(id);
             }
         }
 
@@ -236,14 +235,13 @@ async fn resolve_or_create_project(
     local_path_hint: Option<&str>,
 ) -> Result<ProjectRecord, (StatusCode, Json<ErrorResponse>)> {
     // 1) Same remote origin → same project (even if slug display differs).
-    if let Some(origin_url) = origin {
-        if let Some(project) = repository
+    if let Some(origin_url) = origin
+        && let Some(project) = repository
             .find_project_by_origin_in_org(agent.organization_id, origin_url)
             .await
             .map_err(map_infra)?
-        {
-            return Ok(project);
-        }
+    {
+        return Ok(project);
     }
 
     // 2) Slug is derived from the remote repo name suffix
@@ -255,25 +253,16 @@ async fn resolve_or_create_project(
         .await
         .map_err(map_infra)?
     {
-        if let Some(origin_url) = origin {
-            // Only fork to slug-N when the existing slug already has a *different*
-            // local-git origin in metadata (true remote collision).
-            if let Some(existing_origin) = repository
+        if let Some(origin_url) = origin
+            && let Some(existing_origin) = repository
                 .find_origin_for_project(project.id)
                 .await
                 .map_err(map_infra)?
-            {
-                if !origins_equivalent(&existing_origin, origin_url) {
-                    return allocate_numbered_slug(
-                        repository,
-                        agent,
-                        slug,
-                        origin,
-                        local_path_hint,
-                    )
-                    .await;
-                }
-            }
+            && !origins_equivalent(&existing_origin, origin_url)
+        {
+            // True remote collision on this slug → allocate slug-N.
+            return allocate_numbered_slug(repository, agent, slug, origin, local_path_hint)
+                .await;
         }
         return Ok(project);
     }
