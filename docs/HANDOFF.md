@@ -1,11 +1,17 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-22 (hub TUI laptop path: `queria-cli tui` Doctor/Index/Status/Config; embeddings status remains server/maintainer)
-> Branch: `feat/queria-cli-hub-tui` (docs residual; merge target `main`)
+> Last verified: 2026-07-23 (CLI release automation chain on branch; host stack unchanged)
+> Branch: `feat/cli-release-automation` (merge target `main`)
 > **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
 > **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
 > **Public access live:** `http://168.110.214.130:17674/healthz` **200**; **`https://queria.fjulian.id/healthz` 200** (Nginx + Certbot LE); `/admin/login` **200**.
 > **Residual:** GHCR registry pull denied until packages exist + host `GHCR_TOKEN` / green Actions deploy; set repo secrets so next push uses Path A.
+
+### CLI release automation (2026-07-23)
+
+- Chain: **detect-and-tag** (Cargo.toml version) → **Release queria-cli** (unchanged matrix) → **Homebrew formula** direct-push.
+- Design: `docs/superpowers/specs/2026-07-23-cli-release-automation-design.md`
+- Residual: per-laptop `brew reinstall` + `HOMEBREW_GITHUB_API_TOKEN` while backend private; accidental version bumps still release — review Cargo.toml carefully.
 
 
 > Docs pack: post–ponytail-audit living docs (PRODUCT, ARCHITECTURE, SIMPLIFICATION, DOCS_POLICY); historical plans archived.
@@ -583,11 +589,11 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
 
 - Onboarding friction pack **code shipped on `main`**: Admin Daily mint + connect panel; dashboard “Get ready for agents”; `request_base` prefers `QUERIA_PUBLIC_BASE_URL` (prod `https://queria.fjulian.id`). Spec (historical): [`archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md`](./archive/superpowers/specs/2026-07-20-onboarding-friction-pack-design.md). **Docs** lead with Daily **3-step** default (mint → env+MCP → retrieve); Admin Git / index-here optional; direnv not required for Daily. Live copy: `GET …/docs/agent-setup`. Operator path: [`runbooks/onboarding.md`](./runbooks/onboarding.md). Ops residual: confirm host image has Daily UI + `QUERIA_PUBLIC_BASE_URL` set (not a re-open of UI implementation).
 - **CLI / Homebrew / deploy residual (one list — do not oversell):**
-  1. **CLI Release not verified from unauth API** — `queria-backend` is private; unauthenticated curl/API on Release assets returns **404** (not proof assets are missing). Operator confirms in Actions UI / Releases UI (logged in) or `GH_TOKEN` / `gh release view`. Workflow [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds **only** on tag `cli-v*` (or `workflow_dispatch` with tag). **Push `main` does not create a CLI release** and never auto-updates Homebrew.
+  1. **CLI Release not verified from unauth API** — `queria-backend` is private; unauthenticated curl/API on Release assets returns **404** (not proof assets are missing). Operator confirms in Actions UI / Releases UI (logged in) or `GH_TOKEN` / `gh release view`. Stage 2 [`.github/workflows/release-cli.yml`](../.github/workflows/release-cli.yml) builds on tag `cli-v*` (or `workflow_dispatch` with tag). **Push `main` with a Cargo.toml version bump** triggers Stage 1 detect-and-tag → Stage 2 → Stage 3 Homebrew; plain feature pushes do not release.
   2. **First arm64 GHCR deploy seeds `buildcache`** — deploy workflow uses native `ubuntu-24.04-arm` + BuildKit mounts + registry tags `backend:buildcache` / `admin:buildcache` (since `bf76180`). First green run after that change still pays a full compile to seed cache; later warm rebuilds expected faster. Details: [`runbooks/deployment.md`](./runbooks/deployment.md) § Build speed / cache.
-  3. **Homebrew only after real formula SHAs** — workspace scaffold `queria/homebrew-queria/` (placeholder formula **`odie`s**; not installable). Do **not** advertise `brew install nandocoeg2/queria/queria-cli` as working today. After a live `cli-v*` Release with downloadable assets: `scripts/generate_homebrew_formula.sh` → push tap. Runbook: [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md).
+  3. **Homebrew after Release** — Stage 3 **CLI Homebrew formula** direct-pushes `nandocoeg2/homebrew-queria` when `HOMEBREW_TAP_TOKEN` is set; else manual `scripts/generate_homebrew_formula.sh` → push tap. Laptop still needs `HOMEBREW_GITHUB_API_TOKEN` while backend private. Runbook: [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md).
   4. **Daily onboard is independent of CLI/Brew** — Default Daily path (mint token → env + MCP → `retrieve_context`) needs **no** `queria-cli` and **no** Homebrew. CLI install is only for optional laptop hub/index-here (or maintainers).
-  5. **queria-cli hub TUI (branch `feat/queria-cli-hub-tui`; package still `0.2.0` until release)** — Laptop path (no `SETUP_TOKEN`): `queria-cli tui` → **Doctor / Index / Status / Config**. Config profiles remain multi-profile `~/.config/queria/config.toml`; standalone `queria-cli config` / `index-here` / `doctor mcp` still valid. **Status** uses agent `GET /api/v1/agent/projects-status` (token-scoped embed + needs-review counters). Full **`embeddings status` / backfill remains server/DB maintainer-only** — not laptop hub. Residual: version bump + tag **`cli-v0.3.0`** (or next) after merge so Release assets include hub TUI (push `main` does not publish CLI). Spec: [`archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](./archive/superpowers/specs/2026-07-21-queria-cli-config-design.md). Not required for Daily MCP.
+  5. **queria-cli hub TUI** — Laptop path (no `SETUP_TOKEN`): `queria-cli tui` → **Doctor / Index / Status / Config**. Residual: version bump (careful — triggers release chain) so Release assets include hub TUI. Spec: [`archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](./archive/superpowers/specs/2026-07-21-queria-cli-config-design.md). Not required for Daily MCP.
 
 | Gap | Priority | Notes |
 |---|---|---|

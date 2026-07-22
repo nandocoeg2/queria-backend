@@ -1,7 +1,8 @@
 # Design: queria-cli release automation (detect → tag → build → Homebrew)
 
-> Status: REFERENCE (approved design; not implemented)  
+> Status: REFERENCE (approved design; not marked implemented until Task 6 e2e)  
 > Last verified: 2026-07-23  
+> Plan: [`../plans/2026-07-23-cli-release-automation.md`](../plans/2026-07-23-cli-release-automation.md)  
 > Runtime truth: [`../../HANDOFF.md`](../../HANDOFF.md)  
 > Related runbooks: [`../../runbooks/deployment.md`](../../runbooks/deployment.md) § queria-cli Release; [`../../runbooks/queria-cli-homebrew.md`](../../runbooks/queria-cli-homebrew.md)  
 > Existing workflow (unchanged matrix): [`.github/workflows/release-cli.yml`](../../../.github/workflows/release-cli.yml)  

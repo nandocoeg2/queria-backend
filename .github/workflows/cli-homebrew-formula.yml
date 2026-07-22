@@ -1,0 +1,103 @@
+# Stage 3 of queria-cli release chain.
+# After GitHub Release assets exist for cli-v*, regenerate formula and push homebrew-queria main.
+# Manual fallback: workflow_dispatch with tag=cli-vX.Y.Z
+# Requires secret HOMEBREW_TAP_TOKEN (write access to nandocoeg2/homebrew-queria).
+name: CLI Homebrew formula
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "cli-vX.Y.Z (empty with release event uses event tag; for dispatch required or defaults to empty fail)"
+        required: false
+        default: ""
+
+concurrency:
+  group: cli-homebrew-formula
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    runs-on: ubuntu-latest
+    # Only cli-v* releases
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'cli-v')) ||
+      (github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ inputs.tag }}"
+          fi
+          if [[ -z "$TAG" || "$TAG" != cli-v* ]]; then
+            echo "Need tag matching cli-v* (got: '${TAG:-empty}')" >&2
+            exit 1
+          fi
+          VERSION="${TAG#cli-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using TAG=$TAG"
+
+      - name: Checkout queria-backend
+        uses: actions/checkout@v4
+        with:
+          path: queria-backend
+
+      - name: Checkout homebrew-queria
+        uses: actions/checkout@v4
+        with:
+          repository: nandocoeg2/homebrew-queria
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-queria
+
+      - name: Generate formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same repo release assets; GITHUB_TOKEN is enough when workflow runs on queria-backend
+        working-directory: queria-backend
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/generate_homebrew_formula.sh
+          ./scripts/generate_homebrew_formula.sh "${{ steps.meta.outputs.tag }}" \
+            --out "${GITHUB_WORKSPACE}/homebrew-queria/Formula/queria-cli.rb"
+
+      - name: Commit and push tap
+        working-directory: homebrew-queria
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]]; then
+            echo "HOMEBREW_TAP_TOKEN secret is not set" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/queria-cli.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for ${TAG} — skip push"
+            exit 0
+          fi
+          # Safety: formula must reference this version
+          if ! grep -q "version \"${VERSION}\"" Formula/queria-cli.rb; then
+            echo "Generated formula missing version ${VERSION}" >&2
+            head -40 Formula/queria-cli.rb >&2
+            exit 1
+          fi
+          if ! grep -q "api.github.com/repos/nandocoeg2/queria-backend/releases/assets/" Formula/queria-cli.rb; then
+            echo "WARN: formula may not use private API asset URLs" >&2
+          fi
+          git commit -m "chore: queria-cli ${VERSION} formula (private API assets)"
+          git push origin HEAD:main
+          echo "Pushed homebrew-queria formula for ${TAG}"

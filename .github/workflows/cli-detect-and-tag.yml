@@ -1,0 +1,125 @@
+# Stage 1 of queria-cli release chain (see docs/superpowers/specs/2026-07-23-cli-release-automation-design.md).
+# On main: if crates/queria-cli Cargo.toml version has no matching cli-v* tag, push annotated tag.
+# Stage 2 (release-cli.yml) is triggered by the tag push. Does not build binaries.
+name: CLI detect-and-tag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/queria-cli/Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/cli_version.sh"
+      - ".github/workflows/cli-detect-and-tag.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "If true, print decision and do not push tag"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      version_override:
+        description: "Optional X.Y.Z override (empty = read Cargo.toml)"
+        required: false
+        default: ""
+
+concurrency:
+  group: cli-detect-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  detect-and-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use default GITHUB_TOKEN; if tag push is blocked, set repo secret RELEASE_BOT_TOKEN
+          # and: token: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version and tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          source ./scripts/cli_version.sh
+          if [[ -n "${{ inputs.version_override || '' }}" ]]; then
+            VERSION="${{ inputs.version_override }}"
+            # validate via same helper: write temp toml
+            tmp="$(mktemp)"
+            printf 'version = "%s"\n' "$VERSION" >"$tmp"
+            VERSION="$(cli_version_from_cargo_toml "$tmp")"
+            rm -f "$tmp"
+          else
+            VERSION="$(cli_version_from_cargo_toml crates/queria-cli/Cargo.toml)"
+          fi
+          TAG="$(cli_tag_for_version "$VERSION")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=$VERSION TAG=$TAG SHA=$GITHUB_SHA"
+
+      - name: Check remote tag
+        id: exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          # ls-remote prints "sha\trefs/tags/..." or empty
+          line="$(git ls-remote --tags origin "refs/tags/${TAG}" | head -n1 || true)"
+          if [[ -n "$line" ]]; then
+            remote_sha="$(printf '%s' "$line" | awk '{print $1}')"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "remote_sha=$remote_sha" >> "$GITHUB_OUTPUT"
+            echo "Remote tag ${TAG} already exists ($remote_sha)"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "remote_sha=" >> "$GITHUB_OUTPUT"
+            echo "Remote tag ${TAG} missing — will create"
+          fi
+
+      - name: Create and push tag
+        if: steps.exists.outputs.tag_exists != 'true'
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Tag exactly the checkout commit (push SHA on main)
+          git tag -a "$TAG" -m "queria-cli ${VERSION}" "${{ steps.meta.outputs.sha }}"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "DRY_RUN=true — not pushing $TAG"
+            git show "$TAG" --no-patch
+            exit 0
+          fi
+          set +e
+          git push origin "refs/tags/${TAG}"
+          rc=$?
+          set -e
+          if [[ $rc -ne 0 ]]; then
+            # Race: another run may have created it
+            line="$(git ls-remote --tags origin "refs/tags/${TAG}" | head -n1 || true)"
+            if [[ -n "$line" ]]; then
+              echo "Tag push raced; remote tag now exists — treating as success"
+              exit 0
+            fi
+            echo "Tag push failed (rc=$rc). Check contents:write / RELEASE_BOT_TOKEN." >&2
+            exit "$rc"
+          fi
+          echo "Pushed $TAG → ${{ steps.meta.outputs.sha }}"
+
+      - name: Skip (tag exists)
+        if: steps.exists.outputs.tag_exists == 'true'
+        run: echo "Tag ${{ steps.meta.outputs.tag }} already exists — no-op success"
