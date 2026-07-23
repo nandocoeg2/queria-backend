@@ -27,6 +27,8 @@ rtk infisical run --env=dev -- cargo run -p queria-cli -- database migrate
 
 For local-only development without Infisical, copy `.env.example` to `.env` and set provider keys manually.
 
+**Env-by-binary ownership:** which process owns which env groups is documented at the top of [`.env.example`](../../.env.example) (VAL-SHRINK-005). Shared load is still `AppConfig::from_env` in `queria-core`; the matrix is ownership/ops guidance, not a second config parser.
+
 After the stack is up (API/worker/Admin as needed), use **[onboarding Part A](./onboarding.md)** for the Admin UI path: create project → Register Git Source → Trigger Ingest → mint agent token (name + project_slugs). CLI steps below remain valid for digs and eval.
 
 ## First Project
