@@ -65,7 +65,9 @@ enum Command {
     /// Primary laptop UX (TTY): hub Doctor / Index / Status / Config / Quit.
     /// Flags (`index-here`, `doctor mcp`, server ops) remain for automation/maintainers.
     Tui,
-    /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
+    /// Automation surface: discover local git roots under cwd and upload for needs_review.
+    /// Keep `--yes` / `--dry-run` / token+edge env flags stable for e2e (VAL-CLI-003/004).
+    /// Hub TUI Index reuses the same `index_here` core (VAL-CLI-009).
     IndexHere {
         /// Env var name holding the raw agent token (never print the token).
         #[arg(long, default_value = "QUERIA_AGENT_TOKEN")]
@@ -418,6 +420,7 @@ mod tests {
         }
     }
 
+    /// VAL-CLI-003: index-here subcommand remains with stable automation defaults.
     #[test]
     fn parses_index_here_defaults() {
         let cli =
@@ -440,6 +443,7 @@ mod tests {
         }
     }
 
+    /// VAL-CLI-003/004: --yes and --dry-run remain parseable for non-interactive e2e.
     #[test]
     fn parses_index_here_flags() {
         let cli = Cli::try_parse_from([
@@ -471,5 +475,30 @@ mod tests {
             }
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    /// VAL-CLI-003: long help documents automation flags (mirrors `index-here --help`).
+    #[test]
+    fn index_here_help_documents_automation_flags() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let mut help = Vec::new();
+        let index = cmd
+            .find_subcommand_mut("index-here")
+            .expect("index-here subcommand must exist");
+        index.write_long_help(&mut help).expect("write help");
+        let help = String::from_utf8(help).expect("utf8 help");
+        assert!(
+            help.contains("--yes") && help.contains("--dry-run"),
+            "help must document --yes and --dry-run: {help}"
+        );
+        assert!(
+            help.contains("token-env") || help.contains("QUERIA_AGENT_TOKEN"),
+            "help must document token env: {help}"
+        );
+        assert!(
+            help.contains("edge-url-env") || help.contains("QUERIA_EDGE_URL"),
+            "help must document edge env: {help}"
+        );
     }
 }

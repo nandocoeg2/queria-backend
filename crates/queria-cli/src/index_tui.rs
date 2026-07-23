@@ -1,4 +1,8 @@
 //! Index-here wizard TUI: discover → checklist → preflight → dry-run → upload → job_ids.
+//!
+//! **VAL-CLI-009:** discover/plan/filter/upload all delegate to [`crate::index_here`]
+//! (especially [`upload_selected_plans`]). This module must not open its own
+//! `reqwest` client or POST `index-local` — hub Index reuses the automation core.
 
 use crate::config;
 use crate::credentials::{self, ResolveOpts};
@@ -618,5 +622,18 @@ mod tests {
         assert!(text.contains("404"));
         assert!(text.contains("continue"));
         assert!(!PreflightState::StatusNotFound.blocks_upload());
+    }
+
+    /// VAL-CLI-009: selection path goes through index_here::filter_plans_by_paths,
+    /// not a second plan/upload stack in this module.
+    #[test]
+    fn selected_plans_uses_index_here_filter_core() {
+        let plans = vec![sample_plan("/tmp/core-a", 1, 0), sample_plan("/tmp/core-b", 2, 0)];
+        let via_tui = selected_plans(&plans, &[true, false]);
+        let via_core = filter_plans_by_paths(&plans, &[PathBuf::from("/tmp/core-a")]);
+        assert_eq!(via_tui.len(), 1);
+        assert_eq!(via_core.len(), 1);
+        assert_eq!(via_tui[0].root.path, via_core[0].root.path);
+        assert_eq!(via_tui[0].accepted.len(), via_core[0].accepted.len());
     }
 }

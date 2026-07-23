@@ -122,3 +122,4 @@ After each band: update this progress log + HANDOFF residual gaps (one line).
 | 2026-07-23 | Wave 2 docs | Residual cut list shipped from ponytail-audit |
 | 2026-07-23 | Wave 2 P1 agent | Shared `retrieve_for_agent` + agent list/status helpers; thin HTTP/MCP wrappers |
 | 2026-07-23 | Wave 2 P1 CLI hub-primary | Onboarding/HANDOFF: `queria-cli tui` default laptop path; flags = automation; `doctor_mcp` → `edge_agent::mcp_tools_list`; top-level `config` = hub Config (`config_tui`) alias |
+| 2026-07-23 | Wave 2 P1 CLI index-here core | Preserved `index-here --yes/--dry-run` + token/edge env; hub Index → `index_here` only (`upload_selected_plans`); single reqwest upload stack; cargo test -p queria-cli green; e2e_index_here blocked (no token/edge) |

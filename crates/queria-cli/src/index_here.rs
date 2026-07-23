@@ -110,12 +110,14 @@ pub async fn run(
 
     print_discovery_summary(&plans);
 
+    // VAL-CLI-004: --dry-run never hits credentials or HTTP (automation-safe).
     if dry_run {
         println!("Dry-run only — nothing uploaded.");
         return Ok(());
     }
 
-    if plans.len() > 1 && !yes {
+    // VAL-CLI-004: multi-root non-TTY / automation must pass --yes.
+    if requires_yes_for_multi_root(plans.len(), yes) {
         bail!(
             "{} repos found. Confirm with: queria-cli index-here --yes",
             plans.len()
@@ -492,9 +494,19 @@ pub fn filter_plans_by_paths(
         .collect()
 }
 
-/// Public upload entry for the TUI wizard (thin wrapper over private batch uploader).
-/// Returns collected `job_ids` from all successful batch responses.
+/// VAL-CLI-004: multi-root upload (non-dry-run) requires `--yes` for automation.
+/// Single root never requires `--yes`. Dry-run is decided separately and returns earlier.
+pub fn requires_yes_for_multi_root(plan_count: usize, yes: bool) -> bool {
+    plan_count > 1 && !yes
+}
+
+/// Public upload entry for the TUI wizard and any future UI surfaces.
 ///
+/// **VAL-CLI-009 / single upload core:** this is the only public HTTP entry for
+/// `POST …/agent/index-local`. Hub Index (`index_tui`) must call this (or
+/// `index_here::run` for flags); do not add a second reqwest upload stack.
+///
+/// Returns collected `job_ids` from all successful batch responses.
 /// When `quiet` is true, suppress stderr progress (required under alt-screen TUI).
 pub async fn upload_selected_plans(
     endpoint: &str,
@@ -945,15 +957,37 @@ mod tests {
         assert_eq!(total, 501);
     }
 
+    /// VAL-CLI-004: multi-root automation requires --yes; single root does not.
     #[test]
-    fn multi_root_without_yes_message_format() {
-        // Document exit contract used by run(): multi root needs --yes.
+    fn multi_root_requires_yes_gate() {
+        assert!(!requires_yes_for_multi_root(0, false));
+        assert!(!requires_yes_for_multi_root(1, false));
+        assert!(!requires_yes_for_multi_root(1, true));
+        assert!(requires_yes_for_multi_root(2, false));
+        assert!(requires_yes_for_multi_root(3, false));
+        assert!(!requires_yes_for_multi_root(3, true));
         let msg = format!(
             "{} repos found. Confirm with: queria-cli index-here --yes",
             3
         );
         assert!(msg.contains("--yes"));
         assert!(msg.contains("3"));
+    }
+
+    /// VAL-CLI-004 dry-run path: empty upload batches never call HTTP when no files accepted.
+    #[test]
+    fn empty_plans_build_zero_upload_batches() {
+        let plan = RootFilePlan {
+            root: DiscoveredRoot {
+                path: PathBuf::from("/tmp/empty"),
+                origin_url: None,
+                commit_sha: None,
+                branch: Some("main".into()),
+            },
+            accepted: vec![],
+            skipped: 5,
+        };
+        assert!(build_batches(&[plan]).is_empty());
     }
 
     #[test]
