@@ -7,26 +7,25 @@
 //! Session-cookie routes in `retrieval.rs` are unchanged.
 
 use crate::app::ApiState;
+use crate::http::agent_auth::{authenticate_raw, require_raw_bearer};
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
 use queria_core::QueriaError;
-use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
-use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
+use queria_core::contracts::RetrieveContextResponse;
 use queria_core::ids::ProjectId;
+use queria_core::is_valid_project_slug;
 use queria_db::embedding::{EmbeddingStatusCounts, PgEmbeddingRepository};
 use queria_db::repositories::{AuthenticatedAgentToken, PgProjectRepository, ProjectRecord};
-use queria_search::retrieval::RetrievalPrincipal;
+use queria_search::retrieval::{
+    AgentRetrieveLimitPolicy, AgentRetrieveParams, build_agent_retrieve_request,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-
-/// Hook path clamps tighter than MCP max 20 to keep inject budgets small.
-const HOOK_LIMIT_MAX: u32 = 10;
-const HOOK_LIMIT_DEFAULT: u32 = 5;
 
 #[derive(Debug, Deserialize)]
 struct AgentRetrieveRequest {
@@ -64,21 +63,15 @@ async fn agent_list_projects(
     headers: HeaderMap,
 ) -> ApiResult<Value> {
     // Auth header first so missing bearer is 401 even without a configured pool.
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
-    // Listing projects does not require RetrieveContext; ListProjects permission if present,
-    // else allow any authenticated non-revoked token (hooks need bootstrap).
-    if !agent
-        .permissions
-        .can_call(&AgentToolPermission::ListProjects)
-        && !agent
-            .permissions
-            .can_call(&AgentToolPermission::RetrieveContext)
-    {
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
+    // Shared list gate: ListProjects or RetrieveContext (hooks bootstrap).
+    if !agent.permissions.can_list_agent_projects() {
         return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
     }
 
+    // Same DB path as MCP list_projects (VAL-AGENT-013).
     let projects = repository
         .list_projects_for_agent(&agent)
         .await
@@ -94,16 +87,10 @@ async fn agent_projects_status(
     headers: HeaderMap,
 ) -> ApiResult<Value> {
     // Auth header first so missing bearer is 401 even without a configured pool.
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
-    if !agent
-        .permissions
-        .can_call(&AgentToolPermission::ListProjects)
-        && !agent
-            .permissions
-            .can_call(&AgentToolPermission::RetrieveContext)
-    {
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
+    if !agent.permissions.can_list_agent_projects() {
         return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
     }
 
@@ -175,9 +162,9 @@ async fn agent_retrieve_context(
     headers: HeaderMap,
     Json(payload): Json<AgentRetrieveRequest>,
 ) -> ApiResult<RetrieveContextResponse> {
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
     if !agent
         .permissions
         .can_call(&AgentToolPermission::RetrieveContext)
@@ -186,18 +173,18 @@ async fn agent_retrieve_context(
     }
 
     let project_id = resolve_project_id(&repository, &agent, &payload).await?;
-    let limit = clamp_hook_limit(payload.limit.unwrap_or(HOOK_LIMIT_DEFAULT));
-    let request = RetrieveContextRequest {
+    // Thin wrapper: shared request builder + retrieve_for_agent (VAL-AGENT-001).
+    let request = build_agent_retrieve_request(AgentRetrieveParams {
         project_id,
         query: payload.query,
-        include_global: payload.include_global.unwrap_or(true),
-        include_scratch: payload.include_scratch.unwrap_or(true),
-        // IMP-L3: agent hook path default false (unlike include_scratch).
-        include_needs_review: payload.include_needs_review.unwrap_or(false),
-        limit,
+        include_global: payload.include_global,
+        include_scratch: payload.include_scratch,
+        include_needs_review: payload.include_needs_review,
+        limit: payload.limit,
+        limit_policy: AgentRetrieveLimitPolicy::HttpHook,
         rerank: payload.rerank,
         compress: payload.compress,
-    };
+    });
     request.validate().map_err(map_validate)?;
 
     let service = state.retrieval.as_ref().ok_or_else(|| {
@@ -208,12 +195,10 @@ async fn agent_retrieve_context(
     })?;
 
     service
-        .retrieve_context(
-            &RetrievalPrincipal::Agent {
-                organization_id: agent.organization_id,
-                project_slugs: agent.permissions.project_slugs.clone(),
-                allow_global_knowledge: agent.permissions.allow_global_knowledge,
-            },
+        .retrieve_for_agent(
+            agent.organization_id,
+            agent.permissions.project_slugs.clone(),
+            agent.permissions.allow_global_knowledge,
             request,
         )
         .await
@@ -247,7 +232,7 @@ async fn resolve_project_id(
             }
         }
         (None, Some(slug)) => {
-            if !valid_slug(&slug) {
+            if !is_valid_project_slug(&slug) {
                 return Err(error(StatusCode::BAD_REQUEST, "invalid_project_slug"));
             }
             if !agent.permissions.project_slugs.iter().any(|s| s == &slug) {
@@ -270,10 +255,6 @@ async fn resolve_project_id(
     }
 }
 
-fn clamp_hook_limit(limit: u32) -> u32 {
-    limit.clamp(1, HOOK_LIMIT_MAX)
-}
-
 fn project_repository(
     state: &ApiState,
 ) -> Result<PgProjectRepository, (StatusCode, Json<ErrorResponse>)> {
@@ -285,31 +266,8 @@ fn project_repository(
     })
 }
 
-fn require_raw_bearer(headers: &HeaderMap) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
-    bearer_token(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-async fn authenticate_raw(
-    repository: &PgProjectRepository,
-    raw: &str,
-) -> Result<AuthenticatedAgentToken, (StatusCode, Json<ErrorResponse>)> {
-    let token_hash = AgentTokenIssuer::hash_token(raw);
-    repository
-        .authenticate_agent_token(&token_hash)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "agent token authentication failed");
-            error(StatusCode::INTERNAL_SERVER_ERROR, "repository_failed")
-        })?
-        .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|token| token.starts_with("qria_"))
+fn map_auth((status, code): (StatusCode, &'static str)) -> (StatusCode, Json<ErrorResponse>) {
+    error(status, code)
 }
 
 fn project_json(project: ProjectRecord) -> Value {
@@ -363,23 +321,6 @@ fn error(status: StatusCode, message: &str) -> (StatusCode, Json<ErrorResponse>)
     )
 }
 
-fn valid_slug(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let Some(first) = bytes.first() else {
-        return false;
-    };
-    let Some(last) = bytes.last() else {
-        return false;
-    };
-
-    (3..=64).contains(&bytes.len())
-        && first.is_ascii_alphanumeric()
-        && last.is_ascii_alphanumeric()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
-}
-
 /// Resolve project id from agent request inputs (testable pure helper for slug path rules).
 #[cfg(test)]
 fn resolve_selector(
@@ -391,7 +332,7 @@ fn resolve_selector(
         project_slug.map(str::trim).filter(|s| !s.is_empty()),
     ) {
         (Some(_), _) => Ok(()),
-        (None, Some(slug)) if valid_slug(slug) => Ok(()),
+        (None, Some(slug)) if is_valid_project_slug(slug) => Ok(()),
         (None, Some(_)) => Err("invalid_project_slug"),
         (None, None) => Err("project_id_or_project_slug_required"),
     }
@@ -403,7 +344,9 @@ mod tests {
     use crate::app::build_app;
     use axum::body::Body;
     use http::Request;
-    use queria_core::AppConfig;
+    use queria_core::{
+        AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT, AppConfig, clamp_agent_http_retrieve_limit,
+    };
     use tower::ServiceExt;
     use uuid::Uuid;
 
@@ -416,11 +359,12 @@ mod tests {
 
     #[test]
     fn clamp_hook_limit_bounds() {
-        assert_eq!(clamp_hook_limit(0), 1);
-        assert_eq!(clamp_hook_limit(5), 5);
-        assert_eq!(clamp_hook_limit(10), 10);
-        assert_eq!(clamp_hook_limit(20), 10);
-        assert_eq!(clamp_hook_limit(100), 10);
+        // VAL-AGENT-004: shared core clamp used by HTTP retrieve wrapper.
+        assert_eq!(clamp_agent_http_retrieve_limit(0), 1);
+        assert_eq!(clamp_agent_http_retrieve_limit(5), 5);
+        assert_eq!(clamp_agent_http_retrieve_limit(10), 10);
+        assert_eq!(clamp_agent_http_retrieve_limit(20), 10);
+        assert_eq!(clamp_agent_http_retrieve_limit(100), 10);
     }
 
     #[test]
@@ -432,12 +376,24 @@ mod tests {
             }"#,
         )
         .expect("deserialize");
-        assert!(payload.include_scratch.unwrap_or(true));
-        assert!(!payload.include_needs_review.unwrap_or(false));
-        assert!(payload.include_global.unwrap_or(true));
-        assert_eq!(payload.limit.unwrap_or(HOOK_LIMIT_DEFAULT), 5);
-        assert!(payload.rerank.is_none());
-        assert!(payload.compress.is_none());
+        // VAL-AGENT-005: HTTP option defaults match shared agent mapping.
+        let request = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id: ProjectId::from_uuid(Uuid::nil()),
+            query: payload.query.clone(),
+            include_global: payload.include_global,
+            include_scratch: payload.include_scratch,
+            include_needs_review: payload.include_needs_review,
+            limit: payload.limit,
+            limit_policy: AgentRetrieveLimitPolicy::HttpHook,
+            rerank: payload.rerank,
+            compress: payload.compress,
+        });
+        assert!(request.include_scratch);
+        assert!(!request.include_needs_review);
+        assert!(request.include_global);
+        assert_eq!(request.limit, AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT);
+        assert!(request.rerank.is_none());
+        assert!(request.compress.is_none());
     }
 
     #[test]
@@ -473,6 +429,7 @@ mod tests {
         assert!(body.contains("agent_token_required"), "body={body}");
     }
 
+    /// VAL-AGENT-006: GET /agent/projects without bearer → 401 + agent_token_required.
     #[tokio::test]
     async fn agent_projects_requires_bearer() {
         let app = build_app(AppConfig::default_local());
@@ -487,8 +444,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_string(response).await;
+        assert!(body.contains("agent_token_required"), "body={body}");
     }
 
+    /// VAL-AGENT-007: GET /agent/projects-status without bearer → 401.
     #[tokio::test]
     async fn agent_projects_status_requires_bearer() {
         let app = build_app(AppConfig::default_local());
@@ -502,6 +462,47 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_string(response).await;
+        assert!(body.contains("agent_token_required"), "body={body}");
+    }
+
+    /// VAL-AGENT-006/007: non-qria bearer stays 401 (closed), not 500.
+    #[tokio::test]
+    async fn agent_projects_rejects_non_qria_bearer() {
+        for uri in ["/api/v1/agent/projects", "/api/v1/agent/projects-status"] {
+            let app = build_app(AppConfig::default_local());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(uri)
+                        .header("authorization", "Bearer not_a_queria_token")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "uri={uri}");
+        }
+    }
+
+    /// VAL-AGENT-012: index-local route still registered (not 404/405).
+    #[tokio::test]
+    async fn index_local_route_still_mounted() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/agent/index-local")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"roots":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Missing bearer → 401, not 404/405 (route exists).
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 

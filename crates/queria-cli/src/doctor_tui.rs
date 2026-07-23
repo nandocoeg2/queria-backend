@@ -33,11 +33,12 @@ pub async fn collect_doctor_snapshot(
     };
     // Best-effort status fetch for IndexLocal permission (not MCP tools/list).
     let permissions: Option<Vec<String>> = match creds.agent_token.as_deref() {
-        Some(t) if !t.is_empty() => match edge_agent::fetch_projects_status(&creds.edge_url, t).await
-        {
-            Ok((_status, body)) => Some(body.permissions),
-            Err(_) => None,
-        },
+        Some(t) if !t.is_empty() => {
+            match edge_agent::fetch_projects_status(&creds.edge_url, t).await {
+                Ok((_status, body)) => Some(body.permissions),
+                Err(_) => None,
+            }
+        }
         _ => None,
     };
     Ok(checks::assemble_doctor_snapshot(
@@ -54,10 +55,7 @@ pub async fn collect_doctor_snapshot(
 
 /// Run doctor screen inside an existing alternate-screen terminal session.
 /// Keys: `r` re-run checks, `Esc`/`q` return.
-pub fn run<B: Backend>(
-    terminal: &mut Terminal<B>,
-    profile: Option<&str>,
-) -> Result<()> {
+pub fn run<B: Backend>(terminal: &mut Terminal<B>, profile: Option<&str>) -> Result<()> {
     let mut snapshot = block_on_compat(collect_doctor_snapshot(profile))?;
     let mut status = String::from("r re-run · Esc/q back");
 
@@ -72,15 +70,9 @@ pub fn run<B: Backend>(
                 ])
                 .split(f.area());
 
-            let profile_label = snapshot
-                .profile
-                .as_deref()
-                .unwrap_or("(none)");
+            let profile_label = snapshot.profile.as_deref().unwrap_or("(none)");
             let title = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " doctor ",
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" doctor ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(format!(
                     " v{} · profile={profile_label} · edge={} · mcp={}",
                     snapshot.version, snapshot.edge_url, snapshot.mcp_url
@@ -108,8 +100,8 @@ pub fn run<B: Backend>(
                     ListItem::new(lines)
                 })
                 .collect();
-            let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title("Checks"));
+            let list =
+                List::new(items).block(Block::default().borders(Borders::ALL).title("Checks"));
             f.render_widget(list, chunks[1]);
 
             let help = Paragraph::new(status.as_str())
@@ -129,17 +121,15 @@ pub fn run<B: Backend>(
         }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => break,
-            KeyCode::Char('r') => {
-                match block_on_compat(collect_doctor_snapshot(profile)) {
-                    Ok(s) => {
-                        snapshot = s;
-                        status = "re-ran checks".into();
-                    }
-                    Err(e) => {
-                        status = format!("re-run failed: {e:#}");
-                    }
+            KeyCode::Char('r') => match block_on_compat(collect_doctor_snapshot(profile)) {
+                Ok(s) => {
+                    snapshot = s;
+                    status = "re-ran checks".into();
                 }
-            }
+                Err(e) => {
+                    status = format!("re-run failed: {e:#}");
+                }
+            },
             _ => {}
         }
     }

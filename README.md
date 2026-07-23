@@ -1,26 +1,31 @@
 # queria-backend
 
-> Status: CURRENT - core product live; residual ops acceptance.
-> Last verified: 2026-07-20.
+> Status: CURRENT - core product live; Wave 2 P1–P2 code cuts landed.
+> Last verified: 2026-07-23.
 > Start with [`docs/HANDOFF.md`](docs/HANDOFF.md). Product: [`docs/PRODUCT.md`](docs/PRODUCT.md). Cuts: [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md). Backlog: [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md).
 
 Queria backend workspace for centralized team and agent knowledge.
 
 ## Status
 
-Implementation matrix, production host, and residual gaps: **[`docs/HANDOFF.md`](docs/HANDOFF.md)** only.
+Implementation matrix, production host, and residual gaps: **[`docs/HANDOFF.md`](docs/HANDOFF.md)** only.  
+Wave 2 cut list and progress: **[`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md)** only.
 
-Short pointers:
+Short pointers (do not treat this README as runtime truth):
 
-- Dual-lane (scratch / trusted): [`docs/PRODUCT.md`](docs/PRODUCT.md)
-- Multi-org rules: PRODUCT § Multi-organization tenancy; ops steps: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) Part D
-- Rerank / compress / Playground: [`docs/runbooks/hybrid-retrieval.md`](docs/runbooks/hybrid-retrieval.md) (prod image may lag; see HANDOFF)
+- **Agent path:** MCP tools are the product surface; agent HTTP is thin hooks (`retrieve-context`, `index-local`, setup snippets) over shared helpers (e.g. `retrieve_for_agent`). No second business-logic copy.
+- **Laptop UX:** default path is `queria-cli tui` (Doctor / Index / Status / Config / Quit). Flags (`index-here --yes/--dry-run`, server ops) are for automation/maintainers.
+- **Dual-lane** (scratch / trusted): [`docs/PRODUCT.md`](docs/PRODUCT.md)
+- **Multi-org** rules: PRODUCT § Multi-organization tenancy; ops: [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) Part D
+- **Rerank / compress / Playground:** [`docs/runbooks/hybrid-retrieval.md`](docs/runbooks/hybrid-retrieval.md) (prod image may lag; see HANDOFF)
+- **enowx-rag:** sibling tree; out of scope for this repo / Wave 2
 
 ## Docs
 
 | Doc | Role |
 |---|---|
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Canonical current state |
+| [`docs/SIMPLIFICATION.md`](docs/SIMPLIFICATION.md) | Wave 1 done; Wave 2 residual + progress |
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | Product contract |
 | [`docs/runbooks/onboarding.md`](docs/runbooks/onboarding.md) | Default 3-step Daily onboard; optional Git / index-here |
 | [`docs/runbooks/agent-onboard-prompt.md`](docs/runbooks/agent-onboard-prompt.md) | One-paste client setup after Daily mint (dialogs) |
@@ -31,7 +36,7 @@ Short pointers:
 
 - **Primary:** push `main` → GHCR arm64 (`backend`, `admin`) → SSH compose pull/up.
 - **Public:** Caddy host `:17674`; Nginx + Certbot `https://queria.fjulian.id` → `127.0.0.1:17674`.
-- Detail: [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md). Residual: HANDOFF.
+- Detail: [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md). Residual + live host identity: **HANDOFF only** (do not assume latest `main` is on prod).
 
 ## Local services
 
@@ -108,9 +113,23 @@ Connect works with empty retrieve; useful answers need ready chunks. Do **not** 
 - Require direnv for plain Daily retrieve
 - Rely on “first project on the token” when multiple slugs are granted and hooks are enabled
 
-## queria-cli (index-here)
+## queria-cli (laptop)
 
-Laptop bulk index without building from source.
+**Primary laptop path** (no `SETUP_TOKEN`): hub TUI.
+
+```bash
+queria-cli tui    # Doctor / Index / Status / Config / Quit
+```
+
+| Path | Role |
+|---|---|
+| `queria-cli tui` | Default interactive laptop UX |
+| `queria-cli index-here` | Automation: `--yes` / `--dry-run`, token + edge env |
+| `queria-cli config` | Alias of hub Config |
+| Server ops (`database`, `embeddings`, `retrieval`, `eval`, `backup`) | Maintainers / CI |
+| `backup restore-drill` | **Ops-only** — clap-hidden from default help; runbook primary ([`docs/runbooks/backup-restore.md`](docs/runbooks/backup-restore.md)) |
+
+Install (binary not required for Daily MCP onboard):
 
 | Path | When |
 |---|---|
@@ -125,7 +144,9 @@ Laptop bulk index without building from source.
 
 ```bash
 # after install + Custom token with index_local:
-queria-cli config                    # TUI: token + edge (or export QUERIA_*)
+queria-cli tui                       # primary: configure + Index wizard
+# or automation:
+queria-cli config                    # token + edge (or export QUERIA_*)
 cd /path/to/git/project
 queria-cli index-here --dry-run
 queria-cli index-here                # --yes if multiple nested git roots

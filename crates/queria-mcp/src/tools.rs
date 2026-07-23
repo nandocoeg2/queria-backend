@@ -492,4 +492,55 @@ mod tests {
             "default mint must not include ManageNeedsReview"
         );
     }
+
+    /// VAL-AGENT-008: tools/list still exposes retrieve_context, list_projects, index_memory
+    /// (index_memory only when permission granted).
+    #[test]
+    fn default_tools_list_exposes_core_agent_names() {
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: default_agent_tools(),
+        };
+        let names = tool_names(&permissions);
+        assert!(
+            names.iter().any(|n| n == "retrieve_context"),
+            "missing retrieve_context: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "list_projects"),
+            "missing list_projects: {names:?}"
+        );
+        // index_memory not on default mint — still name-stable via permission_for_tool.
+        assert_eq!(
+            permission_for_tool("index_memory"),
+            Some(AgentToolPermission::IndexMemory)
+        );
+        assert_eq!(
+            permission_for_tool("list_projects"),
+            Some(AgentToolPermission::ListProjects)
+        );
+        assert_eq!(
+            permission_for_tool("retrieve_context"),
+            Some(AgentToolPermission::RetrieveContext)
+        );
+    }
+
+    /// VAL-AGENT-008/010: daily tools (with IndexMemory) list all three stable names.
+    #[test]
+    fn daily_tools_list_includes_index_memory_and_peers() {
+        use queria_core::auth::agent_token::daily_agent_tools;
+        let permissions = AgentTokenPermissions {
+            allow_global_knowledge: true,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: daily_agent_tools(),
+        };
+        let names = tool_names(&permissions);
+        for required in ["retrieve_context", "list_projects", "index_memory"] {
+            assert!(
+                names.iter().any(|n| n == required),
+                "missing {required} in daily tools: {names:?}"
+            );
+        }
+    }
 }

@@ -95,10 +95,7 @@ impl StatusView {
 
 /// Run status screen inside an existing alternate-screen terminal session.
 /// Keys: `r` refresh, `Esc`/`q` return.
-pub fn run<B: Backend>(
-    terminal: &mut Terminal<B>,
-    profile: Option<&str>,
-) -> Result<()> {
+pub fn run<B: Backend>(terminal: &mut Terminal<B>, profile: Option<&str>) -> Result<()> {
     // Soft-degrade: credential errors become StatusView::Error, never eject hub.
     let mut view = block_on_compat(load_status(profile));
     let mut status = String::from("r refresh · Esc/q back");
@@ -116,10 +113,7 @@ pub fn run<B: Backend>(
 
             let profile_label = view.profile().unwrap_or("(none)");
             let title = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " status ",
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" status ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(format!(
                     " profile={profile_label} · edge={}",
                     view.edge_url()

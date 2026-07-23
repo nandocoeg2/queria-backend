@@ -349,12 +349,12 @@ pub fn run_tui(profile_override: Option<&str>) -> Result<()> {
                                 .iter()
                                 .map(|s| (*s).to_owned())
                                 .collect();
-                        cfg.index_allowed_extensions = if parsed.is_empty() || parsed == default_list
-                        {
-                            None
-                        } else {
-                            Some(parsed)
-                        };
+                        cfg.index_allowed_extensions =
+                            if parsed.is_empty() || parsed == default_list {
+                                None
+                            } else {
+                                Some(parsed)
+                            };
                         if cfg.active_profile.is_none() {
                             cfg.active_profile = Some(edit_name.clone());
                         }

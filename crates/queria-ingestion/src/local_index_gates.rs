@@ -294,7 +294,11 @@ mod tests {
             &[".MD"]
         ));
         // empty → default list includes rs after product default
-        assert!(should_index_local_file_with_extensions("src/a.rs", 100, &[]));
+        assert!(should_index_local_file_with_extensions(
+            "src/a.rs",
+            100,
+            &[]
+        ));
     }
 
     #[test]

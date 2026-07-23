@@ -1,13 +1,15 @@
 # Onboarding Runbook (Admin → Agent)
 
 > Status: CURRENT  
-> Last verified: 2026-07-21  
+> Last verified: 2026-07-23  
 > Runtime truth: [`../HANDOFF.md`](../HANDOFF.md)  
 > Local infra detail: [`local-development.md`](./local-development.md)  
 > Retrieval ops: [`hybrid-retrieval.md`](./hybrid-retrieval.md)
 
 Default path: mint a **Daily** agent token, connect the client once, then retrieve.
-Knowledge ingest (Admin Git or laptop `index-here`) is optional and separate.
+Knowledge ingest (Admin Git or laptop hub) is optional and separate.
+
+**Dual surface (Wave 2):** laptop human UX default is **`queria-cli tui`** (hub: Doctor / Index / Status / Config / Quit). Flags (`index-here`, `doctor mcp`, server ops) stay for automation and maintainers — not the default laptop pitch. **Restore drill is not required for install or Daily onboard** — ops only via [`backup-restore.md`](./backup-restore.md) (`backup restore-drill`, hidden from default help).
 
 ```text
 Default (Daily agent)
@@ -75,7 +77,7 @@ Knowledge is **not** part of the Daily 3-step connect path. Choose one (or both 
 
 Users should **not** need a Rust toolchain for `index-here`.
 
-**Daily agent onboard does not need this section.** Mint token → env + MCP → retrieve works with zero CLI install. Use install only for optional laptop **`index-here`** (or maintainer tooling).
+**Daily agent onboard does not need this section.** Mint token → env + MCP → retrieve works with zero CLI install. Use install only for optional laptop hub (**`queria-cli tui`**, default laptop path) or automation flags / maintainer tooling.
 
 **Default today — GitHub Release binaries (curl):**
 
@@ -121,27 +123,31 @@ Full process: [`queria-cli-homebrew.md`](./queria-cli-homebrew.md).
 
 Dev alternative: `cargo build -p queria-cli --release` in this repo.
 
-**CLI hub TUI (laptop path — no `SETUP_TOKEN`):**
+**CLI hub TUI — primary laptop path (no `SETUP_TOKEN`):**
+
+Default human laptop UX. One menu surface; no `SETUP_TOKEN` on this path.
 
 ```bash
-queria-cli tui          # Doctor / Index / Status / Config
-queria-cli doctor mcp   # still valid non-TUI
+queria-cli tui          # DEFAULT laptop: Doctor / Index / Status / Config / Quit
 # embeddings status remains server/DB only for maintainers
 ```
 
 | Menu | Purpose |
 |---|---|
-| **Doctor** | Friction checks (token, edge, MCP) from the laptop |
+| **Doctor** | Friction checks (token, edge, MCP tools/list) from the laptop |
 | **Index** | Guided `index-here` wizard (Custom token with `index_local`) |
 | **Status** | Project embed / needs-review summary via agent `projects-status` |
-| **Config** | Interactive profiles, token, edge, MCP install |
+| **Config** | Interactive profiles, token, edge, MCP install (same module as `queria-cli config`) |
+| **Quit** | Exit hub |
 
-Standalone still valid:
+**Automation / maintainer flags** (not the default laptop pitch; still supported):
 
 ```bash
-queria-cli config       # same Config as hub (profiles, token, edge, MCP)
-queria-cli index-here   # uses ~/.config/queria/config.toml (env still overrides)
-queria-cli doctor mcp --url "$QUERIA_MCP_URL"
+queria-cli config                    # alias → same config_tui as hub Config
+queria-cli index-here --yes --dry-run  # non-interactive e2e / CI (env overrides TOML)
+queria-cli doctor mcp --url "$QUERIA_MCP_URL"  # thin non-TUI MCP tools/list (shared client)
+# server ops: database / embeddings / retrieval / eval / backup
+# restore-drill: ops/runbook only (not install) — see backup-restore.md
 ```
 
 No `config set|list|…` subcommands. CI/scripts: `export QUERIA_*` or edit TOML. Design: [`../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md).
@@ -153,14 +159,14 @@ For a laptop clone without Admin Git registration:
 1. Install `queria-cli` from GitHub Releases (above).
 2. Create project (Admin → Projects) if missing.
 3. Mint **Custom** token with `index_local` checked (warning: uploads land in **Needs review only**).
-4. Configure once, then index from the hub TUI (or non-TUI equivalent):
+4. Configure once, then index from the **hub TUI** (default laptop path):
 
    ```bash
    export QUERIA_AGENT_TOKEN='…'   # Custom token with index_local
    export QUERIA_EDGE_URL='https://queria.fjulian.id'   # or local edge
    queria-cli tui                  # Config (save profile) → Index wizard
-   # non-TUI equivalent:
-   # queria-cli index-here --token-env QUERIA_AGENT_TOKEN
+   # automation (CI / e2e), not default laptop pitch:
+   # queria-cli index-here --token-env QUERIA_AGENT_TOKEN --yes
    ```
 
 5. Admin → Needs review → **Promote** (trusted path).

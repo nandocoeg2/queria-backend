@@ -121,18 +121,14 @@ pub async fn fetch_projects_status(
         .await
         .context("failed to read projects-status body")?;
     if status != 200 {
-        bail!(
-            "projects-status HTTP {status}: {}",
-            truncate_body(body)
-        );
+        bail!("projects-status HTTP {status}: {}", truncate_body(body));
     }
-    let parsed: ProjectsStatusResponse =
-        serde_json::from_str(&body).with_context(|| {
-            format!(
-                "failed to parse projects-status body: {}",
-                truncate_body(body.clone())
-            )
-        })?;
+    let parsed: ProjectsStatusResponse = serde_json::from_str(&body).with_context(|| {
+        format!(
+            "failed to parse projects-status body: {}",
+            truncate_body(body.clone())
+        )
+    })?;
     Ok((status, parsed))
 }
 

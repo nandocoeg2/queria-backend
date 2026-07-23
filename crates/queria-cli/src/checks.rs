@@ -176,8 +176,7 @@ pub fn assemble_doctor_snapshot(
                 url_host(edge_url),
                 url_host(mcp_url)
             ),
-            hint: "Use prod URL (e.g. https://queria.fjulian.id) if you expect public edge"
-                .into(),
+            hint: "Use prod URL (e.g. https://queria.fjulian.id) if you expect public edge".into(),
         });
     } else {
         items.push(CheckItem {
@@ -214,7 +213,11 @@ pub fn assemble_doctor_snapshot(
             items.push(CheckItem {
                 id: "health",
                 level: CheckLevel::Fail,
-                detail: format!("edge {} unreachable: {}", url_host(edge_url), short_body(&err)),
+                detail: format!(
+                    "edge {} unreachable: {}",
+                    url_host(edge_url),
+                    short_body(&err)
+                ),
                 hint: "Check edge is up and edge_url is correct".into(),
             });
         }
@@ -259,7 +262,9 @@ pub fn assemble_doctor_snapshot(
     }
 
     // 6. Permissions (MCP tool names pre-P2) + IndexLocal warn
-    let has_agent_tools = mcp_tools.iter().any(|n| n == "list_projects" || n == "retrieve_context");
+    let has_agent_tools = mcp_tools
+        .iter()
+        .any(|n| n == "list_projects" || n == "retrieve_context");
     if has_agent_tools {
         items.push(CheckItem {
             id: "permissions",
@@ -340,13 +345,17 @@ mod tests {
             "https://queria.fjulian.id/mcp",
             None,
             Ok((200, "ok".into())),
-            Ok((200, r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into())),
+            Ok((
+                200,
+                r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into(),
+            )),
             None,
         );
-        assert!(snap
-            .items
-            .iter()
-            .any(|i| i.id == "token" && matches!(i.level, CheckLevel::Fail)));
+        assert!(
+            snap.items
+                .iter()
+                .any(|i| i.id == "token" && matches!(i.level, CheckLevel::Fail))
+        );
     }
 
     #[test]
@@ -358,13 +367,17 @@ mod tests {
             "http://127.0.0.1:17674/mcp",
             Some("qria_testtoken"),
             Ok((200, "ok".into())),
-            Ok((200, r#"{"result":{"tools":[{"name":"retrieve_context"}]}}"#.into())),
+            Ok((
+                200,
+                r#"{"result":{"tools":[{"name":"retrieve_context"}]}}"#.into(),
+            )),
             None,
         );
-        assert!(snap
-            .items
-            .iter()
-            .any(|i| i.id == "urls" && matches!(i.level, CheckLevel::Warn)));
+        assert!(
+            snap.items
+                .iter()
+                .any(|i| i.id == "urls" && matches!(i.level, CheckLevel::Warn))
+        );
     }
 
     #[test]
@@ -381,11 +394,16 @@ mod tests {
             "https://queria.fjulian.id/mcp",
             Some("qria_testtoken"),
             Ok((200, "ok".into())),
-            Ok((200, r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into())),
+            Ok((
+                200,
+                r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into(),
+            )),
             Some(perms.as_slice()),
         );
         assert!(snap.items.iter().any(|i| {
-            i.id == "index_local" && matches!(i.level, CheckLevel::Pass) && i.detail.contains("index_local")
+            i.id == "index_local"
+                && matches!(i.level, CheckLevel::Pass)
+                && i.detail.contains("index_local")
         }));
     }
 
@@ -399,12 +417,16 @@ mod tests {
             "https://queria.fjulian.id/mcp",
             Some("qria_testtoken"),
             Ok((200, "ok".into())),
-            Ok((200, r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into())),
+            Ok((
+                200,
+                r#"{"result":{"tools":[{"name":"list_projects"}]}}"#.into(),
+            )),
             Some(perms.as_slice()),
         );
-        assert!(snap
-            .items
-            .iter()
-            .any(|i| i.id == "index_local" && matches!(i.level, CheckLevel::Warn)));
+        assert!(
+            snap.items
+                .iter()
+                .any(|i| i.id == "index_local" && matches!(i.level, CheckLevel::Warn))
+        );
     }
 }

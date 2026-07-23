@@ -28,6 +28,16 @@ impl AgentTokenPermissions {
     pub fn can_call(&self, tool: &AgentToolPermission) -> bool {
         self.tools.contains(tool)
     }
+
+    /// HTTP `GET /agent/projects` and `projects-status` bootstrap gate.
+    ///
+    /// Allows tokens with either `ListProjects` or `RetrieveContext` so hooks can
+    /// list before retrieve without requiring a dedicated list permission alone.
+    #[must_use]
+    pub fn can_list_agent_projects(&self) -> bool {
+        self.can_call(&AgentToolPermission::ListProjects)
+            || self.can_call(&AgentToolPermission::RetrieveContext)
+    }
 }
 
 #[cfg(test)]
@@ -69,6 +79,31 @@ mod tests {
         };
         assert!(with.can_call(&AgentToolPermission::IndexMemory));
         assert!(with.can_call(&AgentToolPermission::ProposeMemory));
+    }
+
+    /// VAL-AGENT-006/007 list gate: ListProjects or RetrieveContext may bootstrap.
+    #[test]
+    fn can_list_agent_projects_accepts_list_or_retrieve() {
+        let list_only = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::ListProjects],
+        };
+        assert!(list_only.can_list_agent_projects());
+
+        let retrieve_only = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::RetrieveContext],
+        };
+        assert!(retrieve_only.can_list_agent_projects());
+
+        let neither = AgentTokenPermissions {
+            allow_global_knowledge: false,
+            project_slugs: vec!["fjulian-me".to_owned()],
+            tools: vec![AgentToolPermission::IndexMemory],
+        };
+        assert!(!neither.can_list_agent_projects());
     }
 
     #[test]

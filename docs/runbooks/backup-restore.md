@@ -182,20 +182,25 @@ rtk cargo run -p queria-cli -- eval run --project {project_slug}
 # Verify scores match pre-restore baseline
 ```
 
-## Restore Drill
+## Restore Drill (ops only)
+
+**Not part of default install or laptop onboarding.** Product pitch is hub TUI + Daily agent; restore-drill is a maintainer ops path. The CLI subcommand remains invocable but is **hidden from default `backup --help`** (Wave 2); use this runbook when you need the drill.
 
 Run a read-only integrity drill:
 
 ```bash
-rtk cargo run -p queria-cli -- backup restore-drill --org {org_slug}
+# Hidden from product help; still parses for ops:
+queria-cli backup restore-drill --org {org_slug}
+# or from a workspace checkout:
+# cargo run -p queria-cli -- backup restore-drill --org {org_slug}
 ```
 
 Run an actual restore into empty PostgreSQL and Qdrant targets:
 
 ```bash
-rtk cargo run -p queria-cli -- backup restore-drill \
+queria-cli backup restore-drill \
   --org {org_slug} \
-  --target-database-url postgres://queria:queria@127.0.0.1:17675/queria_restore \
+  --target-database-url ****************************************/queria_restore \
   --target-qdrant-url http://127.0.0.1:17676 \
   --target-qdrant-collection {restore_collection}
 ```

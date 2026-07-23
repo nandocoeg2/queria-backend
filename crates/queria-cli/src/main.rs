@@ -13,9 +13,9 @@ mod evaluation;
 mod index_here;
 mod index_tui;
 mod mcp_install;
-mod status_tui;
 mod restore_drill;
 mod retrieval;
+mod status_tui;
 mod tui_hub;
 
 use clap::{Parser, Subcommand};
@@ -55,15 +55,21 @@ enum Command {
         #[command(subcommand)]
         command: EvalCommand,
     },
+    /// Server ops: backup / restore. Product default does not require restore-drill;
+    /// ops drill remains at `backup restore-drill` (see runbooks/backup-restore.md).
     Backup {
         #[command(subcommand)]
         command: BackupCommand,
     },
-    /// Interactive TUI: profiles / token / edge / MCP install (~/.config/queria/config.toml).
+    /// Config TUI alias: same `config_tui` module as hub menu Config
+    /// (profiles / token / edge / MCP install under ~/.config/queria/config.toml).
     Config,
-    /// Interactive hub TUI: doctor / index / status / config (TTY required).
+    /// Primary laptop UX (TTY): hub Doctor / Index / Status / Config / Quit.
+    /// Flags (`index-here`, `doctor mcp`, server ops) remain for automation/maintainers.
     Tui,
-    /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
+    /// Automation surface: discover local git roots under cwd and upload for needs_review.
+    /// Keep `--yes` / `--dry-run` / token+edge env flags stable for e2e (VAL-CLI-003/004).
+    /// Hub TUI Index reuses the same `index_here` core (VAL-CLI-009).
     IndexHere {
         /// Env var name holding the raw agent token (never print the token).
         #[arg(long, default_value = "QUERIA_AGENT_TOKEN")]
@@ -140,6 +146,9 @@ enum EvalCommand {
 
 #[derive(Debug, Subcommand)]
 enum BackupCommand {
+    /// Ops-only restore drill (hidden from default help; not required for install/onboarding).
+    /// Still invocable: `queria-cli backup restore-drill --org …` — see runbooks/backup-restore.md.
+    #[command(hide = true)]
     RestoreDrill {
         #[arg(long)]
         org: String,
@@ -382,6 +391,41 @@ mod tests {
         assert!(matches!(cli.command, Command::Tui));
     }
 
+    /// VAL-CLI-010: top-level `config` parses; both hub Config and this command call `config_tui`.
+    #[test]
+    fn parses_config_command_as_config_tui_entry() {
+        let cli = Cli::try_parse_from(["queria-cli", "config"]).expect("config should parse");
+        assert!(matches!(cli.command, Command::Config));
+    }
+
+    /// VAL-CLI-005: doctor mcp parses; implementation is thin wrap over edge_agent tools/list.
+    #[test]
+    fn parses_doctor_mcp_command() {
+        let cli =
+            Cli::try_parse_from(["queria-cli", "doctor", "mcp"]).expect("doctor mcp should parse");
+        assert!(matches!(
+            cli.command,
+            Command::Doctor {
+                command: DoctorCommand::Mcp { url: None }
+            }
+        ));
+        let with_url = Cli::try_parse_from([
+            "queria-cli",
+            "doctor",
+            "mcp",
+            "--url",
+            "http://127.0.0.1:17674/mcp",
+        ])
+        .expect("doctor mcp --url should parse");
+        match with_url.command {
+            Command::Doctor {
+                command: DoctorCommand::Mcp { url: Some(u) },
+            } => assert_eq!(u, "http://127.0.0.1:17674/mcp"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    /// VAL-CLI-003: index-here subcommand remains with stable automation defaults.
     #[test]
     fn parses_index_here_defaults() {
         let cli =
@@ -404,6 +448,7 @@ mod tests {
         }
     }
 
+    /// VAL-CLI-003/004: --yes and --dry-run remain parseable for non-interactive e2e.
     #[test]
     fn parses_index_here_flags() {
         let cli = Cli::try_parse_from([
@@ -435,5 +480,106 @@ mod tests {
             }
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    /// VAL-CLI-003: long help documents automation flags (mirrors `index-here --help`).
+    #[test]
+    fn index_here_help_documents_automation_flags() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let mut help = Vec::new();
+        let index = cmd
+            .find_subcommand_mut("index-here")
+            .expect("index-here subcommand must exist");
+        index.write_long_help(&mut help).expect("write help");
+        let help = String::from_utf8(help).expect("utf8 help");
+        assert!(
+            help.contains("--yes") && help.contains("--dry-run"),
+            "help must document --yes and --dry-run: {help}"
+        );
+        assert!(
+            help.contains("token-env") || help.contains("QUERIA_AGENT_TOKEN"),
+            "help must document token env: {help}"
+        );
+        assert!(
+            help.contains("edge-url-env") || help.contains("QUERIA_EDGE_URL"),
+            "help must document edge env: {help}"
+        );
+    }
+
+    /// VAL-CLI-006: server ops subcommands still parse `--help` (clap structure).
+    #[test]
+    fn server_ops_subcommands_parse_help() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        for name in ["database", "embeddings", "retrieval", "eval", "backup"] {
+            let sub = cmd
+                .find_subcommand_mut(name)
+                .unwrap_or_else(|| panic!("{name} subcommand must exist"));
+            let mut help = Vec::new();
+            sub.write_long_help(&mut help)
+                .unwrap_or_else(|e| panic!("{name} --help must write: {e}"));
+            assert!(!help.is_empty(), "{name} help must be non-empty");
+        }
+        // Nested leaves used by maintainers must still exist for parse.
+        let nested = [
+            ("database", "migrate"),
+            ("embeddings", "status"),
+            ("retrieval", "probe"),
+            ("eval", "run"),
+        ];
+        for (parent, leaf) in nested {
+            let p = Cli::command()
+                .find_subcommand(parent)
+                .unwrap_or_else(|| panic!("{parent} missing"))
+                .clone();
+            assert!(
+                p.find_subcommand(leaf).is_some(),
+                "{parent} {leaf} must parse"
+            );
+        }
+    }
+
+    /// VAL-CLI-008: restore-drill is hidden from default product help but still parses for ops.
+    #[test]
+    fn restore_drill_hidden_from_backup_help_but_still_parses() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let mut help = Vec::new();
+        let backup = cmd
+            .find_subcommand_mut("backup")
+            .expect("backup subcommand must exist");
+        backup.write_long_help(&mut help).expect("backup help");
+        let help = String::from_utf8(help).expect("utf8");
+        // Default help must not pitch restore-drill (clap hide).
+        assert!(
+            !help.lines().any(|l| {
+                let t = l.trim_start();
+                t.starts_with("restore-drill")
+            }),
+            "backup --help must not list restore-drill (hidden ops): {help}"
+        );
+        // Ops / runbook path must still parse (not removed).
+        let cli =
+            Cli::try_parse_from(["queria-cli", "backup", "restore-drill", "--org", "ops-org"])
+                .expect("restore-drill must remain invocable for ops");
+        assert!(matches!(
+            cli.command,
+            Command::Backup {
+                command: BackupCommand::RestoreDrill { org, .. }
+            } if org == "ops-org"
+        ));
+        // Nested command remains in clap tree (hidden, not deleted).
+        let backup_cmd = Cli::command()
+            .find_subcommand("backup")
+            .expect("backup")
+            .clone();
+        let drill = backup_cmd
+            .find_subcommand("restore-drill")
+            .expect("restore-drill must remain in tree for ops");
+        assert!(
+            drill.is_hide_set(),
+            "restore-drill should be clap-hidden from product help"
+        );
     }
 }
