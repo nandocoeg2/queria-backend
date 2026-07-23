@@ -9,7 +9,7 @@
     "test:trace": "QUERIA_CLI_BIN=\"$(cd ../../../ && pwd)/target/debug/queria-cli\" tui-test --trace"
   },
   "engines": {
-    "node": ">=18 <25"
+    "node": ">=18"
   },
   "devDependencies": {
     "@factory/tui-test": "github:Factory-AI/tui-test",

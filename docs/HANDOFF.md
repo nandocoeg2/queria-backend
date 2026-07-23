@@ -1,7 +1,7 @@
 # Queria Backend Handoff
 
-> Last verified: 2026-07-22 (hub TUI laptop path: `queria-cli tui` Doctor/Index/Status/Config; embeddings status remains server/maintainer)
-> Branch: `feat/queria-cli-hub-tui` (docs residual; merge target `main`)
+> Last verified: 2026-07-23 (primary laptop UX: `queria-cli tui` Doctor/Index/Status/Config/Quit; flags for automation/maintainers; embeddings status server/maintainer)
+> Branch: `feat/wave2-p1-p2-cuts` (Wave 2 P1–P2 code cuts; merge target `main`)
 > **Deploy path (intended):** GitHub Actions → GHCR (`backend` + `admin`, `linux/arm64`) → SSH compose pull/up. Runbook: [`runbooks/deployment.md`](./runbooks/deployment.md).
 > **Verified this session:** rsync + host `compose build` tagged as `ghcr.io/nandocoeg2/queria-backend/{backend,admin}:latest`; stack recreated; migrate `{"status":"migrated"}`.
 > **Public access live:** `http://168.110.214.130:17674/healthz` **200**; **`https://queria.fjulian.id/healthz` 200** (Nginx + Certbot LE); `/admin/login` **200**.
@@ -12,7 +12,7 @@
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
-> SIMPLIFICATION Wave 2 (docs 2026-07-23): residual cuts in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) — disk/worktrees, dual agent+CLI surfaces, god modules; **code cuts not started**.
+> SIMPLIFICATION Wave 2 (2026-07-23): residual cuts in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). **P1 agent shared retrieve + list/status in progress/done on branch**; CLI hub-primary (docs + thin `doctor mcp` → `edge_agent`) this band.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
 > **Production project `fjulian-me` seeded**; embedding backfill **substantially complete** (ready 1226 / failed 3 Voyage 429 residual).
 > **Local main multi-org isolation MVP** (schema → session → orgs/invites → Admin orgs/accept → tenant enforce). Production not redeployed for this yet.
@@ -588,7 +588,7 @@ Live host image listed under **Stack identity** is still pre–multi-org. Redepl
   2. **First arm64 GHCR deploy seeds `buildcache`** — deploy workflow uses native `ubuntu-24.04-arm` + BuildKit mounts + registry tags `backend:buildcache` / `admin:buildcache` (since `bf76180`). First green run after that change still pays a full compile to seed cache; later warm rebuilds expected faster. Details: [`runbooks/deployment.md`](./runbooks/deployment.md) § Build speed / cache.
   3. **Homebrew only after real formula SHAs** — workspace scaffold `queria/homebrew-queria/` (placeholder formula **`odie`s**; not installable). Do **not** advertise `brew install nandocoeg2/queria/queria-cli` as working today. After a live `cli-v*` Release with downloadable assets: `scripts/generate_homebrew_formula.sh` → push tap. Runbook: [`runbooks/queria-cli-homebrew.md`](./runbooks/queria-cli-homebrew.md).
   4. **Daily onboard is independent of CLI/Brew** — Default Daily path (mint token → env + MCP → `retrieve_context`) needs **no** `queria-cli` and **no** Homebrew. CLI install is only for optional laptop hub/index-here (or maintainers).
-  5. **queria-cli hub TUI (branch `feat/queria-cli-hub-tui`; package still `0.2.0` until release)** — Laptop path (no `SETUP_TOKEN`): `queria-cli tui` → **Doctor / Index / Status / Config**. Config profiles remain multi-profile `~/.config/queria/config.toml`; standalone `queria-cli config` / `index-here` / `doctor mcp` still valid. **Status** uses agent `GET /api/v1/agent/projects-status` (token-scoped embed + needs-review counters). Full **`embeddings status` / backfill remains server/DB maintainer-only** — not laptop hub. Residual: version bump + tag **`cli-v0.3.0`** (or next) after merge so Release assets include hub TUI (push `main` does not publish CLI). Spec: [`archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](./archive/superpowers/specs/2026-07-21-queria-cli-config-design.md). Not required for Daily MCP.
+  5. **queria-cli hub TUI = primary laptop UX** (Wave 2; package `0.3.x` on branch) — Default laptop path (no `SETUP_TOKEN`): `queria-cli tui` → **Doctor / Index / Status / Config / Quit**. Standalone `queria-cli config` is an **alias** of hub Config (`config_tui`). `doctor mcp` is a **thin** non-TUI wrap over shared `edge_agent` MCP `tools/list` (same client as Doctor TUI). **Automation** keeps `index-here --yes/--dry-run` and server ops flags. **Status** uses agent `GET /api/v1/agent/projects-status`. Full **`embeddings status` / backfill remains server/DB maintainer-only**. Residual: release tag after merge (push `main` does not publish CLI). Spec: [`archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](./archive/superpowers/specs/2026-07-21-queria-cli-config-design.md). Not required for Daily MCP.
 
 | Gap | Priority | Notes |
 |---|---|---|
@@ -647,7 +647,7 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 
 9. Local multi-git **index-here** IMP-L1…L5 on `main` (2026-07-19/20): nested ls-files filter + `scripts/e2e_index_here_edge.py`. Next: host migrate/redeploy, mint token with `index_local`, run smoke; **not** IMP-L6.
 
-10. **Laptop hub TUI shipped** (`feat/queria-cli-hub-tui`): `queria-cli tui` → Doctor / Index / Status / Config. Laptop Status = agent projects-status; full embeddings status remains server-maintainer. Docs updated in onboarding + this handoff. Next: merge, optional package bump, tag `cli-v0.3.0` per release workflow (not required for Daily MCP).
+10. **Laptop hub TUI = primary UX** (Wave 2 on `feat/wave2-p1-p2-cuts`): `queria-cli tui` → Doctor / Index / Status / Config / Quit. Dual-surface wording: flags for automation/maintainers. `doctor mcp` → shared `edge_agent` tools/list; `config` top-level = hub Config alias. Laptop Status = agent projects-status; embeddings status remains server-maintainer. Next: finish remaining Wave 2 bands; release tag after merge (not required for Daily MCP).
 
 **Multi-org (local complete; prod follow-up)**
 

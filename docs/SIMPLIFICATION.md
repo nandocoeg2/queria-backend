@@ -119,4 +119,6 @@ After each band: update this progress log + HANDOFF residual gaps (one line).
 | Date | Band | Result |
 |---|---|---|
 | 2026-07-16 | Wave 1 (all) | See Wave 1 table; full detail in prior revisions of this file / git |
-| 2026-07-23 | Wave 2 docs | Residual cut list shipped from ponytail-audit; **no code cuts yet** |
+| 2026-07-23 | Wave 2 docs | Residual cut list shipped from ponytail-audit |
+| 2026-07-23 | Wave 2 P1 agent | Shared `retrieve_for_agent` + agent list/status helpers; thin HTTP/MCP wrappers |
+| 2026-07-23 | Wave 2 P1 CLI hub-primary | Onboarding/HANDOFF: `queria-cli tui` default laptop path; flags = automation; `doctor_mcp` → `edge_agent::mcp_tools_list`; top-level `config` = hub Config (`config_tui`) alias |

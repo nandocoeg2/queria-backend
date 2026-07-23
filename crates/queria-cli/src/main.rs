@@ -59,9 +59,11 @@ enum Command {
         #[command(subcommand)]
         command: BackupCommand,
     },
-    /// Interactive TUI: profiles / token / edge / MCP install (~/.config/queria/config.toml).
+    /// Config TUI alias: same `config_tui` module as hub menu Config
+    /// (profiles / token / edge / MCP install under ~/.config/queria/config.toml).
     Config,
-    /// Interactive hub TUI: doctor / index / status / config (TTY required).
+    /// Primary laptop UX (TTY): hub Doctor / Index / Status / Config / Quit.
+    /// Flags (`index-here`, `doctor mcp`, server ops) remain for automation/maintainers.
     Tui,
     /// Discover local git roots under cwd and upload tracked files for needs_review indexing.
     IndexHere {
@@ -380,6 +382,40 @@ mod tests {
     fn parses_tui_command() {
         let cli = Cli::try_parse_from(["queria-cli", "tui"]).expect("tui should parse");
         assert!(matches!(cli.command, Command::Tui));
+    }
+
+    /// VAL-CLI-010: top-level `config` parses; both hub Config and this command call `config_tui`.
+    #[test]
+    fn parses_config_command_as_config_tui_entry() {
+        let cli = Cli::try_parse_from(["queria-cli", "config"]).expect("config should parse");
+        assert!(matches!(cli.command, Command::Config));
+    }
+
+    /// VAL-CLI-005: doctor mcp parses; implementation is thin wrap over edge_agent tools/list.
+    #[test]
+    fn parses_doctor_mcp_command() {
+        let cli = Cli::try_parse_from(["queria-cli", "doctor", "mcp"])
+            .expect("doctor mcp should parse");
+        assert!(matches!(
+            cli.command,
+            Command::Doctor {
+                command: DoctorCommand::Mcp { url: None }
+            }
+        ));
+        let with_url = Cli::try_parse_from([
+            "queria-cli",
+            "doctor",
+            "mcp",
+            "--url",
+            "http://127.0.0.1:17674/mcp",
+        ])
+        .expect("doctor mcp --url should parse");
+        match with_url.command {
+            Command::Doctor {
+                command: DoctorCommand::Mcp { url: Some(u) },
+            } => assert_eq!(u, "http://127.0.0.1:17674/mcp"),
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 
     #[test]
