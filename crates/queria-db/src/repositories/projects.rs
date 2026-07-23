@@ -965,10 +965,7 @@ impl PgProjectRepository {
     }
 
     /// Earliest local-git origin_url recorded for a project, if any.
-    pub async fn find_origin_for_project(
-        &self,
-        project_id: Uuid,
-    ) -> QueriaResult<Option<String>> {
+    pub async fn find_origin_for_project(&self, project_id: Uuid) -> QueriaResult<Option<String>> {
         let row = sqlx::query(
             "select sd.metadata->>'origin_url' as origin_url
              from source_document sd

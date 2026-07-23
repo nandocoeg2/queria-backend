@@ -7,18 +7,18 @@
 //! Session-cookie routes in `retrieval.rs` are unchanged.
 
 use crate::app::ApiState;
+use crate::http::agent_auth::{authenticate_raw, require_raw_bearer};
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
 use queria_core::QueriaError;
-use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
 use queria_core::contracts::RetrieveContextResponse;
 use queria_core::ids::ProjectId;
-use queria_core::{is_valid_project_slug, parse_agent_bearer_token};
+use queria_core::is_valid_project_slug;
 use queria_db::embedding::{EmbeddingStatusCounts, PgEmbeddingRepository};
 use queria_db::repositories::{AuthenticatedAgentToken, PgProjectRepository, ProjectRecord};
 use queria_search::retrieval::{
@@ -63,21 +63,15 @@ async fn agent_list_projects(
     headers: HeaderMap,
 ) -> ApiResult<Value> {
     // Auth header first so missing bearer is 401 even without a configured pool.
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
-    // Listing projects does not require RetrieveContext; ListProjects permission if present,
-    // else allow any authenticated non-revoked token (hooks need bootstrap).
-    if !agent
-        .permissions
-        .can_call(&AgentToolPermission::ListProjects)
-        && !agent
-            .permissions
-            .can_call(&AgentToolPermission::RetrieveContext)
-    {
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
+    // Shared list gate: ListProjects or RetrieveContext (hooks bootstrap).
+    if !agent.permissions.can_list_agent_projects() {
         return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
     }
 
+    // Same DB path as MCP list_projects (VAL-AGENT-013).
     let projects = repository
         .list_projects_for_agent(&agent)
         .await
@@ -93,16 +87,10 @@ async fn agent_projects_status(
     headers: HeaderMap,
 ) -> ApiResult<Value> {
     // Auth header first so missing bearer is 401 even without a configured pool.
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
-    if !agent
-        .permissions
-        .can_call(&AgentToolPermission::ListProjects)
-        && !agent
-            .permissions
-            .can_call(&AgentToolPermission::RetrieveContext)
-    {
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
+    if !agent.permissions.can_list_agent_projects() {
         return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
     }
 
@@ -174,9 +162,9 @@ async fn agent_retrieve_context(
     headers: HeaderMap,
     Json(payload): Json<AgentRetrieveRequest>,
 ) -> ApiResult<RetrieveContextResponse> {
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let agent = authenticate_raw(&repository, raw).await?;
+    let agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
     if !agent
         .permissions
         .can_call(&AgentToolPermission::RetrieveContext)
@@ -278,30 +266,8 @@ fn project_repository(
     })
 }
 
-fn require_raw_bearer(headers: &HeaderMap) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
-    bearer_token(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-async fn authenticate_raw(
-    repository: &PgProjectRepository,
-    raw: &str,
-) -> Result<AuthenticatedAgentToken, (StatusCode, Json<ErrorResponse>)> {
-    let token_hash = AgentTokenIssuer::hash_token(raw);
-    repository
-        .authenticate_agent_token(&token_hash)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "agent token authentication failed");
-            error(StatusCode::INTERNAL_SERVER_ERROR, "repository_failed")
-        })?
-        .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(parse_agent_bearer_token)
+fn map_auth((status, code): (StatusCode, &'static str)) -> (StatusCode, Json<ErrorResponse>) {
+    error(status, code)
 }
 
 fn project_json(project: ProjectRecord) -> Value {
@@ -463,6 +429,7 @@ mod tests {
         assert!(body.contains("agent_token_required"), "body={body}");
     }
 
+    /// VAL-AGENT-006: GET /agent/projects without bearer → 401 + agent_token_required.
     #[tokio::test]
     async fn agent_projects_requires_bearer() {
         let app = build_app(AppConfig::default_local());
@@ -477,8 +444,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_string(response).await;
+        assert!(body.contains("agent_token_required"), "body={body}");
     }
 
+    /// VAL-AGENT-007: GET /agent/projects-status without bearer → 401.
     #[tokio::test]
     async fn agent_projects_status_requires_bearer() {
         let app = build_app(AppConfig::default_local());
@@ -492,6 +462,47 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_string(response).await;
+        assert!(body.contains("agent_token_required"), "body={body}");
+    }
+
+    /// VAL-AGENT-006/007: non-qria bearer stays 401 (closed), not 500.
+    #[tokio::test]
+    async fn agent_projects_rejects_non_qria_bearer() {
+        for uri in ["/api/v1/agent/projects", "/api/v1/agent/projects-status"] {
+            let app = build_app(AppConfig::default_local());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(uri)
+                        .header("authorization", "Bearer not_a_queria_token")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "uri={uri}");
+        }
+    }
+
+    /// VAL-AGENT-012: index-local route still registered (not 404/405).
+    #[tokio::test]
+    async fn index_local_route_still_mounted() {
+        let app = build_app(AppConfig::default_local());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/agent/index-local")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"roots":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Missing bearer → 401, not 404/405 (route exists).
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 

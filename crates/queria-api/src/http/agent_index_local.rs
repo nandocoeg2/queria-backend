@@ -5,14 +5,14 @@
 //! knowledge/chunks, and enqueues embedding backfill jobs.
 
 use crate::app::ApiState;
+use crate::http::agent_auth::{authenticate_raw, require_raw_bearer};
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode},
     routing::post,
 };
 use queria_core::QueriaError;
-use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
 use queria_db::repositories::{
     AuthenticatedAgentToken, IndexLocalFileParams, PgProjectRepository, ProjectRecord,
@@ -85,9 +85,9 @@ async fn agent_index_local(
     headers: HeaderMap,
     Json(payload): Json<IndexLocalRequest>,
 ) -> ApiResult<IndexLocalResponse> {
-    let raw = require_raw_bearer(&headers)?;
+    let raw = require_raw_bearer(&headers).map_err(map_auth)?;
     let repository = project_repository(&state)?;
-    let mut agent = authenticate_raw(&repository, raw).await?;
+    let mut agent = authenticate_raw(&repository, raw).await.map_err(map_auth)?;
     if !agent.permissions.can_call(&AgentToolPermission::IndexLocal) {
         return Err(error(StatusCode::FORBIDDEN, "permission_denied"));
     }
@@ -261,8 +261,7 @@ async fn resolve_or_create_project(
             && !origins_equivalent(&existing_origin, origin_url)
         {
             // True remote collision on this slug → allocate slug-N.
-            return allocate_numbered_slug(repository, agent, slug, origin, local_path_hint)
-                .await;
+            return allocate_numbered_slug(repository, agent, slug, origin, local_path_hint).await;
         }
         return Ok(project);
     }
@@ -388,31 +387,8 @@ fn project_repository(
     })
 }
 
-fn require_raw_bearer(headers: &HeaderMap) -> Result<&str, (StatusCode, Json<ErrorResponse>)> {
-    bearer_token(headers).ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-async fn authenticate_raw(
-    repository: &PgProjectRepository,
-    raw: &str,
-) -> Result<AuthenticatedAgentToken, (StatusCode, Json<ErrorResponse>)> {
-    let token_hash = AgentTokenIssuer::hash_token(raw);
-    repository
-        .authenticate_agent_token(&token_hash)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "agent token authentication failed");
-            error(StatusCode::INTERNAL_SERVER_ERROR, "repository_failed")
-        })?
-        .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "agent_token_required"))
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|token| token.starts_with("qria_"))
+fn map_auth((status, code): (StatusCode, &'static str)) -> (StatusCode, Json<ErrorResponse>) {
+    error(status, code)
 }
 
 fn map_infra(err: QueriaError) -> (StatusCode, Json<ErrorResponse>) {

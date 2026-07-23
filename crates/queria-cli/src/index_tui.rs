@@ -77,8 +77,7 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let mut screen = Screen::Checklist;
-        let mut status =
-            String::from("↑↓/jk move · Space toggle · Enter next · Esc cancel");
+        let mut status = String::from("↑↓/jk move · Space toggle · Enter next · Esc cancel");
         let mut result_message = String::new();
         let mut preflight = PreflightState::Unknown;
 
@@ -98,10 +97,7 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                                 } else {
                                     "[ ]"
                                 };
-                                ListItem::new(format!(
-                                    "{mark} {}",
-                                    root_line(plan)
-                                ))
+                                ListItem::new(format!("{mark} {}", root_line(plan)))
                             })
                             .collect();
                         let list = List::new(items)
@@ -205,8 +201,7 @@ pub fn run_index_wizard(profile: Option<&str>) -> Result<()> {
                 Screen::Preflight => match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => {
                         screen = Screen::Checklist;
-                        status =
-                            "↑↓/jk move · Space toggle · Enter next · Esc cancel".into();
+                        status = "↑↓/jk move · Space toggle · Enter next · Esc cancel".into();
                     }
                     KeyCode::Enter => {
                         if preflight.blocks_upload() {
@@ -588,10 +583,7 @@ mod tests {
 
     #[test]
     fn selected_plans_respects_mask() {
-        let plans = vec![
-            sample_plan("/tmp/a", 2, 1),
-            sample_plan("/tmp/b", 1, 0),
-        ];
+        let plans = vec![sample_plan("/tmp/a", 2, 1), sample_plan("/tmp/b", 1, 0)];
         let selected = vec![false, true];
         let chosen = selected_plans(&plans, &selected);
         assert_eq!(chosen.len(), 1);

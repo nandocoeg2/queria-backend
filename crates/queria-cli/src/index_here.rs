@@ -470,7 +470,10 @@ pub fn count_gate_outcomes(files: &[(&str, u64, &str)]) -> (u32, u32) {
 
 /// Keep only plans whose `root.path` is in `selected_paths` (canonical-aware match).
 /// Used by the TUI wizard to upload a user-selected subset of discovered roots.
-pub fn filter_plans_by_paths(plans: &[RootFilePlan], selected_paths: &[PathBuf]) -> Vec<RootFilePlan> {
+pub fn filter_plans_by_paths(
+    plans: &[RootFilePlan],
+    selected_paths: &[PathBuf],
+) -> Vec<RootFilePlan> {
     let selected: BTreeSet<PathBuf> = selected_paths
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
@@ -889,8 +892,7 @@ mod tests {
         let bc = b.canonicalize().unwrap();
         let all = vec![ac.clone(), bc.clone()];
         assert!(nested_path_prefixes(&ac, &all).is_empty());
-        let plan_a =
-            plan_root_files_with_extensions(inspect_root(ac).unwrap(), &all, &[]).unwrap();
+        let plan_a = plan_root_files_with_extensions(inspect_root(ac).unwrap(), &all, &[]).unwrap();
         assert_eq!(plan_a.accepted.len(), 1);
         assert_eq!(plan_a.accepted[0].path, "a.md");
     }

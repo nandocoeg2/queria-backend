@@ -42,8 +42,7 @@ pub fn run_hub(profile: Option<&str>) -> Result<()> {
 
     let mut list_state = ListState::default();
     list_state.select(Some(0));
-    let mut status =
-        String::from("↑↓/jk select · Enter open · d/i/s/c shortcuts · q quit");
+    let mut status = String::from("↑↓/jk select · Enter open · d/i/s/c shortcuts · q quit");
 
     let result = (|| -> Result<()> {
         loop {

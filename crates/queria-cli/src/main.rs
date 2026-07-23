@@ -13,9 +13,9 @@ mod evaluation;
 mod index_here;
 mod index_tui;
 mod mcp_install;
-mod status_tui;
 mod restore_drill;
 mod retrieval;
+mod status_tui;
 mod tui_hub;
 
 use clap::{Parser, Subcommand};

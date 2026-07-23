@@ -641,6 +641,7 @@ fn needs_review_error(error: queria_core::QueriaError) -> String {
 }
 
 fn valid_slug(value: &str) -> bool {
+    // Shared slug rules with HTTP agent paths (queria-core::is_valid_project_slug).
     is_valid_project_slug(value)
 }
 
