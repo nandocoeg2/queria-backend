@@ -135,10 +135,10 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Check if it's time for a scheduled backup
-        if backup_jobs::should_run_backup(&pool, config.backup.cron_hour_utc).await {
-            if let Err(error) = backup_jobs::run_backup(&object_store, &pool, &config).await {
-                tracing::error!(error = %error, "scheduled backup failed");
-            }
+        if backup_jobs::should_run_backup(&pool, config.backup.cron_hour_utc).await
+            && let Err(error) = backup_jobs::run_backup(&object_store, &pool, &config).await
+        {
+            tracing::error!(error = %error, "scheduled backup failed");
         }
 
         tokio::select! {

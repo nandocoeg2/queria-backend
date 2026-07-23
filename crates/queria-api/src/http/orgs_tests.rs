@@ -260,12 +260,11 @@ async fn super_admin_create_and_list_orgs_token_once_hashed() {
     );
 
     // Stored hash only — raw token not at rest.
-    let stored_hash: String =
-        sqlx::query_scalar("select token_hash from org_invite where id = $1")
-            .bind(Uuid::parse_str(invite_id).unwrap())
-            .fetch_one(&pool)
-            .await
-            .expect("hash");
+    let stored_hash: String = sqlx::query_scalar("select token_hash from org_invite where id = $1")
+        .bind(Uuid::parse_str(invite_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .expect("hash");
     assert_ne!(stored_hash, token);
     assert_eq!(stored_hash, OrgInviteTokenIssuer::hash_token(token));
     let raw_in_row: bool = sqlx::query_scalar(
@@ -617,12 +616,11 @@ async fn accept_invite_flow_and_rejections() {
     .await;
     assert_eq!(status, HttpStatus::OK, "{reaccepted}");
     // Still single membership.
-    let mcount: i64 =
-        sqlx::query_scalar("select count(*) from org_membership where user_id = $1")
-            .bind(user_id)
-            .fetch_one(&pool)
-            .await
-            .expect("count");
+    let mcount: i64 = sqlx::query_scalar("select count(*) from org_membership where user_id = $1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count");
     assert_eq!(mcount, 1);
 
     // Second-org invite rejected for existing Team B user.
@@ -652,12 +650,11 @@ async fn accept_invite_flow_and_rejections() {
     assert_eq!(status, HttpStatus::CONFLICT);
     assert_eq!(body["error"], "already_member_of_other_org");
     // org_id unchanged
-    let still: Uuid =
-        sqlx::query_scalar("select organization_id from user_account where id = $1")
-            .bind(user_id)
-            .fetch_one(&pool)
-            .await
-            .expect("org");
+    let still: Uuid = sqlx::query_scalar("select organization_id from user_account where id = $1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("org");
     assert_eq!(still.to_string(), org_b_id);
 
     // Expired invite rejected.
@@ -784,7 +781,6 @@ async fn accept_invite_flow_and_rejections() {
 #[tokio::test]
 async fn members_list_requires_session_and_active_org() {
     let app = crate::app::build_app(AppConfig::default_local());
-    let (status, _) =
-        json_request(app, "GET", "/api/v1/orgs/current/members", None, None).await;
+    let (status, _) = json_request(app, "GET", "/api/v1/orgs/current/members", None, None).await;
     assert_eq!(status, HttpStatus::UNAUTHORIZED);
 }

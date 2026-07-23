@@ -401,8 +401,8 @@ mod tests {
     /// VAL-CLI-005: doctor mcp parses; implementation is thin wrap over edge_agent tools/list.
     #[test]
     fn parses_doctor_mcp_command() {
-        let cli = Cli::try_parse_from(["queria-cli", "doctor", "mcp"])
-            .expect("doctor mcp should parse");
+        let cli =
+            Cli::try_parse_from(["queria-cli", "doctor", "mcp"]).expect("doctor mcp should parse");
         assert!(matches!(
             cli.command,
             Command::Doctor {
@@ -560,14 +560,9 @@ mod tests {
             "backup --help must not list restore-drill (hidden ops): {help}"
         );
         // Ops / runbook path must still parse (not removed).
-        let cli = Cli::try_parse_from([
-            "queria-cli",
-            "backup",
-            "restore-drill",
-            "--org",
-            "ops-org",
-        ])
-        .expect("restore-drill must remain invocable for ops");
+        let cli =
+            Cli::try_parse_from(["queria-cli", "backup", "restore-drill", "--org", "ops-org"])
+                .expect("restore-drill must remain invocable for ops");
         assert!(matches!(
             cli.command,
             Command::Backup {

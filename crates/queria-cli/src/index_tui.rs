@@ -628,7 +628,10 @@ mod tests {
     /// not a second plan/upload stack in this module.
     #[test]
     fn selected_plans_uses_index_here_filter_core() {
-        let plans = vec![sample_plan("/tmp/core-a", 1, 0), sample_plan("/tmp/core-b", 2, 0)];
+        let plans = vec![
+            sample_plan("/tmp/core-a", 1, 0),
+            sample_plan("/tmp/core-b", 2, 0),
+        ];
         let via_tui = selected_plans(&plans, &[true, false]);
         let via_core = filter_plans_by_paths(&plans, &[PathBuf::from("/tmp/core-a")]);
         assert_eq!(via_tui.len(), 1);
