@@ -8,16 +8,17 @@ use axum::{
     routing::{get, post},
 };
 use queria_core::auth::agent_token::AgentTokenIssuer;
-use queria_core::contracts::{
-    RetrieveContextRequest, RetrieveContextResponse, scratch_content_hash, validate_memory_body,
-};
+use queria_core::contracts::{RetrieveContextResponse, scratch_content_hash, validate_memory_body};
 use queria_core::ids::{KnowledgeItemId, ProjectId, SourceDocumentId};
+use queria_core::{is_valid_project_slug, parse_agent_bearer_token};
 use queria_db::repositories::{
     AuthenticatedAgentToken, IndexMemoryParams, KnowledgeItemRecord, NeedsReviewActionRecord,
     NeedsReviewItemRecord, PgProjectRepository, ProjectRecord, ProposeMemoryParams,
     SourceDocumentRecord,
 };
-use queria_search::retrieval::RetrievalPrincipal;
+use queria_search::retrieval::{
+    AgentRetrieveLimitPolicy, AgentRetrieveParams, build_agent_retrieve_request,
+};
 use queria_search::scratch_embed::{build_embed_clients, index_memory_with_sync_embed};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -196,34 +197,36 @@ async fn call_tool(
         "retrieve_context" => {
             let args: RetrievalArgs =
                 serde_json::from_value(params.arguments).map_err(invalid_params)?;
-            let request = RetrieveContextRequest {
+            // Thin wrapper over shared agent retrieve (VAL-AGENT-001 / VAL-AGENT-005).
+            let request = build_agent_retrieve_request(AgentRetrieveParams {
                 project_id: args.project_id,
                 query: args.query,
-                include_global: args.include_global.unwrap_or(true),
-                // VAL-DL-026 / VAL-CROSS-004: agent default include_scratch=true
-                include_scratch: args.include_scratch.unwrap_or(true),
-                // IMP-L3: default false even for agents
-                include_needs_review: args.include_needs_review.unwrap_or(false),
-                limit: args.limit.unwrap_or(5),
+                include_global: args.include_global,
+                include_scratch: args.include_scratch,
+                include_needs_review: args.include_needs_review,
+                limit: args.limit,
+                limit_policy: AgentRetrieveLimitPolicy::Mcp,
                 rerank: args.rerank,
                 compress: args.compress,
-            };
+            });
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))
         }
         "search_knowledge" => {
             let args: RetrievalArgs =
                 serde_json::from_value(params.arguments).map_err(invalid_params)?;
-            let request = RetrieveContextRequest {
+            // Same shared path as retrieve_context; product default limit remains 10.
+            let request = build_agent_retrieve_request(AgentRetrieveParams {
                 project_id: args.project_id,
                 query: args.query,
-                include_global: args.include_global.unwrap_or(true),
-                include_scratch: args.include_scratch.unwrap_or(true),
-                include_needs_review: args.include_needs_review.unwrap_or(false),
-                limit: args.limit.unwrap_or(10),
+                include_global: args.include_global,
+                include_scratch: args.include_scratch,
+                include_needs_review: args.include_needs_review,
+                limit: Some(args.limit.unwrap_or(10)),
+                limit_policy: AgentRetrieveLimitPolicy::Mcp,
                 rerank: args.rerank,
                 compress: args.compress,
-            };
+            });
             let response = hybrid_retrieve(state, agent, request).await?;
             Ok(tool_success(json!(response)))
         }
@@ -327,10 +330,11 @@ async fn call_tool(
     }
 }
 
+/// Thin transport glue: both MCP retrieve tools call shared `retrieve_for_agent`.
 async fn hybrid_retrieve(
     state: &McpState,
     agent: &AuthenticatedAgentToken,
-    request: RetrieveContextRequest,
+    request: queria_core::contracts::RetrieveContextRequest,
 ) -> Result<RetrieveContextResponse, String> {
     request.validate().map_err(|error| error.to_string())?;
     let service = state
@@ -338,12 +342,10 @@ async fn hybrid_retrieve(
         .as_ref()
         .ok_or_else(|| "knowledge_store_not_configured".to_owned())?;
     service
-        .retrieve_context(
-            &RetrievalPrincipal::Agent {
-                organization_id: agent.organization_id,
-                project_slugs: agent.permissions.project_slugs.clone(),
-                allow_global_knowledge: agent.permissions.allow_global_knowledge,
-            },
+        .retrieve_for_agent(
+            agent.organization_id,
+            agent.permissions.project_slugs.clone(),
+            agent.permissions.allow_global_knowledge,
             request,
         )
         .await
@@ -475,8 +477,7 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|token| token.starts_with("qria_"))
+        .and_then(parse_agent_bearer_token)
 }
 
 fn initialize_result() -> Value {
@@ -640,25 +641,13 @@ fn needs_review_error(error: queria_core::QueriaError) -> String {
 }
 
 fn valid_slug(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let Some(first) = bytes.first() else {
-        return false;
-    };
-    let Some(last) = bytes.last() else {
-        return false;
-    };
-
-    (3..=64).contains(&bytes.len())
-        && first.is_ascii_alphanumeric()
-        && last.is_ascii_alphanumeric()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    is_valid_project_slug(value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use queria_core::AGENT_RETRIEVE_LIMIT_DEFAULT;
 
     fn valid_propose(body: &str) -> ProposeMemoryArgs {
         ProposeMemoryArgs {
@@ -860,27 +849,50 @@ mod tests {
         assert_eq!(params.category, "note");
     }
 
-    /// VAL-CROSS-004: omit include_scratch → agent default true.
+    /// VAL-CROSS-004 / VAL-AGENT-005: omit include_scratch → agent default true via shared builder.
     #[test]
     fn retrieval_args_default_include_scratch_true() {
         let args: RetrievalArgs = serde_json::from_str(
             r#"{"project_id":"019083a0-0000-7000-8000-000000000001","query":"hello"}"#,
         )
         .expect("minimal retrieval args");
-        assert!(args.include_scratch.unwrap_or(true));
-        assert!(!args.include_needs_review.unwrap_or(false));
-        assert!(args.rerank.is_none());
-        assert!(args.compress.is_none());
+        let request = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id: args.project_id,
+            query: args.query,
+            include_global: args.include_global,
+            include_scratch: args.include_scratch,
+            include_needs_review: args.include_needs_review,
+            limit: args.limit,
+            limit_policy: AgentRetrieveLimitPolicy::Mcp,
+            rerank: args.rerank,
+            compress: args.compress,
+        });
+        assert!(request.include_scratch);
+        assert!(!request.include_needs_review);
+        assert_eq!(request.limit, AGENT_RETRIEVE_LIMIT_DEFAULT);
+        assert!(request.rerank.is_none());
+        assert!(request.compress.is_none());
     }
 
-    /// IMP-L3: omit include_needs_review → default false on MCP args.
+    /// IMP-L3: omit include_needs_review → default false on MCP args (shared path).
     #[test]
     fn retrieval_args_default_include_needs_review_false() {
         let args: RetrievalArgs = serde_json::from_str(
             r#"{"project_id":"019083a0-0000-7000-8000-000000000001","query":"hello"}"#,
         )
         .expect("minimal retrieval args");
-        assert!(!args.include_needs_review.unwrap_or(false));
+        let request = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id: args.project_id,
+            query: args.query,
+            include_global: args.include_global,
+            include_scratch: args.include_scratch,
+            include_needs_review: args.include_needs_review,
+            limit: args.limit,
+            limit_policy: AgentRetrieveLimitPolicy::Mcp,
+            rerank: args.rerank,
+            compress: args.compress,
+        });
+        assert!(!request.include_needs_review);
     }
 
     /// VAL-CROSS-001/002: MCP tools accept optional rerank/compress overrides.

@@ -16,17 +16,16 @@ use axum::{
 use queria_core::QueriaError;
 use queria_core::auth::agent_token::AgentTokenIssuer;
 use queria_core::auth::permissions::AgentToolPermission;
-use queria_core::contracts::{RetrieveContextRequest, RetrieveContextResponse};
+use queria_core::contracts::RetrieveContextResponse;
 use queria_core::ids::ProjectId;
+use queria_core::{is_valid_project_slug, parse_agent_bearer_token};
 use queria_db::embedding::{EmbeddingStatusCounts, PgEmbeddingRepository};
 use queria_db::repositories::{AuthenticatedAgentToken, PgProjectRepository, ProjectRecord};
-use queria_search::retrieval::RetrievalPrincipal;
+use queria_search::retrieval::{
+    AgentRetrieveLimitPolicy, AgentRetrieveParams, build_agent_retrieve_request,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-
-/// Hook path clamps tighter than MCP max 20 to keep inject budgets small.
-const HOOK_LIMIT_MAX: u32 = 10;
-const HOOK_LIMIT_DEFAULT: u32 = 5;
 
 #[derive(Debug, Deserialize)]
 struct AgentRetrieveRequest {
@@ -186,18 +185,18 @@ async fn agent_retrieve_context(
     }
 
     let project_id = resolve_project_id(&repository, &agent, &payload).await?;
-    let limit = clamp_hook_limit(payload.limit.unwrap_or(HOOK_LIMIT_DEFAULT));
-    let request = RetrieveContextRequest {
+    // Thin wrapper: shared request builder + retrieve_for_agent (VAL-AGENT-001).
+    let request = build_agent_retrieve_request(AgentRetrieveParams {
         project_id,
         query: payload.query,
-        include_global: payload.include_global.unwrap_or(true),
-        include_scratch: payload.include_scratch.unwrap_or(true),
-        // IMP-L3: agent hook path default false (unlike include_scratch).
-        include_needs_review: payload.include_needs_review.unwrap_or(false),
-        limit,
+        include_global: payload.include_global,
+        include_scratch: payload.include_scratch,
+        include_needs_review: payload.include_needs_review,
+        limit: payload.limit,
+        limit_policy: AgentRetrieveLimitPolicy::HttpHook,
         rerank: payload.rerank,
         compress: payload.compress,
-    };
+    });
     request.validate().map_err(map_validate)?;
 
     let service = state.retrieval.as_ref().ok_or_else(|| {
@@ -208,12 +207,10 @@ async fn agent_retrieve_context(
     })?;
 
     service
-        .retrieve_context(
-            &RetrievalPrincipal::Agent {
-                organization_id: agent.organization_id,
-                project_slugs: agent.permissions.project_slugs.clone(),
-                allow_global_knowledge: agent.permissions.allow_global_knowledge,
-            },
+        .retrieve_for_agent(
+            agent.organization_id,
+            agent.permissions.project_slugs.clone(),
+            agent.permissions.allow_global_knowledge,
             request,
         )
         .await
@@ -247,7 +244,7 @@ async fn resolve_project_id(
             }
         }
         (None, Some(slug)) => {
-            if !valid_slug(&slug) {
+            if !is_valid_project_slug(&slug) {
                 return Err(error(StatusCode::BAD_REQUEST, "invalid_project_slug"));
             }
             if !agent.permissions.project_slugs.iter().any(|s| s == &slug) {
@@ -268,10 +265,6 @@ async fn resolve_project_id(
             "project_id_or_project_slug_required",
         )),
     }
-}
-
-fn clamp_hook_limit(limit: u32) -> u32 {
-    limit.clamp(1, HOOK_LIMIT_MAX)
 }
 
 fn project_repository(
@@ -308,8 +301,7 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|token| token.starts_with("qria_"))
+        .and_then(parse_agent_bearer_token)
 }
 
 fn project_json(project: ProjectRecord) -> Value {
@@ -363,23 +355,6 @@ fn error(status: StatusCode, message: &str) -> (StatusCode, Json<ErrorResponse>)
     )
 }
 
-fn valid_slug(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    let Some(first) = bytes.first() else {
-        return false;
-    };
-    let Some(last) = bytes.last() else {
-        return false;
-    };
-
-    (3..=64).contains(&bytes.len())
-        && first.is_ascii_alphanumeric()
-        && last.is_ascii_alphanumeric()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
-}
-
 /// Resolve project id from agent request inputs (testable pure helper for slug path rules).
 #[cfg(test)]
 fn resolve_selector(
@@ -391,7 +366,7 @@ fn resolve_selector(
         project_slug.map(str::trim).filter(|s| !s.is_empty()),
     ) {
         (Some(_), _) => Ok(()),
-        (None, Some(slug)) if valid_slug(slug) => Ok(()),
+        (None, Some(slug)) if is_valid_project_slug(slug) => Ok(()),
         (None, Some(_)) => Err("invalid_project_slug"),
         (None, None) => Err("project_id_or_project_slug_required"),
     }
@@ -403,7 +378,9 @@ mod tests {
     use crate::app::build_app;
     use axum::body::Body;
     use http::Request;
-    use queria_core::AppConfig;
+    use queria_core::{
+        AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT, AppConfig, clamp_agent_http_retrieve_limit,
+    };
     use tower::ServiceExt;
     use uuid::Uuid;
 
@@ -416,11 +393,12 @@ mod tests {
 
     #[test]
     fn clamp_hook_limit_bounds() {
-        assert_eq!(clamp_hook_limit(0), 1);
-        assert_eq!(clamp_hook_limit(5), 5);
-        assert_eq!(clamp_hook_limit(10), 10);
-        assert_eq!(clamp_hook_limit(20), 10);
-        assert_eq!(clamp_hook_limit(100), 10);
+        // VAL-AGENT-004: shared core clamp used by HTTP retrieve wrapper.
+        assert_eq!(clamp_agent_http_retrieve_limit(0), 1);
+        assert_eq!(clamp_agent_http_retrieve_limit(5), 5);
+        assert_eq!(clamp_agent_http_retrieve_limit(10), 10);
+        assert_eq!(clamp_agent_http_retrieve_limit(20), 10);
+        assert_eq!(clamp_agent_http_retrieve_limit(100), 10);
     }
 
     #[test]
@@ -432,12 +410,24 @@ mod tests {
             }"#,
         )
         .expect("deserialize");
-        assert!(payload.include_scratch.unwrap_or(true));
-        assert!(!payload.include_needs_review.unwrap_or(false));
-        assert!(payload.include_global.unwrap_or(true));
-        assert_eq!(payload.limit.unwrap_or(HOOK_LIMIT_DEFAULT), 5);
-        assert!(payload.rerank.is_none());
-        assert!(payload.compress.is_none());
+        // VAL-AGENT-005: HTTP option defaults match shared agent mapping.
+        let request = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id: ProjectId::from_uuid(Uuid::nil()),
+            query: payload.query.clone(),
+            include_global: payload.include_global,
+            include_scratch: payload.include_scratch,
+            include_needs_review: payload.include_needs_review,
+            limit: payload.limit,
+            limit_policy: AgentRetrieveLimitPolicy::HttpHook,
+            rerank: payload.rerank,
+            compress: payload.compress,
+        });
+        assert!(request.include_scratch);
+        assert!(!request.include_needs_review);
+        assert!(request.include_global);
+        assert_eq!(request.limit, AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT);
+        assert!(request.rerank.is_none());
+        assert!(request.compress.is_none());
     }
 
     #[test]

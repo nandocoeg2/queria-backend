@@ -30,6 +30,76 @@ pub enum RetrievalPrincipal {
     },
 }
 
+impl RetrievalPrincipal {
+    /// Build the agent principal used by both MCP and HTTP agent retrieve.
+    #[must_use]
+    pub fn agent(
+        organization_id: Uuid,
+        project_slugs: impl IntoIterator<Item = impl Into<String>>,
+        allow_global_knowledge: bool,
+    ) -> Self {
+        Self::Agent {
+            organization_id,
+            project_slugs: project_slugs.into_iter().map(Into::into).collect(),
+            allow_global_knowledge,
+        }
+    }
+}
+
+/// Limit policy for agent retrieve transports (same business path; different budgets).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentRetrieveLimitPolicy {
+    /// MCP `retrieve_context` / `search_knowledge`: omit → default 5; no extra clamp
+    /// (contract still validates 1..=20).
+    Mcp,
+    /// HTTP `POST /api/v1/agent/retrieve-context`: omit → 5; clamp 1..=10.
+    HttpHook,
+}
+
+/// Input fields for [`build_agent_retrieve_request`] (MCP + HTTP thin wrappers).
+#[derive(Clone, Debug)]
+pub struct AgentRetrieveParams {
+    pub project_id: ProjectId,
+    pub query: String,
+    pub include_global: Option<bool>,
+    pub include_scratch: Option<bool>,
+    pub include_needs_review: Option<bool>,
+    pub limit: Option<u32>,
+    pub limit_policy: AgentRetrieveLimitPolicy,
+    pub rerank: Option<bool>,
+    pub compress: Option<bool>,
+}
+
+/// Build a [`RetrieveContextRequest`] with agent dual-lane defaults for MCP or HTTP.
+///
+/// Defaults (both transports): `include_scratch=true`, `include_needs_review=false`,
+/// `include_global=true`, omitted limit → 5. HTTP additionally clamps limit to 1..=10.
+#[must_use]
+pub fn build_agent_retrieve_request(params: AgentRetrieveParams) -> RetrieveContextRequest {
+    use queria_core::{
+        AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT, AGENT_RETRIEVE_LIMIT_DEFAULT, agent_include_global,
+        agent_include_needs_review, agent_include_scratch, clamp_agent_http_retrieve_limit,
+    };
+
+    let limit = match params.limit_policy {
+        AgentRetrieveLimitPolicy::Mcp => params.limit.unwrap_or(AGENT_RETRIEVE_LIMIT_DEFAULT),
+        AgentRetrieveLimitPolicy::HttpHook => clamp_agent_http_retrieve_limit(
+            params.limit.unwrap_or(AGENT_HTTP_RETRIEVE_LIMIT_DEFAULT),
+        ),
+    };
+
+    RetrieveContextRequest {
+        project_id: params.project_id,
+        query: params.query,
+        include_global: agent_include_global(params.include_global),
+        include_scratch: agent_include_scratch(params.include_scratch),
+        include_needs_review: agent_include_needs_review(params.include_needs_review),
+        limit,
+        rerank: params.rerank,
+        compress: params.compress,
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetrievalConfig {
     pub embedding_profile_version: String,
@@ -138,6 +208,21 @@ where
     pub fn with_reranker(mut self, reranker: Option<VoyageReranker>) -> Self {
         self.reranker = reranker;
         self
+    }
+
+    /// Shared agent retrieve entry used by MCP `retrieve_context` and HTTP
+    /// `POST /api/v1/agent/retrieve-context`. Always runs under
+    /// [`RetrievalPrincipal::Agent`] — no separate hybrid scoring path per transport.
+    pub async fn retrieve_for_agent(
+        &self,
+        organization_id: Uuid,
+        project_slugs: impl IntoIterator<Item = impl Into<String>>,
+        allow_global_knowledge: bool,
+        request: RetrieveContextRequest,
+    ) -> QueriaResult<RetrieveContextResponse> {
+        let principal =
+            RetrievalPrincipal::agent(organization_id, project_slugs, allow_global_knowledge);
+        self.retrieve_context(&principal, request).await
     }
 
     pub async fn retrieve_context(
@@ -363,9 +448,11 @@ mod tests {
     use queria_core::model::{KnowledgeScope, KnowledgeStatus};
     use std::sync::Mutex;
 
+    type AuthorizeCheck = (RetrievalPrincipal, ProjectId, bool, bool, bool);
+
     struct FakeHybridStore {
         access: RetrievalAccess,
-        authorize_checks: Mutex<Vec<(RetrievalPrincipal, ProjectId, bool, bool, bool)>>,
+        authorize_checks: Mutex<Vec<AuthorizeCheck>>,
         lexical: Mutex<Option<Vec<DbRankedChunk>>>,
         /// Hydrateable corpus keyed by chunk id (returned in fused order).
         hydrate_by_id: Mutex<HashMap<ChunkId, RetrievedContextItem>>,
@@ -1568,5 +1655,160 @@ mod tests {
         assert!(response.items.len() <= limit as usize);
         assert_eq!(response.retrieval.mode, RetrievalMode::Hybrid);
         assert!(response.retrieval.semantic_candidates > 0);
+    }
+
+    /// VAL-AGENT-005: MCP omit lane flags → include_scratch true, needs_review false, limit 5.
+    #[test]
+    fn build_agent_retrieve_request_mcp_defaults() {
+        let project_id = ProjectId::new();
+        let req = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id,
+            query: "how deploy".to_owned(),
+            include_global: None,
+            include_scratch: None,
+            include_needs_review: None,
+            limit: None,
+            limit_policy: AgentRetrieveLimitPolicy::Mcp,
+            rerank: None,
+            compress: None,
+        });
+        assert_eq!(req.project_id, project_id);
+        assert_eq!(req.query, "how deploy");
+        assert!(req.include_global);
+        assert!(req.include_scratch);
+        assert!(!req.include_needs_review);
+        assert_eq!(req.limit, 5);
+        assert!(req.rerank.is_none());
+        assert!(req.compress.is_none());
+        req.validate().expect("mcp defaults valid for contract");
+    }
+
+    /// VAL-AGENT-004 / VAL-AGENT-005: HTTP omit → limit 5; 0→1; >10→10; lane defaults.
+    #[test]
+    fn build_agent_retrieve_request_http_clamp_and_defaults() {
+        let project_id = ProjectId::new();
+        let omitted = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id,
+            query: "q".to_owned(),
+            include_global: None,
+            include_scratch: None,
+            include_needs_review: None,
+            limit: None,
+            limit_policy: AgentRetrieveLimitPolicy::HttpHook,
+            rerank: None,
+            compress: None,
+        });
+        assert!(omitted.include_scratch);
+        assert!(!omitted.include_needs_review);
+        assert_eq!(omitted.limit, 5);
+        omitted.validate().expect("default http limit valid");
+
+        let zero = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id,
+            query: "q".to_owned(),
+            include_global: Some(true),
+            include_scratch: Some(true),
+            include_needs_review: Some(false),
+            limit: Some(0),
+            limit_policy: AgentRetrieveLimitPolicy::HttpHook,
+            rerank: None,
+            compress: None,
+        });
+        assert_eq!(zero.limit, 1);
+
+        let over = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id,
+            query: "q".to_owned(),
+            include_global: None,
+            include_scratch: Some(false),
+            include_needs_review: Some(true),
+            limit: Some(99),
+            limit_policy: AgentRetrieveLimitPolicy::HttpHook,
+            rerank: Some(false),
+            compress: Some(true),
+        });
+        assert_eq!(over.limit, 10);
+        assert!(!over.include_scratch);
+        assert!(over.include_needs_review);
+        assert_eq!(over.rerank, Some(false));
+        assert_eq!(over.compress, Some(true));
+        over.validate().expect("clamped http limit valid");
+    }
+
+    /// VAL-AGENT-001: retrieve_for_agent uses Agent principal (not User).
+    #[tokio::test]
+    async fn retrieve_for_agent_authorizes_as_agent_principal() {
+        let project_id = ProjectId::new();
+        let organization_id = Uuid::now_v7();
+        let chunk_id = ChunkId::new();
+        let source_document_id = SourceDocumentId::new();
+        let store = FakeHybridStore::new(
+            RetrievalAccess {
+                organization_id,
+                project_id,
+                include_global: true,
+                include_scratch: true,
+                include_needs_review: false,
+            },
+            vec![DbRankedChunk {
+                chunk_id,
+                score: 1.0,
+            }],
+            vec![RetrievedContextItem {
+                chunk_id,
+                source_document_id,
+                scope: KnowledgeScope::Project,
+                status: KnowledgeStatus::Approved,
+                lane: KnowledgeLane::Trusted,
+                title: "Shared path".to_owned(),
+                body: "agent entry".to_owned(),
+                citation: Citation {
+                    source_uri: "git://repo/a.md".to_owned(),
+                    source_path: Some("a.md".to_owned()),
+                    line_start: Some(1),
+                    line_end: Some(2),
+                },
+                score: 0.0,
+            }],
+        );
+        let service = RetrievalService::new(store, OkProvider, FakeIndex::empty(), config());
+        let request = build_agent_retrieve_request(AgentRetrieveParams {
+            project_id,
+            query: "shared".to_owned(),
+            include_global: None,
+            include_scratch: None,
+            include_needs_review: None,
+            limit: Some(3),
+            limit_policy: AgentRetrieveLimitPolicy::Mcp,
+            rerank: None,
+            compress: None,
+        });
+        let response = service
+            .retrieve_for_agent(organization_id, ["fjulian-me".to_owned()], true, request)
+            .await
+            .expect("retrieve_for_agent");
+
+        let checks = service.store.authorize_checks.lock().expect("lock").clone();
+        assert_eq!(checks.len(), 1);
+        let (principal, checked_project, include_global, include_scratch, include_needs_review) =
+            &checks[0];
+        assert_eq!(*checked_project, project_id);
+        assert!(*include_global);
+        assert!(*include_scratch);
+        assert!(!*include_needs_review);
+        match principal {
+            RetrievalPrincipal::Agent {
+                organization_id: org,
+                project_slugs,
+                allow_global_knowledge,
+            } => {
+                assert_eq!(*org, organization_id);
+                assert_eq!(project_slugs.as_slice(), ["fjulian-me"]);
+                assert!(*allow_global_knowledge);
+            }
+            RetrievalPrincipal::User { .. } => panic!("must use Agent principal"),
+        }
+        assert_eq!(response.project_id, project_id);
+        assert_eq!(response.items.len(), 1);
     }
 }
