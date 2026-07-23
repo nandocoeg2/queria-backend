@@ -76,7 +76,7 @@ Git ingest path is unchanged: allowlisted repo → parse/chunk/scan → trusted 
 | Admin Playground | Operators | Lean SSR `/admin/playground`: live retrieval probe with rerank/compress toggles, scores, lane, diagnostics (not eval product) |
 | MCP (`queria-mcp`) | Agents | See tool table below |
 | Agent HTTP (hooks + index-local) | Client-side agents / CLI | `POST /api/v1/agent/retrieve-context` + `GET /api/v1/agent/projects` (Bearer `qria_…`). `POST /api/v1/agent/index-local` (Bearer + `index_local`) for bulk local git → **needs_review**. Hooks: `/api/v1/setup/hooks-snippet`, `/setup/hook-script` |
-| CLI | Operators | `index-here` (multi-git discover + upload), migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress` / `--include-needs-review`), eval (trusted/golden), backup/restore-drill |
+| CLI | Operators | Laptop default: `queria-cli tui`. Automation: `index-here`. Server ops: migrate, embeddings status, retrieval probe (optional `--rerank` / `--compress` / `--include-needs-review`), eval (trusted/golden), `backup`. **Restore drill is ops/runbook-only** (`backup restore-drill`, hidden from default help; not a default install requirement) — see [`runbooks/backup-restore.md`](./runbooks/backup-restore.md) |
 
 ### MCP tools (contract)
 

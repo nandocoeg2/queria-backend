@@ -55,6 +55,8 @@ enum Command {
         #[command(subcommand)]
         command: EvalCommand,
     },
+    /// Server ops: backup / restore. Product default does not require restore-drill;
+    /// ops drill remains at `backup restore-drill` (see runbooks/backup-restore.md).
     Backup {
         #[command(subcommand)]
         command: BackupCommand,
@@ -144,6 +146,9 @@ enum EvalCommand {
 
 #[derive(Debug, Subcommand)]
 enum BackupCommand {
+    /// Ops-only restore drill (hidden from default help; not required for install/onboarding).
+    /// Still invocable: `queria-cli backup restore-drill --org …` — see runbooks/backup-restore.md.
+    #[command(hide = true)]
     RestoreDrill {
         #[arg(long)]
         org: String,
@@ -499,6 +504,87 @@ mod tests {
         assert!(
             help.contains("edge-url-env") || help.contains("QUERIA_EDGE_URL"),
             "help must document edge env: {help}"
+        );
+    }
+
+    /// VAL-CLI-006: server ops subcommands still parse `--help` (clap structure).
+    #[test]
+    fn server_ops_subcommands_parse_help() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        for name in ["database", "embeddings", "retrieval", "eval", "backup"] {
+            let sub = cmd
+                .find_subcommand_mut(name)
+                .unwrap_or_else(|| panic!("{name} subcommand must exist"));
+            let mut help = Vec::new();
+            sub.write_long_help(&mut help)
+                .unwrap_or_else(|e| panic!("{name} --help must write: {e}"));
+            assert!(!help.is_empty(), "{name} help must be non-empty");
+        }
+        // Nested leaves used by maintainers must still exist for parse.
+        let nested = [
+            ("database", "migrate"),
+            ("embeddings", "status"),
+            ("retrieval", "probe"),
+            ("eval", "run"),
+        ];
+        for (parent, leaf) in nested {
+            let p = Cli::command()
+                .find_subcommand(parent)
+                .unwrap_or_else(|| panic!("{parent} missing"))
+                .clone();
+            assert!(
+                p.find_subcommand(leaf).is_some(),
+                "{parent} {leaf} must parse"
+            );
+        }
+    }
+
+    /// VAL-CLI-008: restore-drill is hidden from default product help but still parses for ops.
+    #[test]
+    fn restore_drill_hidden_from_backup_help_but_still_parses() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let mut help = Vec::new();
+        let backup = cmd
+            .find_subcommand_mut("backup")
+            .expect("backup subcommand must exist");
+        backup.write_long_help(&mut help).expect("backup help");
+        let help = String::from_utf8(help).expect("utf8");
+        // Default help must not pitch restore-drill (clap hide).
+        assert!(
+            !help.lines().any(|l| {
+                let t = l.trim_start();
+                t.starts_with("restore-drill")
+            }),
+            "backup --help must not list restore-drill (hidden ops): {help}"
+        );
+        // Ops / runbook path must still parse (not removed).
+        let cli = Cli::try_parse_from([
+            "queria-cli",
+            "backup",
+            "restore-drill",
+            "--org",
+            "ops-org",
+        ])
+        .expect("restore-drill must remain invocable for ops");
+        assert!(matches!(
+            cli.command,
+            Command::Backup {
+                command: BackupCommand::RestoreDrill { org, .. }
+            } if org == "ops-org"
+        ));
+        // Nested command remains in clap tree (hidden, not deleted).
+        let backup_cmd = Cli::command()
+            .find_subcommand("backup")
+            .expect("backup")
+            .clone();
+        let drill = backup_cmd
+            .find_subcommand("restore-drill")
+            .expect("restore-drill must remain in tree for ops");
+        assert!(
+            drill.is_hide_set(),
+            "restore-drill should be clap-hidden from product help"
         );
     }
 }

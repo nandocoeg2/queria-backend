@@ -9,7 +9,7 @@
 Default path: mint a **Daily** agent token, connect the client once, then retrieve.
 Knowledge ingest (Admin Git or laptop hub) is optional and separate.
 
-**Dual surface (Wave 2):** laptop human UX default is **`queria-cli tui`** (hub: Doctor / Index / Status / Config / Quit). Flags (`index-here`, `doctor mcp`, server ops) stay for automation and maintainers — not the default laptop pitch.
+**Dual surface (Wave 2):** laptop human UX default is **`queria-cli tui`** (hub: Doctor / Index / Status / Config / Quit). Flags (`index-here`, `doctor mcp`, server ops) stay for automation and maintainers — not the default laptop pitch. **Restore drill is not required for install or Daily onboard** — ops only via [`backup-restore.md`](./backup-restore.md) (`backup restore-drill`, hidden from default help).
 
 ```text
 Default (Daily agent)
@@ -147,6 +147,7 @@ queria-cli config                    # alias → same config_tui as hub Config
 queria-cli index-here --yes --dry-run  # non-interactive e2e / CI (env overrides TOML)
 queria-cli doctor mcp --url "$QUERIA_MCP_URL"  # thin non-TUI MCP tools/list (shared client)
 # server ops: database / embeddings / retrieval / eval / backup
+# restore-drill: ops/runbook only (not install) — see backup-restore.md
 ```
 
 No `config set|list|…` subcommands. CI/scripts: `export QUERIA_*` or edit TOML. Design: [`../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md`](../archive/superpowers/specs/2026-07-21-queria-cli-config-design.md).
