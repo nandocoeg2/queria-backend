@@ -12,7 +12,7 @@
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
-> SIMPLIFICATION Wave 2 (2026-07-23): residual cuts in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). **P1 agent shared retrieve + list/status in progress/done on branch**; CLI hub-primary (docs + thin `doctor mcp` → `edge_agent`) this band.
+> SIMPLIFICATION Wave 2 (2026-07-23): residual cuts in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md). **P1–P2 code bands landed on `feat/wave2-p1-p2-cuts`** (shared `retrieve_for_agent` + list/status; hub TUI primary + single `index_here` core; restore-drill clap-hidden; retrieval tests moved; projects façade split; multi-org tests relocated; config env-by-binary matrix; optional trait collapse **skipped**). Residual: operator e2e when stack+token; P0 disk / P3 HANDOFF split not this mission.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
 > **Production project `fjulian-me` seeded**; embedding backfill **substantially complete** (ready 1226 / failed 3 Voyage 429 residual).
 > **Local main multi-org isolation MVP** (schema → session → orgs/invites → Admin orgs/accept → tenant enforce). Production not redeployed for this yet.
@@ -647,7 +647,7 @@ Feature scaffolding for Phases 1–6 is done. Immediate work:
 
 9. Local multi-git **index-here** IMP-L1…L5 on `main` (2026-07-19/20): nested ls-files filter + `scripts/e2e_index_here_edge.py`. Next: host migrate/redeploy, mint token with `index_local`, run smoke; **not** IMP-L6.
 
-10. **Laptop hub TUI = primary UX** (Wave 2 on `feat/wave2-p1-p2-cuts`): `queria-cli tui` → Doctor / Index / Status / Config / Quit. Dual-surface wording: flags for automation/maintainers. `doctor mcp` → shared `edge_agent` tools/list; `config` top-level = hub Config alias. Laptop Status = agent projects-status; embeddings status remains server-maintainer. Next: finish remaining Wave 2 bands; release tag after merge (not required for Daily MCP).
+10. **Laptop hub TUI = primary UX** (Wave 2 P1–P2 **landed** on `feat/wave2-p1-p2-cuts`): `queria-cli tui` → Doctor / Index / Status / Config / Quit. Dual-surface wording: flags for automation/maintainers. `doctor mcp` → shared `edge_agent` tools/list; `config` top-level = hub Config alias; Index → single `index_here` upload core. Laptop Status = agent projects-status; embeddings status remains server-maintainer. Residual: e2e agent/index-here when stack+token (restart API off branch if live binary lags routes); release tag after merge (not required for Daily MCP).
 
 **Multi-org (local complete; prod follow-up)**
 
