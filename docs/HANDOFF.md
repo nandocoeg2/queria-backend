@@ -12,6 +12,7 @@
 > SIMPLIFICATION P0 applied: Admin dashboard is stat cards only (Three.js + unused shadcn/React islands removed).
 > SIMPLIFICATION P1 applied: Caddy edge (no Pingora/`queria-proxy`); observability folded into core; dead db traits removed.
 > SIMPLIFICATION P2–P3 applied: Admin eval UI deferred (CLI kept); `proxy_addr` removed; enowx-rag Qdrant-only.
+> SIMPLIFICATION Wave 2 (docs 2026-07-23): residual cuts in [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) — disk/worktrees, dual agent+CLI surfaces, god modules; **code cuts not started**.
 > **Production now runs Caddy `queria-edge` + dual-lane image** (redeploy 2026-07-17; see stack identity below).
 > **Production project `fjulian-me` seeded**; embedding backfill **substantially complete** (ready 1226 / failed 3 Voyage 429 residual).
 > **Local main multi-org isolation MVP** (schema → session → orgs/invites → Admin orgs/accept → tenant enforce). Production not redeployed for this yet.

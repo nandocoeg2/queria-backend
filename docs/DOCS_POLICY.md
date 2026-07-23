@@ -1,14 +1,14 @@
 # Queria Docs Policy
 
 > Status: CURRENT
-> Last verified: 2026-07-17
+> Last verified: 2026-07-23
 
 ## Source of truth
 
 | Question | Answer |
 |---|---|
 | What is implemented right now? | [`HANDOFF.md`](./HANDOFF.md) only |
-| What should we delete or shrink next? | [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) |
+| What should we delete or shrink next? | [`SIMPLIFICATION.md`](./SIMPLIFICATION.md) (Wave 2 residual; Wave 1 complete) |
 | How does the product work for operators? | Live files under [`runbooks/`](./runbooks/) |
 | What is the product contract? | [`PRODUCT.md`](./PRODUCT.md) (includes dual-lane; HANDOFF says what is shipped) |
 | As-is vs post-cut architecture? | [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
